@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>注塑机 MES 管理系统</title>
+        <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header class="topbar">
+    <div class="logo"><img src="/static/img/logo.png" alt="乔丰 MES" class="logo-img" id="header-logo"><span>乔丰.MES</span></div>
+    <div class="account"><span>●</span><span id="user-label">用户</span><button id="password-button" class="link-button">修改密码</button><button id="logout-button" class="link-button">退出</button></div>
+</header>
+
+<aside class="sidebar">
+    <button class="nav-item active" data-page="dashboard"><span class="nav-icon">◉</span>设备看板</button>
+    <button class="nav-item" data-page="realtime"><span class="nav-icon">▥</span>实时参数</button>
+    <button class="nav-item" data-page="tech"><span class="nav-icon">◫</span>工艺参数</button>
+    <button class="nav-item" data-page="spc"><span class="nav-icon">◔</span>SPC 数据</button>
+    <button class="nav-item" data-page="molds"><span class="nav-icon">▣</span>模具管理</button>
+    <div class="sidebar-divider"></div>
+    <button class="nav-item" id="theme-toggle" type="button"><span class="nav-icon" id="theme-icon">☾</span><span id="theme-label">深色模式</span></button>
+</aside>
+
+<div class="main">
+    <div class="content-header">
+        <div id="page-title" class="page-title">设备看板</div>
+        <div class="content-tools"><select id="device-select" aria-label="选择设备"></select><span id="connection-status" class="connection">正在读取……</span></div>
+    </div>
+
+    <main>
+        <section id="dashboard-page">
+            <div class="summary-grid">
+                <label class="summary-card"><span class="summary-dot" style="background:var(--green)"></span><span>生产 <strong id="production-count">0</strong> 台</span><input class="status-filter" type="checkbox" value="production" checked></label>
+                <label class="summary-card"><span class="summary-dot" style="background:var(--orange)"></span><span>待机 <strong id="waiting-count">0</strong> 台</span><input class="status-filter" type="checkbox" value="waiting" checked></label>
+                <label class="summary-card"><span class="summary-dot" style="background:var(--gray)"></span><span>离线 <strong id="offline-count">0</strong> 台</span><input class="status-filter" type="checkbox" value="offline" checked></label>
+            </div>
+
+            <div class="panel filter-panel">
+                <div class="panel-title">筛选</div>
+                <div class="filter-body"><select id="filter-device"><option value="">全部设备编号</option></select><select id="filter-mold"><option value="">全部模具编号</option></select><select id="filter-product"><option value="">全部产品编号</option></select></div>
+                <div class="filter-footer"><button id="search-button" class="primary-button">搜索</button></div>
+            </div>
+
+            <div id="device-grid" class="device-grid"></div>
+            <div class="pagination"><span id="page-summary"></span><div id="page-buttons" class="page-buttons"></div></div>
+        </section>
+
+        <section id="realtime-page" class="hidden"></section>
+        <section id="tech-page" class="hidden"></section>
+        <section id="spc-page" class="hidden"></section>
+
+        <section id="molds-page" class="hidden">
+            <div class="mold-layout">
+                <div>
+                    <article class="detail-card"><div class="detail-title">当前装模</div><div id="current-mold" class="mold-current"></div><div class="actions"><select id="mold-select"></select><button id="mount-button" class="primary-button">装模 / 换模</button><button id="unmount-button" class="danger-button">卸模</button></div></article>
+                    <article class="detail-card"><div class="detail-title">新增模具型号</div><form id="mold-form" class="form-grid"><div class="field"><label>模具编号 *</label><input name="mold_code" required maxlength="100"></div><div class="field"><label>模具名称 *</label><input name="mold_name" required maxlength="200"></div><div class="field"><label>产品编号</label><input name="product_code" maxlength="100"></div><div class="field"><label>模穴数</label><input name="cavities" type="number" min="1" value="1" required></div><div class="field full"><label>备注</label><textarea name="remark" maxlength="500"></textarea></div><div class="field full"><button class="primary-button" type="submit">保存模具档案</button></div></form></article>
+                </div>
+                <div><article class="detail-card"><div class="detail-title">模具档案</div><div id="mold-list" class="mold-list"></div></article><article class="detail-card"><div class="detail-title">设备装模履历</div><div id="mold-history"></div></article></div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<dialog id="password-dialog"><h3>修改登录密码</h3><form id="password-form"><label>当前密码</label><input name="current_password" type="password" required><label>新密码（至少 8 位）</label><input name="new_password" type="password" minlength="8" required><div class="actions"><button class="primary-button" type="submit">确认修改</button><button id="password-cancel" class="secondary-button" type="button">取消</button></div></form></dialog>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

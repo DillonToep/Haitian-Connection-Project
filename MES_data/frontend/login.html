@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 · 注塑机 MES</title>
+        <link rel="stylesheet" href="/static/css/login.css">
+</head>
+<body>
+<main class="login-shell">
+    <section class="brand">
+        <div class="brand-mark"><img src="/static/img/transparentLogo.png" alt="乔丰 MES" class="brand-logo-img"></div>
+        <h1>乔丰注塑生产数据中心</h1>
+        <p>设备实时状态、工艺参数、SPC 数据与模具履历统一管理。</p>
+    </section>
+
+    <section class="login-panel">
+        <h2>系统登录</h2>
+        <p class="subtitle">请输入 MES 系统账号</p>
+
+        <form id="login-form">
+            <label for="username">用户名</label>
+            <input id="username" name="username" autocomplete="username" required autofocus>
+
+            <label for="password">密码</label>
+            <input id="password" name="password" type="password"
+                   autocomplete="current-password" required>
+
+            <button id="submit-button" type="submit">登录系统</button>
+            <div id="message" role="alert"></div>
+        </form>
+
+        <div class="footer">Injection Molding MES · Local Network</div>
+    </section>
+</main>
+
+    <script src="/static/js/login.js"></script>
+</body>
+</html>
