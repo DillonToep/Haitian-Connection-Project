@@ -139,12 +139,14 @@
         .parameter-chip { display: flex; align-items: baseline; gap: 6px; }
         .chip-index { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; padding: 0 4px; border-radius: 9px; background: var(--line); color: var(--muted); font-size: 11px; font-weight: 700; }
         .chip-value { font-weight: 650; }
-        /* Two-column packing for the 工艺参数 categories: CSS multi-column flows
-           each collapsible section top-to-bottom, filling column one before
-           starting column two, and reflows automatically as sections are
-           expanded/collapsed. break-inside keeps a whole section together. */
-        .tech-groups-grid { columns: 2; column-gap: 16px; }
-        .tech-group { display: block; margin: 0 0 14px; break-inside: avoid; }
+        /* Two-column layout for the 工艺参数 categories: categories are split
+           into two fixed lists in JS (alternating), each rendered into its
+           own independent-height grid column. Unlike CSS multi-column flow,
+           a section never jumps to the other column when a sibling
+           expands or collapses -- its column assignment is permanent. */
+        .tech-groups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+        .tech-groups-column { display: flex; flex-direction: column; gap: 14px; }
+        .tech-group { display: block; }
         .tech-group-title {
             display: flex; align-items: center; justify-content: space-between; gap: 10px;
             margin: 0 0 9px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
@@ -210,7 +212,7 @@
             .field.full { grid-column: auto; }
             .detail-tabs { overflow-x: auto; }
             .tab-button { padding: 10px 14px; white-space: nowrap; }
-            .tech-groups-grid { columns: 1; }
+            .tech-groups-grid { grid-template-columns: 1fr; }
         }
 
         html[data-theme="dark"] {

@@ -227,7 +227,7 @@ let currentPage = "dashboard";
         });
         const categoryOrder=["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数","未知参数"];
         const orderedCategories=[...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
-        const sections=orderedCategories.map(category=>{
+        function renderCategory(category) {
             const items=groups.get(category);
             const unit=techCategoryUnits[category]||"";
             const paramGroups=groupTechParameters(items);
@@ -248,27 +248,46 @@ let currentPage = "dashboard";
                 </summary>
                 <div class="parameter-grid">${rows}</div>
             </details>`;
-        }).join("");
-        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="tech-header-actions"><button type="button" class="tech-action-button" id="tech-expand-all">全部展开</button><button type="button" class="tech-action-button" id="tech-collapse-all">全部收起</button><span class="muted">参数时间：${formatTime(result.data_time)}</span></div></div><div class="tech-groups-grid">${sections||'<div class="empty">暂无工艺参数</div>'}</div></article>`;
+        }
+        // Categories are split into two fixed columns up front (instead of
+        // CSS multi-column flow) so opening/closing one section never moves
+        // another section into a different column -- each category has a
+        // permanent left/right slot for the lifetime of this render.
+        const leftCategories=orderedCategories.filter((_,i)=>i%2===0);
+        const rightCategories=orderedCategories.filter((_,i)=>i%2===1);
+        const leftHtml=leftCategories.map(renderCategory).join("");
+        const rightHtml=rightCategories.map(renderCategory).join("");
+        const hasSections=orderedCategories.length>0;
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="tech-header-actions"><button type="button" class="tech-action-button" id="tech-toggle-all">全部展开</button><span class="muted">参数时间：${formatTime(result.data_time)}</span></div></div><div class="tech-groups-grid">${hasSections?`<div class="tech-groups-column">${leftHtml}</div><div class="tech-groups-column">${rightHtml}</div>`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
+
+        function updateToggleAllLabel() {
+            const button=document.getElementById("tech-toggle-all");
+            if(!button) return;
+            const allDetails=document.querySelectorAll("#detail-tab-tech details.tech-group");
+            const allOpen=allDetails.length>0 && [...allDetails].every(details=>details.open);
+            button.textContent=allOpen?"全部收起":"全部展开";
+        }
+
         document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
             details.addEventListener("toggle",()=>{
                 const category=details.dataset.category;
                 if(details.open) techOpenCategories.add(category);
                 else techOpenCategories.delete(category);
+                updateToggleAllLabel();
             });
         });
-        document.getElementById("tech-expand-all")?.addEventListener("click",()=>{
-            document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
-                details.open=true;
-                techOpenCategories.add(details.dataset.category);
+        document.getElementById("tech-toggle-all")?.addEventListener("click",()=>{
+            const allDetails=document.querySelectorAll("#detail-tab-tech details.tech-group");
+            const allOpen=allDetails.length>0 && [...allDetails].every(details=>details.open);
+            const nextOpen=!allOpen;
+            allDetails.forEach(details=>{
+                details.open=nextOpen;
+                if(nextOpen) techOpenCategories.add(details.dataset.category);
+                else techOpenCategories.delete(details.dataset.category);
             });
+            updateToggleAllLabel();
         });
-        document.getElementById("tech-collapse-all")?.addEventListener("click",()=>{
-            document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
-                details.open=false;
-                techOpenCategories.delete(details.dataset.category);
-            });
-        });
+        updateToggleAllLabel();
     }
     async function loadSpc(id) {
         const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`),fields=Object.entries(spcFields).filter(([name])=>Object.hasOwn(result,name));
