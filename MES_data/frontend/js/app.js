@@ -14,6 +14,17 @@ let currentPage = "dashboard";
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
 
+    // Units shown next to each 工艺参数 value, keyed by the same category
+    // buckets produced by backend/parameter_labels.py::categorize(). Categories
+    // not listed here (模式设置, 其他参数, 未知参数) are left without a unit.
+    const techCategoryUnits = {
+        "温度参数": " ℃",
+        "压力参数": " MPa",
+        "速度参数": " mm/s",
+        "位置参数": " mm",
+        "时间参数": " s"
+    };
+
     // SPC page fields: sourced from dbo.vw_machine_spc, scaled server-side
     // using the raw tag's scale factor (see backend/parameter_labels.py).
     // Values already arrive pre-scaled from the API, so this dict is only
@@ -174,7 +185,8 @@ let currentPage = "dashboard";
 
     // Tech (工艺参数) tab: fully driven by the API, which already joins
     // each parameter_id against the label file, applies scale, drops
-    // parameters flagged use=0, and assigns a display category.
+    // parameters flagged use=0, and assigns a display category. The
+    // category also picks which unit (if any) is appended to the value.
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
@@ -186,7 +198,8 @@ let currentPage = "dashboard";
         const orderedCategories=[...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
         const sections=orderedCategories.map(category=>{
             const items=groups.get(category);
-            const rows=items.map(p=>`<div class="parameter"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value)}</span></div>`).join("");
+            const unit=techCategoryUnits[category]||"";
+            const rows=items.map(p=>`<div class="parameter"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value,unit)}</span></div>`).join("");
             return `<div class="tech-group"><div class="tech-group-title">${escapeHtml(category)}</div><div class="parameter-grid">${rows}</div></div>`;
         }).join("");
         document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="muted">参数时间：${formatTime(result.data_time)}</div></div>${sections||'<div class="empty">暂无工艺参数</div>'}</article>`;
