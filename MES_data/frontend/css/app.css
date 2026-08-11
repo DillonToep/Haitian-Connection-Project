@@ -118,9 +118,9 @@
         .metric-label { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
         .metric-value { font-size: 19px; font-weight: 700; }
         .parameter-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: 8px; }
-        .parameter { display: flex; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
+        .parameter { display: flex; justify-content: space-between; align-items: baseline; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
         .parameter span:first-child { min-width: 58px; color: var(--muted); }
-        .parameter span:last-child { font-weight: 650; }
+        .parameter span:last-child { margin-left: auto; font-weight: 650; text-align: right; }
         .tech-group { margin-top: 18px; }
         .tech-group:first-of-type { margin-top: 0; }
         .tech-group-title {
