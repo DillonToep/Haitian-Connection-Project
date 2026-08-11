@@ -130,12 +130,23 @@
         .parameter-chip { display: flex; align-items: baseline; gap: 6px; }
         .chip-index { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; padding: 0 4px; border-radius: 9px; background: var(--line); color: var(--muted); font-size: 11px; font-weight: 700; }
         .chip-value { font-weight: 650; }
-        .tech-group { margin-top: 18px; }
-        .tech-group:first-of-type { margin-top: 0; }
+        /* Two-column packing for the 工艺参数 categories: CSS multi-column flows
+           each collapsible section top-to-bottom, filling column one before
+           starting column two, and reflows automatically as sections are
+           expanded/collapsed. break-inside keeps a whole section together. */
+        .tech-groups-grid { columns: 2; column-gap: 16px; }
+        .tech-group { display: block; margin: 0 0 14px; break-inside: avoid; }
         .tech-group-title {
-            margin-bottom: 9px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
-            color: #3f4854; font-size: 14px; font-weight: 700;
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            margin: 0 0 9px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+            color: #3f4854; font-size: 14px; font-weight: 700; cursor: pointer; list-style: none;
         }
+        .tech-group-title::-webkit-details-marker { display: none; }
+        .tech-group-title:hover { color: var(--blue); }
+        .tech-group-meta { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+        .tech-group-count { color: var(--muted); font-size: 12px; font-weight: 600; }
+        .chevron { display: inline-block; color: var(--muted); font-size: 11px; transition: transform .15s ease; }
+        details.tech-group[open] .chevron { transform: rotate(90deg); }
         .mold-layout { display: grid; grid-template-columns: minmax(300px,.8fr) minmax(440px,1.2fr); gap: 14px; }
         .mold-current { margin-top: 12px; padding: 16px; background: #eef8f1; }
         .mold-code { margin: 7px 0 4px; color: #2f7a4f; font-size: 24px; font-weight: 800; }
@@ -190,6 +201,7 @@
             .field.full { grid-column: auto; }
             .detail-tabs { overflow-x: auto; }
             .tab-button { padding: 10px 14px; white-space: nowrap; }
+            .tech-groups-grid { columns: 1; }
         }
 
         html[data-theme="dark"] {

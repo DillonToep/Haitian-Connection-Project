@@ -10,6 +10,10 @@ let currentPage = "dashboard";
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
     let activeUtilTab = "overview";
+    // Categories the user has manually collapsed in the 工艺参数 tab. Categories
+    // not in this set render expanded by default. Kept outside loadTech so the
+    // 2-second auto-refresh doesn't reset what the user opened/closed.
+    let techClosedCategories = new Set();
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计", shift: "班次统计" };
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
@@ -183,10 +187,31 @@ let currentPage = "dashboard";
             </article>`;
     }
 
+    // Groups parameters within a category by "base name" -- the label with
+    // any digit run stripped out. e.g. 中子1进压力 / 中子2进压力 / 中子3进压力 / 中子4进压力
+    // all collapse to the base name 中子进压力 and become one row with each
+    // numbered value shown side by side. Labels with no sibling (no other
+    // parameter sharing the same stripped base name) are left as their own
+    // normal single-value row, keeping their original numbered label text.
+    function groupTechParameters(items) {
+        const groups=new Map();
+        const order=[];
+        items.forEach(p=>{
+            const match=p.label.match(/\d+/);
+            const number=match?parseInt(match[0],10):null;
+            const baseKey=p.label.replace(/\d+/g,"").trim()||p.label;
+            if(!groups.has(baseKey)){groups.set(baseKey,[]);order.push(baseKey);}
+            groups.get(baseKey).push({...p,number});
+        });
+        return order.map(key=>({key,items:groups.get(key)}));
+    }
+
     // Tech (工艺参数) tab: fully driven by the API, which already joins
     // each parameter_id against the label file, applies scale, drops
     // parameters flagged use=0, and assigns a display category. The
     // category also picks which unit (if any) is appended to the value.
+    // Within each category, numbered variants of the same parameter are
+    // grouped onto a single row (see groupTechParameters above).
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
@@ -199,10 +224,33 @@ let currentPage = "dashboard";
         const sections=orderedCategories.map(category=>{
             const items=groups.get(category);
             const unit=techCategoryUnits[category]||"";
-            const rows=items.map(p=>`<div class="parameter"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value,unit)}</span></div>`).join("");
-            return `<div class="tech-group"><div class="tech-group-title">${escapeHtml(category)}</div><div class="parameter-grid">${rows}</div></div>`;
+            const paramGroups=groupTechParameters(items);
+            const rows=paramGroups.map(group=>{
+                if(group.items.length===1){
+                    const p=group.items[0];
+                    return `<div class="parameter"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value,unit)}</span></div>`;
+                }
+                const sorted=[...group.items].sort((a,b)=>(a.number??0)-(b.number??0));
+                const chips=sorted.map(p=>`<span class="parameter-chip"><span class="chip-index">${p.number??""}</span><span class="chip-value">${showValue(p.value,unit)}</span></span>`).join("");
+                return `<div class="parameter-group"><span class="parameter-group-label">${escapeHtml(group.key)}</span><span class="parameter-group-values">${chips}</span></div>`;
+            }).join("");
+            const isOpen=!techClosedCategories.has(category);
+            return `<details class="tech-group" data-category="${escapeHtml(category)}"${isOpen?" open":""}>
+                <summary class="tech-group-title">
+                    <span class="tech-group-title-text">${escapeHtml(category)}</span>
+                    <span class="tech-group-meta"><span class="tech-group-count">${items.length}</span><span class="chevron">▸</span></span>
+                </summary>
+                <div class="parameter-grid">${rows}</div>
+            </details>`;
         }).join("");
-        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="muted">参数时间：${formatTime(result.data_time)}</div></div>${sections||'<div class="empty">暂无工艺参数</div>'}</article>`;
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="muted">参数时间：${formatTime(result.data_time)}</div></div><div class="tech-groups-grid">${sections||'<div class="empty">暂无工艺参数</div>'}</div></article>`;
+        document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
+            details.addEventListener("toggle",()=>{
+                const category=details.dataset.category;
+                if(details.open) techClosedCategories.delete(category);
+                else techClosedCategories.add(category);
+            });
+        });
     }
     async function loadSpc(id) {
         const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`),fields=Object.entries(spcFields).filter(([name])=>Object.hasOwn(result,name));
