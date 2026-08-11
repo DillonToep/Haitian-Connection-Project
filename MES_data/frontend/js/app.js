@@ -6,7 +6,12 @@ let currentPage = "dashboard";
     let dashboardPage = 1;
     const pageSize = 8;
 
-    const pageTitles = { dashboard: "设备看板", realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", molds: "模具管理", utilization: "利用率报表" };
+    // Device currently open in the detail view, and which tab is active there.
+    let detailDeviceId = null;
+    let activeDetailTab = "realtime";
+
+    const pageTitles = { dashboard: "设备看板", molds: "模具管理" };
+    const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
 
     // SPC page fields: sourced from dbo.vw_machine_spc, scaled server-side
     // using the raw tag's scale factor (see backend/parameter_labels.py).
@@ -137,20 +142,16 @@ let currentPage = "dashboard";
                 <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
             </div></article>`;
         }).join(""):'<div class="empty panel">没有符合条件的设备</div>';
-        grid.querySelectorAll(".device-card").forEach(card=>card.addEventListener("click",()=>{
-            document.getElementById("device-select").value=card.dataset.device;
-            switchPage("realtime");
-        }));
+        grid.querySelectorAll(".device-card").forEach(card=>card.addEventListener("click",()=>openDeviceDetail(card.dataset.device)));
         document.getElementById("page-summary").textContent=`共 ${filtered.length} 台，每页 ${pageSize} 台`;
         const buttons=document.getElementById("page-buttons");
         buttons.innerHTML=Array.from({length:pages},(_,i)=>`<button class="${i+1===dashboardPage?"active":""}" data-page-number="${i+1}">${i+1}</button>`).join("");
         buttons.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>{dashboardPage=Number(button.dataset.pageNumber);renderDashboard();}));
     }
 
-    // Realtime page: labelled status + temperature tiles. Values arrive
+    // Realtime tab: labelled status + temperature tiles. Values arrive
     // already scaled from the API (backend/parameter_labels.py).
-    async function loadRealtime() {
-        const id=selectedDeviceId(); if(!id)return;
+    async function loadRealtime(id) {
         const m=await requestJson(`/api/realtime/${encodeURIComponent(id)}`);
         const statusTiles=[
             metric("机器状态 (STS)",m.machine_status,"",true),
@@ -159,9 +160,9 @@ let currentPage = "dashboard";
             metric("生产油温 (OT)",m.oil_temperature," ℃",true),
         ].join("");
         const temperatureTiles=[1,2,3,4,5,6,7].map(i=>metric(`温度 T${i}`,m[`temperature_${i}`]," ℃")).join("");
-        document.getElementById("realtime-page").innerHTML=`
+        document.getElementById("detail-tab-realtime").innerHTML=`
             <article class="detail-card">
-                <div class="detail-header"><div class="detail-title">设备 ${escapeHtml(id)} 实时参数</div><div class="muted">数据时间：${formatTime(m.data_time)}</div></div>
+                <div class="detail-header"><div class="detail-title">实时状态</div><div class="muted">数据时间：${formatTime(m.data_time)}</div></div>
                 <div class="metric-grid">${statusTiles}</div>
             </article>
             <article class="detail-card">
@@ -170,11 +171,10 @@ let currentPage = "dashboard";
             </article>`;
     }
 
-    // Tech (工艺参数) page: fully driven by the API, which already joins
+    // Tech (工艺参数) tab: fully driven by the API, which already joins
     // each parameter_id against the label file, applies scale, drops
     // parameters flagged use=0, and assigns a display category.
-    async function loadTech() {
-        const id=selectedDeviceId(); if(!id)return;
+    async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
         result.parameters.forEach(p=>{
@@ -188,12 +188,11 @@ let currentPage = "dashboard";
             const rows=items.map(p=>`<div class="parameter"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value)}</span></div>`).join("");
             return `<div class="tech-group"><div class="tech-group-title">${escapeHtml(category)}</div><div class="parameter-grid">${rows}</div></div>`;
         }).join("");
-        document.getElementById("tech-page").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">${escapeHtml(id)} 工艺参数</div><div class="muted">参数时间：${formatTime(result.data_time)}</div></div>${sections||'<div class="empty">暂无工艺参数</div>'}</article>`;
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="muted">参数时间：${formatTime(result.data_time)}</div></div>${sections||'<div class="empty">暂无工艺参数</div>'}</article>`;
     }
-    async function loadSpc() {
-        const id=selectedDeviceId(); if(!id)return;
+    async function loadSpc(id) {
         const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`),fields=Object.entries(spcFields).filter(([name])=>Object.hasOwn(result,name));
-        document.getElementById("spc-page").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">${escapeHtml(id)} 最新 SPC</div><div class="muted">数据时间：${formatTime(result.data_time)}</div></div><div class="metric-grid">${fields.map(([name,meta])=>metric(meta[0],result[name],meta[1])).join("")}</div></article>`;
+        document.getElementById("detail-tab-spc").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">最新 SPC</div><div class="muted">数据时间：${formatTime(result.data_time)}</div></div><div class="metric-grid">${fields.map(([name,meta])=>metric(meta[0],result[name],meta[1])).join("")}</div></article>`;
     }
     async function loadMolds() {
         const id=selectedDeviceId(); if(!id)return;
@@ -208,41 +207,51 @@ let currentPage = "dashboard";
         document.getElementById("mold-history").innerHTML=history.length?`<table><thead><tr><th>模具</th><th>装模时间</th><th>卸模时间</th><th>操作人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(h.mold_code)}</td><td>${formatTime(h.mounted_at)}</td><td>${formatTime(h.unmounted_at)}</td><td>${showValue(h.operator_username)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无装模履历</div>';
     }
 
-    // 利用率报表 page: sub-tabbed (总览 / 日统计 / 月统计 / 班次统计).
-    // Panes are currently placeholders; wire up data loading per sub-tab
-    // here once the backend endpoints exist.
-    function initUtilizationTabs() {
-        const section=document.getElementById("utilization-page");
-        section.querySelectorAll(".subtab-item").forEach(button=>{
-            button.addEventListener("click",()=>switchUtilizationSubtab(button.dataset.subtab));
-        });
+    // Loads whichever tab is currently active inside the device detail view.
+    async function loadActiveDetailTab() {
+        if(!detailDeviceId) return;
+        if(activeDetailTab==="realtime") await loadRealtime(detailDeviceId);
+        if(activeDetailTab==="tech") await loadTech(detailDeviceId);
+        if(activeDetailTab==="spc") await loadSpc(detailDeviceId);
     }
-    function switchUtilizationSubtab(subtab) {
-        const section=document.getElementById("utilization-page");
-        section.querySelectorAll(".subtab-item").forEach(button=>button.classList.toggle("active",button.dataset.subtab===subtab));
-        section.querySelectorAll(".subtab-pane").forEach(pane=>pane.classList.toggle("hidden",pane.id!==`utilization-${subtab}`));
+
+    function openDeviceDetail(deviceId) {
+        detailDeviceId=deviceId;
+        activeDetailTab="realtime";
+        document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab==="realtime"));
+        document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="detail-tab-realtime"));
+        switchPage("device-detail");
     }
-    async function loadUtilization() {
-        // Placeholder: no data source wired up yet.
+
+    function switchDetailTab(tab) {
+        activeDetailTab=tab;
+        document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===tab));
+        document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
+        refreshPage();
     }
 
     async function refreshPage() {
         const status=document.getElementById("connection-status");
         try {
             if(currentPage==="dashboard")await loadDashboard();
-            if(currentPage==="realtime")await loadRealtime();
-            if(currentPage==="tech")await loadTech();
-            if(currentPage==="spc")await loadSpc();
+            if(currentPage==="device-detail")await loadActiveDetailTab();
             if(currentPage==="molds")await loadMolds();
-            if(currentPage==="utilization")await loadUtilization();
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
     }
     async function switchPage(page) {
-        currentPage=page;document.getElementById("page-title").textContent=pageTitles[page];
-        document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
+        currentPage=page;
+        document.getElementById("device-select").classList.toggle("hidden",page!=="molds");
+        if(page==="device-detail") {
+            document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
+            document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
+        } else {
+            document.getElementById("page-title").textContent=pageTitles[page];
+        }
+        document.querySelectorAll(".nav-item[data-page]").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
         document.querySelectorAll("main > section").forEach(section=>section.classList.add("hidden"));
-        document.getElementById(`${page}-page`).classList.remove("hidden");
+        const sectionId = page==="device-detail" ? "device-detail-page" : `${page}-page`;
+        document.getElementById(sectionId).classList.remove("hidden");
         await refreshPage();
     }
 
@@ -266,11 +275,12 @@ let currentPage = "dashboard";
     applyTheme(savedTheme);
 
     document.querySelectorAll(".nav-item[data-page]").forEach(item=>item.addEventListener("click",()=>switchPage(item.dataset.page)));
+    document.getElementById("detail-back-button").addEventListener("click",()=>switchPage("dashboard"));
+    document.querySelectorAll(".tab-button").forEach(button=>button.addEventListener("click",()=>switchDetailTab(button.dataset.tab)));
     document.getElementById("device-select").addEventListener("change",refreshPage);
     document.getElementById("search-button").addEventListener("click",()=>{dashboardPage=1;renderDashboard();});
     document.querySelectorAll(".status-filter").forEach(input=>input.addEventListener("change",()=>{dashboardPage=1;renderDashboard();}));
     document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
-    initUtilizationTabs();
 
     document.getElementById("mold-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/molds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_code:f.get("mold_code"),mold_name:f.get("mold_name"),product_code:f.get("product_code")||null,cavities:Number(f.get("cavities")),remark:f.get("remark")||null})});event.target.reset();event.target.cavities.value=1;await loadMolds();}catch(error){alert(error.message);}});
     document.getElementById("mount-button").addEventListener("click",async()=>{const moldId=Number(document.getElementById("mold-select").value);if(!moldId)return alert("请先选择模具");if(!confirm(`确认将所选模具安装到设备 ${selectedDeviceId()}？`))return;try{await requestJson(`/api/devices/${encodeURIComponent(selectedDeviceId())}/mold`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_id:moldId,remark:null})});await loadMolds();}catch(error){alert(error.message);}});
@@ -283,4 +293,4 @@ let currentPage = "dashboard";
 
     async function initialize(){try{await loadSession();await loadDevices();await refreshPage();}catch(error){document.getElementById("connection-status").textContent=error.message;}}
     initialize();
-    setInterval(()=>{if(currentPage==="dashboard"||currentPage==="realtime")refreshPage();},2000);
+    setInterval(()=>{if(currentPage==="dashboard"||currentPage==="device-detail")refreshPage();},2000);
