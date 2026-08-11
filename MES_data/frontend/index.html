@@ -14,9 +14,6 @@
 
 <aside class="sidebar">
     <button class="nav-item active" data-page="dashboard"><span class="nav-icon">◉</span>设备看板</button>
-    <button class="nav-item" data-page="realtime"><span class="nav-icon">▥</span>实时参数</button>
-    <button class="nav-item" data-page="tech"><span class="nav-icon">◫</span>工艺参数</button>
-    <button class="nav-item" data-page="spc"><span class="nav-icon">◔</span>SPC 数据</button>
     <button class="nav-item" data-page="molds"><span class="nav-icon">▣</span>模具管理</button>
     <div class="sidebar-divider"></div>
     <button class="nav-item" id="theme-toggle" type="button"><span class="nav-icon" id="theme-icon">☾</span><span id="theme-label">深色模式</span></button>
@@ -25,7 +22,7 @@
 <div class="main">
     <div class="content-header">
         <div id="page-title" class="page-title">设备看板</div>
-        <div class="content-tools"><select id="device-select" aria-label="选择设备"></select><span id="connection-status" class="connection">正在读取……</span></div>
+        <div class="content-tools"><select id="device-select" aria-label="选择设备" class="hidden"></select><span id="connection-status" class="connection">正在读取……</span></div>
     </div>
 
     <main>
@@ -46,9 +43,20 @@
             <div class="pagination"><span id="page-summary"></span><div id="page-buttons" class="page-buttons"></div></div>
         </section>
 
-        <section id="realtime-page" class="hidden"></section>
-        <section id="tech-page" class="hidden"></section>
-        <section id="spc-page" class="hidden"></section>
+        <section id="device-detail-page" class="hidden">
+            <div class="detail-topbar">
+                <button id="detail-back-button" class="secondary-button" type="button">← 返回设备看板</button>
+                <div class="detail-device-title" id="detail-device-title"></div>
+            </div>
+            <div class="detail-tabs" role="tablist">
+                <button class="tab-button active" data-tab="realtime" type="button">实时参数</button>
+                <button class="tab-button" data-tab="tech" type="button">工艺参数</button>
+                <button class="tab-button" data-tab="spc" type="button">SPC 数据</button>
+            </div>
+            <div id="detail-tab-realtime" class="tab-content"></div>
+            <div id="detail-tab-tech" class="tab-content hidden"></div>
+            <div id="detail-tab-spc" class="tab-content hidden"></div>
+        </section>
 
         <section id="molds-page" class="hidden">
             <div class="mold-layout">
