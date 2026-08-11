@@ -80,7 +80,7 @@
         .danger-button { border: 1px solid var(--red); color: white; background: var(--red); }
         .device-grid { display: grid; grid-template-columns: repeat(4, minmax(245px, 1fr)); gap: 12px; }
         .device-card {
-            min-height: 292px; overflow: hidden; border: 1px solid var(--line); cursor: pointer;
+            min-height: 292px; overflow: hidden; border: 1px solid var(--line);
             background: white; transition: box-shadow .18s, transform .18s;
         }
         .device-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(31,41,55,.1); }
@@ -147,25 +147,16 @@
         dialog { width: min(430px,calc(100% - 28px)); padding: 21px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
         dialog::backdrop { background: rgba(15,23,42,.5); }
         dialog input { width: 100%; margin: 5px 0 12px; }
-
-        /* Device detail view: opened by clicking a machine card on the dashboard.
-           Live parameters, process parameters, and SPC data all live here,
-           switched via the tab bar instead of separate sidebar pages. */
-        .detail-topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-        .detail-device-title { font-size: 19px; font-weight: 700; }
-        .detail-tabs {
-            display: flex; gap: 4px; margin-bottom: 14px; padding-bottom: 0;
-            border-bottom: 1px solid var(--line);
+        .subtabs {
+            display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line);
         }
-        .tab-button {
-            padding: 10px 18px; border: 0; border-bottom: 2px solid transparent;
-            color: var(--muted); font-weight: 650; background: transparent;
+        .subtab-item {
+            height: 38px; padding: 0 18px; border: 0; border-bottom: 2px solid transparent;
+            color: #606975; background: transparent; font-weight: 600;
         }
-        .tab-button:hover { color: #3f4854; }
-        .tab-button.active { color: var(--blue); border-bottom-color: var(--blue); }
-        .tab-content { animation: tab-fade-in .15s ease; }
-        @keyframes tab-fade-in { from { opacity: 0; } to { opacity: 1; } }
-
+        .subtab-item:hover { color: var(--text); }
+        .subtab-item.active { color: var(--blue); border-bottom-color: var(--blue); }
+        .subtab-content { position: relative; }
         @media (max-width: 1400px) { .device-grid { grid-template-columns: repeat(3,minmax(245px,1fr)); } }
         @media (max-width: 1080px) { .device-grid { grid-template-columns: repeat(2,minmax(245px,1fr)); } .mold-layout { grid-template-columns: 1fr; } }
         @media (max-width: 760px) {
@@ -179,8 +170,7 @@
             .content-header { align-items: flex-start; flex-direction: column; }
             .form-grid { grid-template-columns: 1fr; }
             .field.full { grid-column: auto; }
-            .detail-tabs { overflow-x: auto; }
-            .tab-button { padding: 10px 14px; white-space: nowrap; }
+            .subtabs { overflow-x: auto; }
         }
 
         html[data-theme="dark"] {
@@ -218,7 +208,7 @@
         html[data-theme="dark"] th, html[data-theme="dark"] td { border-bottom-color: #262c35; }
         html[data-theme="dark"] dialog { background: #1a1f27; color: var(--text); }
         html[data-theme="dark"] .badge.offline { background: #545e6b; }
-        html[data-theme="dark"] .detail-tabs { border-bottom-color: #262c35; }
-        html[data-theme="dark"] .tab-button { color: #8b95a3; }
-        html[data-theme="dark"] .tab-button:hover { color: #d3d8de; }
-        html[data-theme="dark"] .tab-button.active { color: #57caa0; border-bottom-color: #57caa0; }
+        html[data-theme="dark"] .subtabs { border-bottom-color: #262c35; }
+        html[data-theme="dark"] .subtab-item { color: #9aa3ae; }
+        html[data-theme="dark"] .subtab-item:hover { color: var(--text); }
+        html[data-theme="dark"] .subtab-item.active { color: #57caa0; border-bottom-color: #57caa0; }
