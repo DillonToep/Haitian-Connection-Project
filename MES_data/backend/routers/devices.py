@@ -26,20 +26,6 @@ def get_single_device_row(sql: str, device_id: str, missing_message: str):
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-def apply_scale(raw_value, scale: float):
-    """Convert a raw SQL numeric value into its true engineering value.
-
-    raw SQL value * scale = displayed value (e.g. a raw 2350 with
-    scale 0.1 displays as 235.0).
-    """
-    if raw_value is None:
-        return None
-    try:
-        return round(float(raw_value) * scale, 4)
-    except (TypeError, ValueError):
-        return raw_value
-
-
 @router.get("/devices")
 def get_devices(user: dict = Depends(require_user)):
     del user
@@ -118,17 +104,7 @@ def get_dashboard(user: dict = Depends(require_user)):
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
             cursor.execute(sql)
-            rows = [row_to_dict(cursor, row) for row in cursor.fetchall()]
-            for row in rows:
-                if "oil_temperature" in row:
-                    meta = PARAMETER_LABELS.get("OT")
-                    if meta:
-                        row["oil_temperature"] = apply_scale(row["oil_temperature"], meta["scale"])
-                if "cycle_time" in row:
-                    meta = PARAMETER_LABELS.get("ECYCT")
-                    if meta:
-                        row["cycle_time"] = apply_scale(row["cycle_time"], meta["scale"])
-            return rows
+            return [row_to_dict(cursor, row) for row in cursor.fetchall()]
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
@@ -161,36 +137,9 @@ def get_all_realtime(user: dict = Depends(require_user)):
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
             cursor.execute(sql)
-            rows = [row_to_dict(cursor, row) for row in cursor.fetchall()]
-            return [_scale_realtime_row(row) for row in rows]
+            return [row_to_dict(cursor, row) for row in cursor.fetchall()]
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
-
-
-# Raw tag codes behind each realtime column, so we can look up label/scale/use.
-_REALTIME_TAGS = {
-    "machine_status": "STS",
-    "operation_mode": "OPM",
-    "alarm_status": "ASTS",
-    "oil_temperature": "OT",
-    "temperature_1": "T1",
-    "temperature_2": "T2",
-    "temperature_3": "T3",
-    "temperature_4": "T4",
-    "temperature_5": "T5",
-    "temperature_6": "T6",
-    "temperature_7": "T7",
-}
-
-
-def _scale_realtime_row(row: dict) -> dict:
-    for column, tag_id in _REALTIME_TAGS.items():
-        if column not in row:
-            continue
-        meta = PARAMETER_LABELS.get(tag_id)
-        if meta:
-            row[column] = apply_scale(row[column], meta["scale"])
-    return row
 
 
 @router.get("/realtime/{device_id}")
@@ -208,8 +157,7 @@ def get_device_realtime(device_id: str, user: dict = Depends(require_user)):
         WHERE device_id = ?
         ORDER BY data_time DESC, raw_message_id DESC
     """
-    row = get_single_device_row(sql, device_id, "没有找到该设备的实时数据")
-    return _scale_realtime_row(row)
+    return get_single_device_row(sql, device_id, "没有找到该设备的实时数据")
 
 
 @router.get("/tech/{device_id}")
@@ -267,7 +215,7 @@ def get_device_tech(device_id: str, user: dict = Depends(require_user)):
                         "parameter_id": tag_id,
                         "label": meta["label"],
                         "category": categorize(meta["label"]),
-                        "value": apply_scale(record["parameter_value"], meta["scale"])
+                        "value": record["parameter_value"]
                         if record["parameter_value"] is not None
                         else record["parameter_value_text"],
                         "raw_value": record["parameter_value"],
@@ -295,48 +243,4 @@ def get_device_spc(device_id: str, user: dict = Depends(require_user)):
         WHERE device_id = ?
         ORDER BY data_time DESC, raw_message_id DESC
     """
-    row = get_single_device_row(sql, device_id, "没有找到该设备的 SPC 数据")
-
-    # vw_machine_spc columns are named per-field (e.g. cycle_time); scale
-    # them against the matching raw tag from the label file where we know
-    # the mapping between the SQL column and the raw tag code.
-    for column, tag_id in _SPC_TAGS.items():
-        if column in row:
-            meta = PARAMETER_LABELS.get(tag_id)
-            if meta:
-                row[column] = apply_scale(row[column], meta["scale"])
-    return row
-
-
-# Best-effort mapping from vw_machine_spc's named columns to the raw tag
-# codes in the label file, so we can apply the correct scale factor.
-# Columns not listed here are passed straight through unscaled.
-_SPC_TAGS = {
-    "cycle_number": "CYCN",
-    "cycle_time": "ECYCT",
-    "eject_time": "EEJET",
-    "injection_max_pressure": "EIPM",
-    "injection_end_position": "EIPSE",
-    "injection_time": "EIPT",
-    "injection_start_position": "EISS",
-    "injection_max_speed": "EIVM",
-    "mold_close_time": "EMCT",
-    "mold_open_time": "EMOT",
-    "switch_pressure": "ESIPP",
-    "switch_position": "ESIPS",
-    "switch_time": "ESIPT",
-    "temperature_1": "ET1",
-    "temperature_2": "ET2",
-    "temperature_3": "ET3",
-    "temperature_4": "ET4",
-    "temperature_5": "ET5",
-    "temperature_6": "ET6",
-    "temperature_7": "ET7",
-    "plasticizing_time": "EPLST",
-    "plasticizing_max_pressure": "EPLSPM",
-    "pickup_time": "EFCHT",
-    "low_pressure_time": "EMCLP",
-    "high_pressure_time": "EMCHP",
-    "screw_retract_time": "ESB2T",
-    "oil_temperature": "EOT",
-}
+    return get_single_device_row(sql, device_id, "没有找到该设备的 SPC 数据")
