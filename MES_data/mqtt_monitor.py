@@ -20,7 +20,7 @@ MQTT_CLIENT_ID = "mes_sql_collector"
 # ================= SQL Server 配置 =================
 
 SQL_CONNECTION_STRING = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
+    "DRIVER={ODBC Driver 18 for SQL Server};"
     r"SERVER=localhost\SQLDEVELOP;"
     "DATABASE=MES_MQTT;"
     "Trusted_Connection=yes;"
