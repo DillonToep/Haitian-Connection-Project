@@ -9,8 +9,9 @@ let currentPage = "dashboard";
     // Device currently open in the detail view, and which tab is active there.
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
-
-    const pageTitles = { dashboard: "设备看板", molds: "模具管理" };
+    let activeUtilTab = "overview";
+    const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计", shift: "班次统计" };
+    const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
 
     // SPC page fields: sourced from dbo.vw_machine_spc, scaled server-side
@@ -230,6 +231,14 @@ let currentPage = "dashboard";
         refreshPage();
     }
 
+    function switchUtilTab(tab) {
+        activeUtilTab = tab;
+        document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
+        document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
+        document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
+        refreshPage();
+    }
+
     async function refreshPage() {
         const status=document.getElementById("connection-status");
         try {
@@ -239,6 +248,7 @@ let currentPage = "dashboard";
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
     }
+    
     async function switchPage(page) {
         currentPage=page;
         document.getElementById("device-select").classList.toggle("hidden",page!=="molds");
@@ -281,7 +291,7 @@ let currentPage = "dashboard";
     document.getElementById("search-button").addEventListener("click",()=>{dashboardPage=1;renderDashboard();});
     document.querySelectorAll(".status-filter").forEach(input=>input.addEventListener("change",()=>{dashboardPage=1;renderDashboard();}));
     document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
-
+    document.querySelectorAll(".util-tab-button").forEach(button => button.addEventListener("click", () => switchUtilTab(button.dataset.utilTab)));
     document.getElementById("mold-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/molds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_code:f.get("mold_code"),mold_name:f.get("mold_name"),product_code:f.get("product_code")||null,cavities:Number(f.get("cavities")),remark:f.get("remark")||null})});event.target.reset();event.target.cavities.value=1;await loadMolds();}catch(error){alert(error.message);}});
     document.getElementById("mount-button").addEventListener("click",async()=>{const moldId=Number(document.getElementById("mold-select").value);if(!moldId)return alert("请先选择模具");if(!confirm(`确认将所选模具安装到设备 ${selectedDeviceId()}？`))return;try{await requestJson(`/api/devices/${encodeURIComponent(selectedDeviceId())}/mold`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_id:moldId,remark:null})});await loadMolds();}catch(error){alert(error.message);}});
     document.getElementById("unmount-button").addEventListener("click",async()=>{if(!confirm(`确认卸下设备 ${selectedDeviceId()} 当前模具？`))return;try{await requestJson(`/api/devices/${encodeURIComponent(selectedDeviceId())}/mold`,{method:"DELETE"});await loadMolds();}catch(error){alert(error.message);}});
