@@ -10,6 +10,13 @@
             font-family: Arial, "Microsoft YaHei", sans-serif; font-size: 14px;
             transition: background-color .18s, color .18s;
         }
+        .topbar, .sidebar, .nav-item, .panel, .device-card, .detail-card,
+        .metric, .parameter, .parameter-group, .mold-item, .mold-current,
+        .machine-visual, .device-metrics, .filter-footer, .tech-group-title,
+        select, input, textarea, .page-buttons button, .secondary-button,
+        .tech-action-button, dialog, th, td, .connection {
+            transition: background-color .18s, border-color .18s, color .18s;
+        }
         button, select, input, textarea { font: inherit; }
         button { cursor: pointer; }
         .topbar {
