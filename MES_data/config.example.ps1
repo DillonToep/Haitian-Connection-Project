@@ -11,7 +11,7 @@ $env:MQTT_QOS = "1"
 # Examples: localhost, localhost\SQLEXPRESS, COMPUTER-NAME\MSSQLSERVER
 $env:SQL_SERVER = "localhost\SQLDEVELOP"
 $env:SQL_DATABASE = "MES_MQTT"
-$env:SQL_DRIVER = "ODBC Driver 17 for SQL Server"
+$env:SQL_DRIVER = "ODBC Driver 18 for SQL Server"
 
 # Leave these empty to use the current Windows account.
 $env:SQL_USERNAME = ""

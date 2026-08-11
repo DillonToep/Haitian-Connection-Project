@@ -16,7 +16,7 @@ import secrets
 import pyodbc
 
 # ---- Match these to backend/config.py ----
-SQL_DRIVER = "ODBC Driver 17 for SQL Server"
+SQL_DRIVER = "ODBC Driver 18 for SQL Server"
 SQL_SERVER = r"localhost\SQLDEVELOP"
 SQL_DATABASE = "MES_MQTT"
 SQL_USERNAME = ""   # leave blank to use Trusted_Connection
