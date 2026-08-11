@@ -9,7 +9,7 @@ SESSION_COOKIE = "mes_session"
 SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 310_000
 
-SQL_DRIVER = os.getenv("SQL_DRIVER", "ODBC Driver 17 for SQL Server")
+SQL_DRIVER = os.getenv("SQL_DRIVER", "ODBC Driver 18 for SQL Server")
 SQL_SERVER = os.getenv("SQL_SERVER", r"localhost\SQLDEVELOP")
 SQL_DATABASE = os.getenv("SQL_DATABASE", "MES_MQTT")
 SQL_USERNAME = os.getenv("SQL_USERNAME", "")
