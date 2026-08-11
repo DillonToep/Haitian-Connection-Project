@@ -10,10 +10,11 @@ let currentPage = "dashboard";
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
     let activeUtilTab = "overview";
-    // Categories the user has manually collapsed in the 工艺参数 tab. Categories
-    // not in this set render expanded by default. Kept outside loadTech so the
-    // 2-second auto-refresh doesn't reset what the user opened/closed.
-    let techClosedCategories = new Set();
+    // Categories the user has manually expanded in the 工艺参数 tab. Categories
+    // not in this set render collapsed by default (all-closed on first view of
+    // a device). Kept outside loadTech so the 2-second auto-refresh doesn't
+    // reset what the user opened/closed.
+    let techOpenCategories = new Set();
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计", shift: "班次统计" };
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
@@ -212,6 +213,11 @@ let currentPage = "dashboard";
     // category also picks which unit (if any) is appended to the value.
     // Within each category, numbered variants of the same parameter are
     // grouped onto a single row (see groupTechParameters above).
+    //
+    // Categories render collapsed by default when a device is first opened
+    // (techOpenCategories starts empty); the "展开全部" / "收起全部" buttons
+    // and each section's own toggle update techOpenCategories so state
+    // survives the 2-second auto-refresh.
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
@@ -234,7 +240,7 @@ let currentPage = "dashboard";
                 const chips=sorted.map(p=>`<span class="parameter-chip"><span class="chip-index">${p.number??""}</span><span class="chip-value">${showValue(p.value,unit)}</span></span>`).join("");
                 return `<div class="parameter-group"><span class="parameter-group-label">${escapeHtml(group.key)}</span><span class="parameter-group-values">${chips}</span></div>`;
             }).join("");
-            const isOpen=!techClosedCategories.has(category);
+            const isOpen=techOpenCategories.has(category);
             return `<details class="tech-group" data-category="${escapeHtml(category)}"${isOpen?" open":""}>
                 <summary class="tech-group-title">
                     <span class="tech-group-title-text">${escapeHtml(category)}</span>
@@ -243,12 +249,24 @@ let currentPage = "dashboard";
                 <div class="parameter-grid">${rows}</div>
             </details>`;
         }).join("");
-        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="muted">参数时间：${formatTime(result.data_time)}</div></div><div class="tech-groups-grid">${sections||'<div class="empty">暂无工艺参数</div>'}</div></article>`;
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="tech-header-actions"><button type="button" class="tech-action-button" id="tech-expand-all">全部展开</button><button type="button" class="tech-action-button" id="tech-collapse-all">全部收起</button><span class="muted">参数时间：${formatTime(result.data_time)}</span></div></div><div class="tech-groups-grid">${sections||'<div class="empty">暂无工艺参数</div>'}</div></article>`;
         document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
             details.addEventListener("toggle",()=>{
                 const category=details.dataset.category;
-                if(details.open) techClosedCategories.delete(category);
-                else techClosedCategories.add(category);
+                if(details.open) techOpenCategories.add(category);
+                else techOpenCategories.delete(category);
+            });
+        });
+        document.getElementById("tech-expand-all")?.addEventListener("click",()=>{
+            document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
+                details.open=true;
+                techOpenCategories.add(details.dataset.category);
+            });
+        });
+        document.getElementById("tech-collapse-all")?.addEventListener("click",()=>{
+            document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
+                details.open=false;
+                techOpenCategories.delete(details.dataset.category);
             });
         });
     }
@@ -280,6 +298,7 @@ let currentPage = "dashboard";
     function openDeviceDetail(deviceId) {
         detailDeviceId=deviceId;
         activeDetailTab="realtime";
+        techOpenCategories=new Set();
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab==="realtime"));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="detail-tab-realtime"));
         switchPage("device-detail");
