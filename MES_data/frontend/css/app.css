@@ -117,10 +117,19 @@
         .metric.primary { border-color: #cfe8db; background: #eef8f1; }
         .metric-label { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
         .metric-value { font-size: 19px; font-weight: 700; }
-        .parameter-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: 8px; }
-        .parameter { display: flex; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
+        .parameter-grid { display: flex; flex-direction: column; gap: 8px; }
+        .parameter { display: flex; justify-content: space-between; align-items: baseline; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
         .parameter span:first-child { min-width: 58px; color: var(--muted); }
-        .parameter span:last-child { font-weight: 650; }
+        .parameter span:last-child { margin-left: auto; font-weight: 650; text-align: right; }
+        /* Grouped row for numbered variants of the same parameter, e.g.
+           中子1进压力..中子4进压力 collapse into one 中子进压力 row with each
+           numbered value shown as a chip, right-aligned as a unified block. */
+        .parameter-group { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; flex-wrap: wrap; }
+        .parameter-group-label { flex: 0 0 auto; color: var(--muted); }
+        .parameter-group-values { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 16px; margin-left: auto; }
+        .parameter-chip { display: flex; align-items: baseline; gap: 6px; }
+        .chip-index { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; padding: 0 4px; border-radius: 9px; background: var(--line); color: var(--muted); font-size: 11px; font-weight: 700; }
+        .chip-value { font-weight: 650; }
         .tech-group { margin-top: 18px; }
         .tech-group:first-of-type { margin-top: 0; }
         .tech-group-title {
@@ -209,7 +218,7 @@
         html[data-theme="dark"] .info-label { color: #808a97; }
         html[data-theme="dark"] .device-metrics { background: #20262f; }
         html[data-theme="dark"] .page-buttons button { border-color: #313a46; background: #1a1f27; color: var(--text); }
-        html[data-theme="dark"] .metric, html[data-theme="dark"] .parameter { border-color: #262c35; background: #20262f; }
+        html[data-theme="dark"] .metric, html[data-theme="dark"] .parameter, html[data-theme="dark"] .parameter-group { border-color: #262c35; background: #20262f; }
         html[data-theme="dark"] .metric.primary { border-color: #1f4a35; background: #142b20; }
         html[data-theme="dark"] .tech-group-title { color: #d3d8de; border-bottom-color: #262c35; }
         html[data-theme="dark"] .mold-current { background: #142b20; }
