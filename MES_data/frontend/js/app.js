@@ -364,10 +364,10 @@ function renderUptimeTrendChart(buckets) {
     }).join("");
     const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
     const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
-    const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+    const dots = points.map((p,i)=>`<circle class="uptime-trend-dot" style="animation-delay:${1.05+i*0.03}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
     return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
         ${gridLines}
-        <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
+        <path class="uptime-trend-line" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
         ${dots}
         ${xLabels}
     </svg>`;
@@ -406,7 +406,7 @@ async function loadUtilizationDaily(id) {
         <article class="detail-card">
             <div class="detail-title">每日明细</div>
             <div class="uptime-bucket-list">${data.buckets.slice().reverse().map(b=>`
-                <div class="uptime-bucket-row">
+                    <div class="uptime-bucket-row" style="animation-delay:${i*35}ms">
                     <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
                     ${renderUptimeBar(b)}
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
@@ -424,7 +424,7 @@ async function loadUtilizationMonthly(id) {
         <article class="detail-card">
             <div class="detail-title">每月明细</div>
             <div class="uptime-bucket-list">${data.buckets.slice().reverse().map(b=>`
-                <div class="uptime-bucket-row">
+                <div class="uptime-bucket-row" style="animation-delay:${i*35}ms">
                     <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
                     ${renderUptimeBar(b)}
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
