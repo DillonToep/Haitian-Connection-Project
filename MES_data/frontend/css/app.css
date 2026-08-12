@@ -211,11 +211,18 @@
         .uptime-bar-segment.standby { animation-delay: .08s; }
         .uptime-bar-segment.off { animation-delay: .16s; }
 
-        .uptime-trend-line {
-            stroke-dasharray: 1000;
-            stroke-dashoffset: 1000;
+        /* Reveals the whole chart (grid, line, dots) left-to-right on load.
+           clip-path: inset() is a simple shape the browser can accelerate
+           directly on the compositor -- unlike a url()-referenced
+           <clipPath> or animated stroke-dashoffset, both of which force a
+           software repaint of the geometry every frame. That per-frame
+           repaint was the stutter; a url()-referenced <clipPath> also has
+           inconsistent transform-origin support across browsers, which is
+           what caused the reveal to start from the wrong end. */
+        .uptime-trend-svg.uptime-trend-animate {
+            clip-path: inset(0 100% 0 0);
             animation: uptime-line-draw 4.5s cubic-bezier(.4,0,.2,1) forwards;
-            will-change: stroke-dashoffset;
+            will-change: clip-path;
         }
         .uptime-trend-dot {
             opacity: 0;
@@ -234,15 +241,18 @@
             to { transform: scaleX(1); }
         }
         @keyframes uptime-line-draw {
-            to { stroke-dashoffset: 0; }
+            to { clip-path: inset(0 0 0 0); }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .uptime-bar-segment, .uptime-trend-line, .uptime-trend-dot {
+            .uptime-bar-segment, .uptime-trend-dot {
                 animation: none !important;
                 opacity: 1 !important;
                 transform: none !important;
-                stroke-dashoffset: 0 !important;
+            }
+            .uptime-trend-svg.uptime-trend-animate {
+                animation: none !important;
+                clip-path: none !important;
             }
         }
 

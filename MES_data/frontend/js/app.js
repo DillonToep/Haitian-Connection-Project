@@ -405,7 +405,7 @@ function bezierTimeForProgress(targetY, p1x, p1y, p2x, p2y, iterations = 24) {
     return 3 * (1 - u) ** 2 * u * p1x + 3 * (1 - u) * u ** 2 * p2x + u ** 3;
 }
 
-function renderUptimeTrendChart(buckets) {
+    function renderUptimeTrendChart(buckets) {
         if(!buckets.length) return '<div class="empty">暂无数据</div>';
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
@@ -417,10 +417,8 @@ function renderUptimeTrendChart(buckets) {
         });
         const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
-        // Must match .uptime-trend-reveal's animation-duration and easing in app.css.
         const LINE_DURATION_S = 4.5;
         const EASE = [0.4, 0, 0.2, 1];
-        const clipId = `uptime-line-clip-${uptimeChartIdCounter++}`;
 
         let cumulative = 0;
         const distances = points.map((p,i)=>{
@@ -443,12 +441,9 @@ function renderUptimeTrendChart(buckets) {
             const delay = (timeFraction * LINE_DURATION_S).toFixed(3);
             return `<circle class="uptime-trend-dot" style="animation-delay:${delay}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`;
         }).join("");
-        // The line is revealed by animating a clip-path rect's scaleX (compositor-only,
-        // no per-frame stroke repaint) instead of animating stroke-dashoffset directly.
-        return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
-            <defs><clipPath id="${clipId}"><rect class="uptime-trend-reveal" x="${padL}" y="0" width="${innerW}" height="${height}"/></clipPath></defs>
+        return `<svg class="uptime-trend-svg uptime-trend-animate" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
             ${gridLines}
-            <path class="uptime-trend-line" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2" clip-path="url(#${clipId})"/>
+            <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
             ${dots}
             ${xLabels}
         </svg>`;
