@@ -6,6 +6,8 @@ from datetime import datetime
 import paho.mqtt.client as mqtt
 import pyodbc
 
+from backend.parameter_labels import PARAMETER_LABELS
+
 
 # ================= MQTT 配置 =================
 
@@ -34,6 +36,125 @@ logging.basicConfig(
 )
 
 sql_connection = None
+
+
+# ================= 工艺参数变更记录 =================
+#
+# All raw tag codes that PARAMETER_LABELS knows about are treated as
+# 工艺参数 (tech parameters) for changelog purposes -- this is the same
+# dictionary backend/routers/devices.py uses to label the 工艺参数 tab, so
+# "a tag the tech tab would show" and "a tag we track for changes" stay in
+# sync automatically.
+CHANGELOG_TAGS = set(PARAMETER_LABELS.keys())
+
+# Cache of the last known value per (device_id -> {parameter_id: value}).
+# It only lives in this process's memory: on a fresh start there is nothing
+# to compare the first message against yet, so the first value seen for
+# each tag after a restart is cached but not reported as a "change". This
+# avoids manufacturing a false changelog entry every time the collector
+# restarts.
+_last_values: dict[str, dict[str, str]] = {}
+
+# Tag whose presence marks a message as an SPC / cycle-summary record
+# (CYCN = "模数", the cycle counter). When such a message arrives we treat
+# it as "an SPC was just created" and claim every not-yet-claimed changelog
+# row for that device, since those changes happened during the cycle that
+# just finished.
+SPC_MARKER_TAG = "CYCN"
+
+
+def _stringify(value):
+    """Normalize a raw tag value to a string for comparison/storage.
+    Returns None for values we can't meaningfully diff (missing, nested
+    objects/arrays)."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return None
+    return str(value)
+
+
+def _detect_parameter_changes(device_id, data):
+    """Compare incoming tag values in `data` against the last known values
+    for this device. Returns a list of (parameter_id, previous_value,
+    new_value) tuples for every 工艺参数 tag whose value actually changed.
+    """
+    if not device_id or not isinstance(data, dict):
+        return []
+
+    device_cache = _last_values.setdefault(device_id, {})
+    changes = []
+
+    for tag, raw_value in data.items():
+        if tag not in CHANGELOG_TAGS:
+            continue
+
+        new_value = _stringify(raw_value)
+        if new_value is None:
+            continue
+
+        previous_value = device_cache.get(tag)
+        if previous_value is None:
+            # First time we've seen this tag for this device this run --
+            # nothing to compare against, so just seed the cache.
+            device_cache[tag] = new_value
+            continue
+
+        if previous_value != new_value:
+            changes.append((tag, previous_value, new_value))
+            device_cache[tag] = new_value
+
+    return changes
+
+
+def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
+    """Insert one dbo.tech_parameter_changelog row per detected change,
+    within the caller's existing transaction (committed together with the
+    raw message insert)."""
+    if not changes:
+        return
+
+    sql = """
+        INSERT INTO dbo.tech_parameter_changelog
+        (
+            device_id,
+            parameter_id,
+            previous_value,
+            new_value,
+            data_time,
+            raw_message_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+    """
+
+    for parameter_id, previous_value, new_value in changes:
+        cursor.execute(
+            sql,
+            device_id,
+            parameter_id,
+            previous_value,
+            new_value,
+            data_time,
+            raw_message_id
+        )
+
+
+def _assign_pending_changelogs_to_spc(cursor, device_id, spc_message_id):
+    """Claim every changelog row for this device that hasn't been
+    associated with an SPC yet, now that one exists. Individual changelog
+    rows are never merged or overwritten -- this only fills in
+    spc_message_id, so the full history of changes leading up to the SPC
+    is preserved (see README/task requirements: "Do not overwrite previous
+    changelog entries")."""
+    cursor.execute(
+        """
+        UPDATE dbo.tech_parameter_changelog
+        SET spc_message_id = ?
+        WHERE device_id = ? AND spc_message_id IS NULL
+        """,
+        spc_message_id,
+        device_id
+    )
 
 
 def parse_time(value):
@@ -72,7 +193,7 @@ def close_sql():
 
 
 def insert_message(message, payload, raw_payload):
-    """将一条 MQTT 消息写入 SQL Server。"""
+    """将一条 MQTT 消息写入 SQL Server，并在同一事务中检测/记录 工艺参数 变更。"""
     global sql_connection
 
     data = payload.get("Data")
@@ -82,6 +203,9 @@ def insert_message(message, payload, raw_payload):
         ensure_ascii=False,
         separators=(",", ":")
     ) if data is not None else None
+
+    device_id = payload.get("devId")
+    data_time = parse_time(payload.get("time"))
 
     sql = """
         INSERT INTO dbo.mqtt_messages
@@ -110,11 +234,11 @@ def insert_message(message, payload, raw_payload):
         bool(message.retain),
         bool(message.dup),
         payload.get("clientId"),
-        payload.get("devId"),
+        device_id,
         payload.get("topic"),
         parse_time(payload.get("sendTime")),
         payload.get("sendStamp"),
-        parse_time(payload.get("time")),
+        data_time,
         payload.get("timestamp"),
         data_json,
         raw_payload
@@ -128,9 +252,19 @@ def insert_message(message, payload, raw_payload):
 
             cursor = sql_connection.cursor()
             row = cursor.execute(sql, values).fetchone()
+            record_id = row[0]
+
+            # ---- 工艺参数变更记录：在同一事务内完成，不干扰原有写入流程 ----
+            if device_id:
+                changes = _detect_parameter_changes(device_id, data)
+                _insert_changelog_rows(cursor, device_id, changes, record_id, data_time)
+
+                if isinstance(data, dict) and SPC_MARKER_TAG in data:
+                    _assign_pending_changelogs_to_spc(cursor, device_id, record_id)
+
             sql_connection.commit()
 
-            return row[0]
+            return record_id
 
         except pyodbc.Error:
             close_sql()

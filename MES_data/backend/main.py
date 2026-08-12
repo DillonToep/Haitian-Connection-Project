@@ -7,14 +7,15 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
 from .database import get_connection
-from .routers import auth, devices, molds
+from .routers import auth, changelog, devices, molds
 from .security import find_session_user
 
 
-app = FastAPI(title="注塑机 MES API", version="2.1.0")
+app = FastAPI(title="注塑机 MES API", version="2.2.0")
 app.include_router(auth.router)
 app.include_router(devices.router)
 app.include_router(molds.router)
+app.include_router(changelog.router)
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 

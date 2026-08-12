@@ -165,6 +165,27 @@
         .tech-group-count { color: var(--muted); font-size: 12px; font-weight: 600; }
         .chevron { display: inline-block; color: var(--muted); font-size: 11px; transition: transform .15s ease; }
         details.tech-group[open] .chevron { transform: rotate(90deg); }
+        /* 工艺参数 changelog: the row/chip for the parameter a changelog
+           entry points at, and the summary banner shown above the card
+           when the 工艺参数 tab was opened from a changelog click. */
+        .parameter.parameter-changed {
+            border: 1px solid var(--red); background: #fdecec;
+            box-shadow: 0 0 0 2px rgba(239,68,68,.15);
+        }
+        .parameter.parameter-changed span:last-child { color: var(--red); }
+        .parameter-chip.parameter-changed {
+            padding: 3px 8px; border: 1px solid var(--red); border-radius: 8px; background: #fdecec;
+        }
+        .parameter-chip.parameter-changed .chip-value { color: var(--red); }
+        .changelog-banner {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+            padding: 10px 14px; border: 1px solid #f5c2c2; border-radius: 4px;
+            background: #fdecec; color: #7a2020; font-size: 13.5px;
+        }
+        .changelog-banner-new { color: var(--red); }
+        .changelog-row { cursor: pointer; }
+        .changelog-row:hover { background: #f0f3f7; }
+        .changelog-new-value { color: var(--red); font-weight: 650; }
         .mold-layout { display: grid; grid-template-columns: minmax(300px,.8fr) minmax(440px,1.2fr); gap: 14px; }
         .mold-current { margin-top: 12px; padding: 16px; background: #eef8f1; }
         .mold-code { margin: 7px 0 4px; color: #2f7a4f; font-size: 24px; font-weight: 800; }
@@ -263,3 +284,11 @@
         html[data-theme="dark"] .tab-button { color: #8b95a3; }
         html[data-theme="dark"] .tab-button:hover { color: #d3d8de; }
         html[data-theme="dark"] .tab-button.active { color: #57caa0; border-bottom-color: #57caa0; }
+        html[data-theme="dark"] .parameter.parameter-changed { background: #3a1c1c; border-color: #f87171; box-shadow: 0 0 0 2px rgba(248,113,113,.2); }
+        html[data-theme="dark"] .parameter.parameter-changed span:last-child { color: #f87171; }
+        html[data-theme="dark"] .parameter-chip.parameter-changed { background: #3a1c1c; border-color: #f87171; }
+        html[data-theme="dark"] .parameter-chip.parameter-changed .chip-value { color: #f87171; }
+        html[data-theme="dark"] .changelog-banner { background: #3a1c1c; border-color: #7a2e2e; color: #f3c9c9; }
+        html[data-theme="dark"] .changelog-banner-new { color: #f87171; }
+        html[data-theme="dark"] .changelog-row:hover { background: #20262f; }
+        html[data-theme="dark"] .changelog-new-value { color: #f87171; }

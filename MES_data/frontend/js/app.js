@@ -15,8 +15,14 @@ let currentPage = "dashboard";
     // a device). Kept outside loadTech so the 2-second auto-refresh doesn't
     // reset what the user opened/closed.
     let techOpenCategories = new Set();
+    // Set when the device detail view was opened from a changelog entry:
+    // { parameter_id, previous_value, new_value }. loadTech() uses this to
+    // force-open the relevant category and mark the changed row in red.
+    // Cleared whenever openDeviceDetail() is called without a highlight
+    // (e.g. clicking a device card from the dashboard).
+    let highlightParameter = null;
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计", shift: "班次统计" };
-    const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表" };
+    const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
 
     // Units shown next to each 工艺参数 value, keyed by the same category
@@ -218,6 +224,11 @@ let currentPage = "dashboard";
     // (techOpenCategories starts empty); the "展开全部" / "收起全部" buttons
     // and each section's own toggle update techOpenCategories so state
     // survives the 2-second auto-refresh.
+    //
+    // When this tab is opened from a changelog entry (see openChangelogDetail),
+    // highlightParameter names the changed tag: its category is force-opened
+    // and its row gets the .parameter-changed style, with a banner showing
+    // the previous -> new value at the top of the card.
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
@@ -225,6 +236,13 @@ let currentPage = "dashboard";
             if(!groups.has(p.category)) groups.set(p.category,[]);
             groups.get(p.category).push(p);
         });
+
+        let highlightMatch=null;
+        if(highlightParameter && highlightParameter.parameter_id){
+            highlightMatch=result.parameters.find(p=>p.parameter_id===highlightParameter.parameter_id)||null;
+            if(highlightMatch) techOpenCategories.add(highlightMatch.category);
+        }
+
         const categoryOrder=["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数","未知参数"];
         const orderedCategories=[...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
         function renderCategory(category) {
@@ -234,10 +252,14 @@ let currentPage = "dashboard";
             const rows=paramGroups.map(group=>{
                 if(group.items.length===1){
                     const p=group.items[0];
-                    return `<div class="parameter"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value,unit)}</span></div>`;
+                    const changed=highlightParameter && p.parameter_id===highlightParameter.parameter_id;
+                    return `<div class="parameter${changed?" parameter-changed":""}" data-parameter="${escapeHtml(p.parameter_id)}"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value,unit)}</span></div>`;
                 }
                 const sorted=[...group.items].sort((a,b)=>(a.number??0)-(b.number??0));
-                const chips=sorted.map(p=>`<span class="parameter-chip"><span class="chip-index">${p.number??""}</span><span class="chip-value">${showValue(p.value,unit)}</span></span>`).join("");
+                const chips=sorted.map(p=>{
+                    const changed=highlightParameter && p.parameter_id===highlightParameter.parameter_id;
+                    return `<span class="parameter-chip${changed?" parameter-changed":""}" data-parameter="${escapeHtml(p.parameter_id)}"><span class="chip-index">${p.number??""}</span><span class="chip-value">${showValue(p.value,unit)}</span></span>`;
+                }).join("");
                 return `<div class="parameter-group"><span class="parameter-group-label">${escapeHtml(group.key)}</span><span class="parameter-group-values">${chips}</span></div>`;
             }).join("");
             const isOpen=techOpenCategories.has(category);
@@ -258,7 +280,8 @@ let currentPage = "dashboard";
         const leftHtml=leftCategories.map(renderCategory).join("");
         const rightHtml=rightCategories.map(renderCategory).join("");
         const hasSections=orderedCategories.length>0;
-        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">工艺参数</div><div class="tech-header-actions"><button type="button" class="tech-action-button" id="tech-toggle-all">全部展开</button><span class="muted">参数时间：${formatTime(result.data_time)}</span></div></div><div class="tech-groups-grid">${hasSections?`<div class="tech-groups-column">${leftHtml}</div><div class="tech-groups-column">${rightHtml}</div>`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
+        const highlightBanner=(highlightParameter && highlightParameter.parameter_id)?`<div class="changelog-banner">变更提示：<strong>${escapeHtml(highlightMatch?highlightMatch.label:highlightParameter.parameter_id)}</strong> ${showValue(highlightParameter.previous_value)} → <strong class="changelog-banner-new">${showValue(highlightParameter.new_value)}</strong></div>`:"";
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card">${highlightBanner}<div class="detail-header"><div class="detail-title">工艺参数</div><div class="tech-header-actions"><button type="button" class="tech-action-button" id="tech-toggle-all">全部展开</button><span class="muted">参数时间：${formatTime(result.data_time)}</span></div></div><div class="tech-groups-grid">${hasSections?`<div class="tech-groups-column">${leftHtml}</div><div class="tech-groups-column">${rightHtml}</div>`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
 
         function updateToggleAllLabel() {
             const button=document.getElementById("tech-toggle-all");
@@ -288,6 +311,11 @@ let currentPage = "dashboard";
             updateToggleAllLabel();
         });
         updateToggleAllLabel();
+
+        if(highlightParameter && highlightParameter.parameter_id){
+            const target=document.querySelector(`#detail-tab-tech [data-parameter="${CSS.escape(highlightParameter.parameter_id)}"]`);
+            target?.scrollIntoView({block:"center",behavior:"smooth"});
+        }
     }
     async function loadSpc(id) {
         const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`),fields=Object.entries(spcFields).filter(([name])=>Object.hasOwn(result,name));
@@ -306,6 +334,27 @@ let currentPage = "dashboard";
         document.getElementById("mold-history").innerHTML=history.length?`<table><thead><tr><th>模具</th><th>装模时间</th><th>卸模时间</th><th>操作人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(h.mold_code)}</td><td>${formatTime(h.mounted_at)}</td><td>${formatTime(h.unmounted_at)}</td><td>${showValue(h.operator_username)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无装模履历</div>';
     }
 
+    // 参数变更记录 (工艺参数 changelog) tab: lists every detected change,
+    // newest first. Clicking a row opens that device's 工艺参数 tab with the
+    // changed parameter expanded and highlighted (see openChangelogDetail).
+    async function loadChangelog() {
+        const rows=await requestJson("/api/changelog");
+        document.getElementById("changelog-summary").textContent=`共 ${rows.length} 条记录`;
+        const table=document.getElementById("changelog-table");
+        table.innerHTML=rows.length?`<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无变更记录</div>';
+        table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
+    }
+
+    async function openChangelogDetail(id) {
+        try {
+            const entry=await requestJson(`/api/changelog/${encodeURIComponent(id)}`);
+            openDeviceDetail(entry.device_id,{
+                tab:"tech",
+                highlight:{parameter_id:entry.parameter_id,previous_value:entry.previous_value,new_value:entry.new_value}
+            });
+        } catch(error){ alert(error.message); }
+    }
+
     // Loads whichever tab is currently active inside the device detail view.
     async function loadActiveDetailTab() {
         if(!detailDeviceId) return;
@@ -314,17 +363,23 @@ let currentPage = "dashboard";
         if(activeDetailTab==="spc") await loadSpc(detailDeviceId);
     }
 
-    function openDeviceDetail(deviceId) {
+    // options.tab: which detail tab to open on ("realtime" by default).
+    // options.highlight: {parameter_id, previous_value, new_value} to flag
+    // in the 工艺参数 tab -- set when arriving from a changelog entry, and
+    // cleared automatically otherwise (e.g. clicking a device card).
+    function openDeviceDetail(deviceId, options={}) {
         detailDeviceId=deviceId;
-        activeDetailTab="realtime";
+        activeDetailTab=options.tab||"realtime";
         techOpenCategories=new Set();
-        document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab==="realtime"));
-        document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="detail-tab-realtime"));
+        highlightParameter=options.highlight||null;
+        document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===activeDetailTab));
+        document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
         switchPage("device-detail");
     }
 
     function switchDetailTab(tab) {
         activeDetailTab=tab;
+        if(tab!=="tech") highlightParameter=null;
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===tab));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
         refreshPage();
@@ -344,6 +399,7 @@ let currentPage = "dashboard";
             if(currentPage==="dashboard")await loadDashboard();
             if(currentPage==="device-detail")await loadActiveDetailTab();
             if(currentPage==="molds")await loadMolds();
+            if(currentPage==="changelog")await loadChangelog();
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
     }
