@@ -396,7 +396,7 @@ let currentPage = "dashboard";
 
 function renderUptimeTrendChart(buckets) {
     if(!buckets.length) return '<div class="empty">暂无数据</div>';
-    const width=760, height=220, padL=36, padR=12, padT=16, padB=28;
+    const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
     const innerW=width-padL-padR, innerH=height-padT-padB;
     const stepX = buckets.length>1 ? innerW/(buckets.length-1) : 0;
     const points = buckets.map((b,i)=>{
@@ -411,7 +411,7 @@ function renderUptimeTrendChart(buckets) {
     }).join("");
     const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
     const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
-    const dots = points.map((p,i)=>`<circle class="uptime-trend-dot" style="animation-delay:${1.05+i*0.03}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+    const dots = points.map(p=>`<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
     return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
         ${gridLines}
         <path class="uptime-trend-line" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
