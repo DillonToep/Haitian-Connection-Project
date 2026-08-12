@@ -214,12 +214,16 @@
         .uptime-trend-line {
             stroke-dasharray: 1000;
             stroke-dashoffset: 1000;
-            animation: uptime-line-draw 1.8s cubic-bezier(.4,0,.2,1) forwards;
+            animation: uptime-line-draw 3.2s cubic-bezier(.4,0,.2,1) forwards;
         }
         .uptime-trend-dot {
-            transform-origin: center;
+            opacity: 0;
+            animation: uptime-dot-in .12s linear forwards;
         }
 
+        @keyframes uptime-dot-in {
+            to { opacity: 1; }
+        }
         @keyframes uptime-fade-up {
             from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
@@ -233,7 +237,7 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .uptime-bar-segment, .uptime-trend-line {
+            .uptime-bar-segment, .uptime-trend-line, .uptime-trend-dot {
                 animation: none !important;
                 opacity: 1 !important;
                 transform: none !important;

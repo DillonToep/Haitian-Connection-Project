@@ -405,13 +405,26 @@ function renderUptimeTrendChart(buckets) {
         return {x,y,b};
     });
     const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    const LINE_DURATION_S = 3.2;
+    let cumulative = 0;
+    const distances = points.map((p,i)=>{
+        if(i===0) return 0;
+        const prev = points[i-1];
+        cumulative += Math.hypot(p.x-prev.x, p.y-prev.y);
+        return cumulative;
+    });
+    const totalLength = Math.max(cumulative, 1);
+
     const gridLines=[0,25,50,75,100].map(v=>{
         const y=padT+innerH-(v/100)*innerH;
         return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
     }).join("");
     const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
     const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
-    const dots = points.map(p=>`<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+    const dots = points.map((p,i)=>{
+        const delay = (distances[i]/totalLength*LINE_DURATION_S).toFixed(2);
+        return `<circle class="uptime-trend-dot" style="animation-delay:${delay}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`;
+    }).join("");
     return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
         ${gridLines}
         <path class="uptime-trend-line" pathLength="1000" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
