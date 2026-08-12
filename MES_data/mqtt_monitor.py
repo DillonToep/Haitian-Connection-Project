@@ -1,3 +1,4 @@
+print("SCRIPT VERSION MARKER XYZ123")
 import json
 import logging
 import os
