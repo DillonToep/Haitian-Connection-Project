@@ -16,7 +16,7 @@ MQTT_PORT = 1883
 MQTT_USERNAME = "mqttadmin"
 MQTT_PASSWORD = "Mqttadmin@123"
 MQTT_SUB_TOPIC = "#"
-MQTT_CLIENT_ID = "mes_sql_collector"
+MQTT_CLIENT_ID = "mes_sql_collector_test"
 
 
 # ================= SQL Server 配置 =================
@@ -366,7 +366,7 @@ def main():
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
         client_id=MQTT_CLIENT_ID,
-        clean_session=False
+        clean_session=True
     )
 
     client.username_pw_set(
