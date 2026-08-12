@@ -194,7 +194,7 @@
         .uptime-legend .dot.active { background: var(--green); }
         .uptime-legend .dot.standby { background: var(--orange); }
         .uptime-legend .dot.off { background: var(--gray); }
-        .uptime-trend-svg { width: 100%; height: 300px; }
+        .uptime-trend-svg { width: 100%; height: 300px; contain: paint; }
         .uptime-bucket-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
         .uptime-bucket-row { display: grid; grid-template-columns: 60px 1fr 50px; align-items: center; gap: 12px; }
         .uptime-bucket-label { color: var(--muted); font-size: 12.5px; }
@@ -214,7 +214,8 @@
         .uptime-trend-line {
             stroke-dasharray: 1000;
             stroke-dashoffset: 1000;
-            animation: uptime-line-draw 3.2s cubic-bezier(.4,0,.2,1) forwards;
+            animation: uptime-line-draw 4.5s cubic-bezier(.4,0,.2,1) forwards;
+            will-change: stroke-dashoffset;
         }
         .uptime-trend-dot {
             opacity: 0;
