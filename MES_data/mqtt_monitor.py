@@ -45,6 +45,16 @@ sql_connection = None
 # dictionary backend/routers/devices.py uses to label the 工艺参数 tab, so
 # "a tag the tech tab would show" and "a tag we track for changes" stay in
 # sync automatically.
+#
+# IMPORTANT: PARAMETER_LABELS also contains tags that belong to the
+# realtime (T1-T7, OT, STS, ASTS, OPM) and spc (CYCN, ECYCT, ET1-ET7,
+# EIPM, ...) namespaces, because it doubles as the label source for those
+# views too. Those tags legitimately change on every realtime tick (~10s)
+# or every cycle (~60s) -- that's normal telemetry, not someone editing a
+# 工艺参数/recipe setting. Change-detection is therefore only run against
+# messages whose topic is "tech" (see insert_message below), mirroring
+# vw_machine_tech's own "WHERE data_type = N'tech'" filter, so this tag
+# set is never compared against realtime/spc payloads.
 CHANGELOG_TAGS = set(PARAMETER_LABELS.keys())
 
 # Cache of the last known value per (device_id -> {parameter_id: value}).
@@ -55,12 +65,12 @@ CHANGELOG_TAGS = set(PARAMETER_LABELS.keys())
 # restarts.
 _last_values: dict[str, dict[str, str]] = {}
 
-# Tag whose presence marks a message as an SPC / cycle-summary record
-# (CYCN = "模数", the cycle counter). When such a message arrives we treat
-# it as "an SPC was just created" and claim every not-yet-claimed changelog
-# row for that device, since those changes happened during the cycle that
-# just finished.
-SPC_MARKER_TAG = "CYCN"
+# The gateway payload's own "topic" field (stored as mqtt_messages.data_type)
+# already flags what kind of message this is -- "tech", "spc", "realtime",
+# "wm", "opMode", "opLog". Use those values directly rather than sniffing
+# for a specific tag (e.g. CYCN) inside Data.
+TECH_MESSAGE_TOPIC = "tech"
+SPC_MESSAGE_TOPIC = "spc"
 
 
 def _stringify(value):
@@ -206,6 +216,7 @@ def insert_message(message, payload, raw_payload):
 
     device_id = payload.get("devId")
     data_time = parse_time(payload.get("time"))
+    topic = payload.get("topic")
 
     sql = """
         INSERT INTO dbo.mqtt_messages
@@ -255,12 +266,20 @@ def insert_message(message, payload, raw_payload):
             record_id = row[0]
 
             # ---- 工艺参数变更记录：在同一事务内完成，不干扰原有写入流程 ----
-            if device_id:
+            # Only "tech" messages carry 工艺参数/recipe settings -- realtime
+            # and spc messages reuse some of the same tag names (T1, CYCN,
+            # ET1, ...) for fast-changing telemetry that would otherwise
+            # flood the changelog with false "changes" every few seconds.
+            if device_id and topic == TECH_MESSAGE_TOPIC:
                 changes = _detect_parameter_changes(device_id, data)
                 _insert_changelog_rows(cursor, device_id, changes, record_id, data_time)
 
-                if isinstance(data, dict) and SPC_MARKER_TAG in data:
-                    _assign_pending_changelogs_to_spc(cursor, device_id, record_id)
+            # A message explicitly flagged as "spc" is a completed
+            # cycle-summary record -- claim every not-yet-claimed changelog
+            # row for this device into it, since those changes happened
+            # during the cycle that just finished.
+            if device_id and topic == SPC_MESSAGE_TOPIC:
+                _assign_pending_changelogs_to_spc(cursor, device_id, record_id)
 
             sql_connection.commit()
 
