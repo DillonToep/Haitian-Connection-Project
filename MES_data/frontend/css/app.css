@@ -199,6 +199,9 @@
         .uptime-bucket-row { display: grid; grid-template-columns: 60px 1fr 50px; align-items: center; gap: 12px; }
         .uptime-bucket-label { color: var(--muted); font-size: 12.5px; }
         .uptime-bucket-pct { text-align: right; font-weight: 700; }
+        .uptime-bucket-row { cursor: pointer; }
+        .uptime-bucket-row:hover { background: #f0f3f7; }
+        .uptime-bucket-row { animation: uptime-fade-up .4s ease both; }
         .uptime-summary-card { animation: uptime-fade-up .5s ease both; }
         .uptime-summary-card:nth-child(2) { animation-delay: .08s; }
         .uptime-summary-card:nth-child(3) { animation-delay: .16s; }
@@ -221,8 +224,6 @@
             transform-origin: center;
             animation: uptime-dot-in .4s cubic-bezier(.34,1.56,.64,1) both;
         }
-
-        .uptime-bucket-row { animation: uptime-fade-up .4s ease both; }
 
         @keyframes uptime-fade-up {
             from { opacity: 0; transform: translateY(6px); }
@@ -250,7 +251,19 @@
             }
         }
 
-        
+        .day-detail-dialog { width: min(640px, calc(100% - 28px)); padding: 22px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+        .day-detail-dialog::backdrop { background: rgba(15,23,42,.5); }
+        .day-detail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .day-timeline { position: relative; height: 48px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #f4f6f8; }
+        .day-timeline-segment { position: absolute; top: 0; bottom: 0; }
+        .day-timeline-segment.production { background: var(--green); }
+        .day-timeline-segment.waiting { background: var(--orange); }
+        .day-timeline-segment.offline { background: var(--gray); }
+        .day-timeline-hours { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--muted); }
+        .day-detail-legend { display: flex; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+        .day-detail-segments { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
+        .day-detail-segment-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); font-size: 12.5px; }
+
         .changelog-banner-new { color: var(--red); }
         .changelog-row { cursor: pointer; }
         .changelog-row:hover { background: #f0f3f7; }
@@ -364,3 +377,6 @@
         html[data-theme="dark"] .changelog-new-value { color: #f87171; }
         html[data-theme="dark"] .uptime-summary-card { background: var(--panel); border-color: #262c35; }
         html[data-theme="dark"] .uptime-bar { background: #3a4048; }
+        html[data-theme="dark"] .day-timeline { background: #20262f; border-color: #262c35; }
+        html[data-theme="dark"] .day-detail-dialog { background: #1a1f27; color: var(--text); }
+        html[data-theme="dark"] .day-detail-segment-row { border-color: #262c35; }

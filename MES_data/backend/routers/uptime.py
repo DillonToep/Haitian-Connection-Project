@@ -97,6 +97,93 @@ def _compute_day_totals(rows, range_start: datetime, range_end: datetime) -> dic
     return day_totals
 
 
+def _compute_day_segments(prev_row, rows, day_start: datetime, day_end: datetime) -> list[dict]:
+    """Like _compute_day_totals, but returns the actual ordered list of
+    {start, end, status} segments for a single day instead of summed
+    per-status seconds -- this is what powers the day drill-down timeline.
+    Adjacent segments with the same status are merged into one block.
+    """
+    segments: list[dict] = []
+    previous_time = day_start
+    if prev_row is not None and prev_row.machine_status is not None:
+        previous_status = "active" if int(prev_row.machine_status) == 1 else "standby"
+    else:
+        previous_status = "off"
+
+    def add_segment(start: datetime, end: datetime, status: str):
+        if end <= start:
+            return
+        if segments and segments[-1]["status"] == status:
+            segments[-1]["end"] = end.isoformat()
+        else:
+            segments.append({"start": start.isoformat(), "end": end.isoformat(), "status": status})
+
+    for data_time, machine_status in rows:
+        if data_time is None:
+            continue
+        gap = (data_time - previous_time).total_seconds()
+        status_for_gap = previous_status if (previous_status == "off" or gap <= OFFLINE_GAP_SECONDS) else "off"
+        add_segment(previous_time, data_time, status_for_gap)
+        previous_time = data_time
+        previous_status = "active" if machine_status is not None and int(machine_status) == 1 else "standby"
+
+    gap = (day_end - previous_time).total_seconds()
+    status_for_gap = previous_status if (previous_status == "off" or gap <= OFFLINE_GAP_SECONDS) else "off"
+    add_segment(previous_time, day_end, status_for_gap)
+
+    return segments
+
+
+@router.get("/uptime/{device_id}/day")
+def get_uptime_day(
+    device_id: str,
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    user: dict = Depends(require_user),
+):
+    del user
+    try:
+        day = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式应为 YYYY-MM-DD") from None
+
+    day_start = datetime.combine(day, datetime.min.time())
+    now = datetime.now().replace(microsecond=0)
+    day_end = min(day_start + timedelta(days=1), now)
+    if day_end <= day_start:
+        raise HTTPException(status_code=400, detail="所选日期还没有开始")
+
+    sql_prev = """
+        SELECT TOP 1 data_time, machine_status
+        FROM dbo.vw_machine_realtime
+        WHERE device_id = ? AND data_time < ?
+        ORDER BY data_time DESC
+    """
+    sql_day = """
+        SELECT data_time, machine_status
+        FROM dbo.vw_machine_realtime
+        WHERE device_id = ? AND data_time >= ? AND data_time <= ?
+        ORDER BY data_time
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql_prev, device_id, day_start)
+            prev_row = cursor.fetchone()
+            cursor.execute(sql_day, device_id, day_start, day_end)
+            rows = cursor.fetchall()
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    segments = _compute_day_segments(prev_row, rows, day_start, day_end)
+    return {
+        "device_id": device_id,
+        "date": day.isoformat(),
+        "day_start": day_start.isoformat(),
+        "day_end": day_end.isoformat(),
+        "segments": segments,
+    }
+
+
 def _fill_missing_days(day_totals: dict, range_start: date, range_end: date, now: datetime):
     """Safety net: make sure every day in range sums to its full expected
     duration (rounding, or a day with zero rows some other way)."""

@@ -21,7 +21,7 @@ let currentPage = "dashboard";
     // Cleared whenever openDeviceDetail() is called without a highlight
     // (e.g. clicking a device card from the dashboard).
     let highlightParameter = null;
-    const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计", shift: "班次统计" };
+    const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
 
@@ -171,6 +171,53 @@ let currentPage = "dashboard";
         buttons.innerHTML=Array.from({length:pages},(_,i)=>`<button class="${i+1===dashboardPage?"active":""}" data-page-number="${i+1}">${i+1}</button>`).join("");
         buttons.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>{dashboardPage=Number(button.dataset.pageNumber);renderDashboard();}));
     }
+
+    // Renders the 24h horizontal timeline for one day, using the raw
+    // {start,end,status} segments from GET /api/uptime/{id}/day. Block widths
+    // are positioned by real elapsed time (not evenly spaced), so a 3-hour
+    // standby period is visibly wider than a 20-minute one.
+    function renderDayTimeline(dayStart, dayEnd, segments) {
+        const startMs = new Date(dayStart).getTime();
+        const endMs = new Date(dayEnd).getTime();
+        const totalMs = Math.max(1, endMs - startMs);
+        const blocks = segments.map(seg => {
+            const segStart = new Date(seg.start).getTime();
+            const segEnd = new Date(seg.end).getTime();
+            const left = (segStart - startMs) / totalMs * 100;
+            const width = Math.max(0.15, (segEnd - segStart) / totalMs * 100);
+            const durationMin = Math.round((segEnd - segStart) / 60000);
+            const meta = statusMeta(seg.status);
+            return `<div class="day-timeline-segment ${meta[1]}" style="left:${left}%;width:${width}%" title="${meta[0]} ${formatTime(seg.start)} - ${formatTime(seg.end)} (${durationMin} 分钟)"></div>`;
+        }).join("");
+        const hourLabels = Array.from({length:9},(_,i)=>`<span>${i*3}:00</span>`).join("");
+        return `<div class="day-timeline">${blocks}</div><div class="day-timeline-hours">${hourLabels}</div>`;
+    }
+
+    function renderDaySegmentList(segments) {
+        if(!segments.length) return '<div class="empty">暂无数据</div>';
+        return `<div class="day-detail-segments">${segments.map(seg=>{
+            const durationMin=Math.round((new Date(seg.end)-new Date(seg.start))/60000);
+            const meta=statusMeta(seg.status);
+            return `<div class="day-detail-segment-row"><span class="badge ${meta[1]}">${meta[0]}</span><span>${formatTime(seg.start)} → ${formatTime(seg.end)}</span><span class="muted">${durationMin} 分钟</span></div>`;
+        }).join("")}</div>`;
+    }
+
+    async function openDayDetail(deviceId, dateStr) {
+        const dialog=document.getElementById("day-detail-dialog");
+        document.getElementById("day-detail-title").textContent=`设备 ${deviceId} · ${dateStr}`;
+        document.getElementById("day-detail-body").innerHTML='<div class="empty">正在读取……</div>';
+        dialog.showModal();
+        try {
+            const data=await requestJson(`/api/uptime/${encodeURIComponent(deviceId)}/day?date=${encodeURIComponent(dateStr)}`);
+            document.getElementById("day-detail-body").innerHTML=`
+                ${renderDayTimeline(data.day_start,data.day_end,data.segments)}
+                <div class="day-detail-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
+                ${renderDaySegmentList(data.segments)}`;
+        } catch(error) {
+            document.getElementById("day-detail-body").innerHTML=`<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+        }
+    }
+    document.getElementById("day-detail-close").addEventListener("click",()=>document.getElementById("day-detail-dialog").close());
 
     // Realtime tab: labelled status + temperature tiles. Values arrive
     // already scaled from the API (backend/parameter_labels.py).
@@ -405,13 +452,16 @@ async function loadUtilizationDaily(id) {
         </article>
         <article class="detail-card">
             <div class="detail-title">每日明细</div>
-            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map(b=>`
-                    <div class="uptime-bucket-row" style="animation-delay:${i*35}ms">
+            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b,i)=>`
+                    <div class="uptime-bucket-row" data-date="${b.period_start}" style="animation-delay:${i*35}ms">
                     <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
                     ${renderUptimeBar(b)}
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                 </div>`).join("")}</div>
         </article>`;
+    document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
+        row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
+    });
 }
 
 async function loadUtilizationMonthly(id) {
@@ -423,7 +473,7 @@ async function loadUtilizationMonthly(id) {
         </article>
         <article class="detail-card">
             <div class="detail-title">每月明细</div>
-            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map(b=>`
+            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b,i)=>`
                 <div class="uptime-bucket-row" style="animation-delay:${i*35}ms">
                     <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
                     ${renderUptimeBar(b)}
@@ -432,17 +482,12 @@ async function loadUtilizationMonthly(id) {
         </article>`;
 }
 
-function loadUtilizationShift() {
-    document.getElementById("util-tab-shift").innerHTML = `<div class="empty panel">班次统计功能开发中，需要先配置班次时间段。</div>`;
-}
-
 async function loadUtilization(tab) {
     const id = selectedDeviceId();
     if(!id) { document.getElementById(`util-tab-${tab}`).innerHTML = '<div class="empty panel">请先选择设备</div>'; return; }
     if(tab==="overview") await loadUtilizationOverview(id);
     else if(tab==="daily") await loadUtilizationDaily(id);
     else if(tab==="monthly") await loadUtilizationMonthly(id);
-    else if(tab==="shift") loadUtilizationShift();
 }
 
     // 参数变更记录 (工艺参数 changelog) tab: lists every detected change,
