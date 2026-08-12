@@ -320,6 +320,9 @@ def on_disconnect(
     )
 
 
+def on_subscribe(client, userdata, mid, reason_codes, properties):
+    print("SUBACK reason codes:", reason_codes)
+
 def on_message(client, userdata, message):
     print("RAW MESSAGE RECEIVED:", message.topic)
     """收到 MQTT 消息后解析并写入 SQL。"""
@@ -378,6 +381,7 @@ def main():
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
+    client.on_subscribe = on_subscribe
 
     client.reconnect_delay_set(
         min_delay=1,
