@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
 from .database import get_connection
-from .routers import auth, changelog, devices, molds
+from .routers import auth, changelog, devices, molds, uptime
 from .security import find_session_user
 
 
@@ -17,7 +17,7 @@ app.include_router(devices.router)
 app.include_router(molds.router)
 app.include_router(changelog.router)
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
+app.include_router(uptime.router)
 
 @app.get("/api/health")
 def health_check():

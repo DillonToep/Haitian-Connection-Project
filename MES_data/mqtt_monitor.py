@@ -1,31 +1,3 @@
-# import paho.mqtt.client as mqtt
-
-# def on_connect(client, userdata, flags, reason_code, properties):
-#     print("CONNECTED:", reason_code)
-#     client.subscribe("#", qos=1)
-
-# def on_subscribe(client, userdata, mid, reason_codes, properties):
-#     print("SUBSCRIBED:", reason_codes)
-
-# def on_message(client, userdata, message):
-#     print("MESSAGE:", message.topic, message.payload[:200])
-
-# def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
-#     print("DISCONNECTED:", reason_code)
-
-# client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="bare_test_client")
-# client.username_pw_set("mqttadmin", "Mqttadmin@123")
-# client.on_connect = on_connect
-# client.on_subscribe = on_subscribe
-# client.on_message = on_message
-# client.on_disconnect = on_disconnect
-
-# client.connect("192.168.1.9", 1883, keepalive=60)
-# client.loop_forever()
-
-
-
-print("SCRIPT VERSION MARKER XYZ123")
 import json
 import logging
 import os

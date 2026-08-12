@@ -334,6 +334,117 @@ let currentPage = "dashboard";
         document.getElementById("mold-history").innerHTML=history.length?`<table><thead><tr><th>模具</th><th>装模时间</th><th>卸模时间</th><th>操作人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(h.mold_code)}</td><td>${formatTime(h.mounted_at)}</td><td>${formatTime(h.unmounted_at)}</td><td>${showValue(h.operator_username)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无装模履历</div>';
     }
 
+
+    function renderUptimeBar(bucket) {
+    const total = bucket.total_seconds || 1;
+    const activePct = bucket.active_seconds/total*100;
+    const standbyPct = bucket.standby_seconds/total*100;
+    const offPct = bucket.off_seconds/total*100;
+    return `<div class="uptime-bar" title="生产 ${activePct.toFixed(1)}% · 待机 ${standbyPct.toFixed(1)}% · 关机 ${offPct.toFixed(1)}%">
+        <div class="uptime-bar-segment active" style="width:${activePct}%"></div>
+        <div class="uptime-bar-segment standby" style="width:${standbyPct}%"></div>
+        <div class="uptime-bar-segment off" style="width:${offPct}%"></div>
+    </div>`;
+}
+
+function renderUptimeTrendChart(buckets) {
+    if(!buckets.length) return '<div class="empty">暂无数据</div>';
+    const width=760, height=220, padL=36, padR=12, padT=16, padB=28;
+    const innerW=width-padL-padR, innerH=height-padT-padB;
+    const stepX = buckets.length>1 ? innerW/(buckets.length-1) : 0;
+    const points = buckets.map((b,i)=>{
+        const x = padL + stepX*i;
+        const y = padT + innerH - (b.uptime_pct/100)*innerH;
+        return {x,y,b};
+    });
+    const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    const gridLines=[0,25,50,75,100].map(v=>{
+        const y=padT+innerH-(v/100)*innerH;
+        return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
+    }).join("");
+    const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
+    const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
+    const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+    return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+        ${gridLines}
+        <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
+        ${dots}
+        ${xLabels}
+    </svg>`;
+}
+
+async function loadUtilizationOverview(id) {
+    const [dayData, weekData, monthData] = await Promise.all([
+        requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`),
+        requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=1`),
+        requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=1`),
+    ]);
+    const today = dayData.buckets[dayData.buckets.length-1];
+    const thisWeek = weekData.buckets[weekData.buckets.length-1];
+    const thisMonth = monthData.buckets[monthData.buckets.length-1];
+    document.getElementById("util-tab-overview").innerHTML = `
+        <div class="uptime-summary-grid">
+            <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
+            <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+            <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+        </div>
+        <article class="detail-card">
+            <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>
+                <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
+            </div>
+            ${renderUptimeTrendChart(dayData.buckets)}
+        </article>`;
+}
+
+async function loadUtilizationDaily(id) {
+    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
+    document.getElementById("util-tab-daily").innerHTML = `
+        <article class="detail-card">
+            <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
+            ${renderUptimeTrendChart(data.buckets)}
+        </article>
+        <article class="detail-card">
+            <div class="detail-title">每日明细</div>
+            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map(b=>`
+                <div class="uptime-bucket-row">
+                    <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
+                    ${renderUptimeBar(b)}
+                    <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
+                </div>`).join("")}</div>
+        </article>`;
+}
+
+async function loadUtilizationMonthly(id) {
+    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
+    document.getElementById("util-tab-monthly").innerHTML = `
+        <article class="detail-card">
+            <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
+            ${renderUptimeTrendChart(data.buckets)}
+        </article>
+        <article class="detail-card">
+            <div class="detail-title">每月明细</div>
+            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map(b=>`
+                <div class="uptime-bucket-row">
+                    <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
+                    ${renderUptimeBar(b)}
+                    <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
+                </div>`).join("")}</div>
+        </article>`;
+}
+
+function loadUtilizationShift() {
+    document.getElementById("util-tab-shift").innerHTML = `<div class="empty panel">班次统计功能开发中，需要先配置班次时间段。</div>`;
+}
+
+async function loadUtilization(tab) {
+    const id = selectedDeviceId();
+    if(!id) { document.getElementById(`util-tab-${tab}`).innerHTML = '<div class="empty panel">请先选择设备</div>'; return; }
+    if(tab==="overview") await loadUtilizationOverview(id);
+    else if(tab==="daily") await loadUtilizationDaily(id);
+    else if(tab==="monthly") await loadUtilizationMonthly(id);
+    else if(tab==="shift") loadUtilizationShift();
+}
+
     // 参数变更记录 (工艺参数 changelog) tab: lists every detected change,
     // newest first. Clicking a row opens that device's 工艺参数 tab with the
     // changed parameter expanded and highlighted (see openChangelogDetail).
@@ -400,13 +511,14 @@ let currentPage = "dashboard";
             if(currentPage==="device-detail")await loadActiveDetailTab();
             if(currentPage==="molds")await loadMolds();
             if(currentPage==="changelog")await loadChangelog();
+            if(currentPage==="utilization") await loadUtilization(activeUtilTab);
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
     }
     
     async function switchPage(page) {
         currentPage=page;
-        document.getElementById("device-select").classList.toggle("hidden",page!=="molds");
+        document.getElementById("device-select").classList.toggle("hidden", page!=="molds" && page!=="utilization");
         if(page==="device-detail") {
             document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
