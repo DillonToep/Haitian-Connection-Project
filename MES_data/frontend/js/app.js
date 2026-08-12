@@ -414,7 +414,7 @@ function renderUptimeTrendChart(buckets) {
     const dots = points.map(p=>`<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
     return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
         ${gridLines}
-        <path class="uptime-trend-line" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
+        <path class="uptime-trend-line" pathLength="1000" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
         ${dots}
         ${xLabels}
     </svg>`;

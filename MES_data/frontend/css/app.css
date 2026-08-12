@@ -212,9 +212,9 @@
         .uptime-bar-segment.off { animation-delay: .16s; }
 
         .uptime-trend-line {
-            stroke-dasharray: 2000;
-            stroke-dashoffset: 2000;
-            animation: uptime-line-draw .5s cubic-bezier(.4,0,.2,1) forwards;
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: uptime-line-draw 1.8s cubic-bezier(.4,0,.2,1) forwards;
         }
         .uptime-trend-dot {
             transform-origin: center;
@@ -233,8 +233,7 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .uptime-summary-card, .uptime-bar-segment, .uptime-trend-line,
-            .uptime-bucket-row {
+            .uptime-bar-segment, .uptime-trend-line {
                 animation: none !important;
                 opacity: 1 !important;
                 transform: none !important;
