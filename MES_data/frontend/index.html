@@ -4,7 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>注塑机 MES 管理系统</title>
-        <link rel="stylesheet" href="/static/css/app.css">
+    <script>
+        // Apply the saved theme before any CSS paints, so the page never
+        // flashes light-then-dark. This must stay a tiny inline script in
+        // <head> (not moved into app.js) because app.js only runs after
+        // the browser has already parsed/painted the body.
+        (function () {
+            try {
+                var theme = localStorage.getItem("mes-theme") || "light";
+                document.documentElement.setAttribute("data-theme", theme);
+            } catch (error) {
+                /* ignore storage errors, default (no attribute) = light */
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
 <header class="topbar">

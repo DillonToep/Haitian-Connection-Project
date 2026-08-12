@@ -5,7 +5,7 @@ let currentPage = "dashboard";
     let molds = [];
     let dashboardPage = 1;
     const pageSize = 8;
-
+    let uptimeChartIdCounter = 0;
     // Device currently open in the detail view, and which tab is active there.
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
@@ -406,49 +406,53 @@ function bezierTimeForProgress(targetY, p1x, p1y, p2x, p2y, iterations = 24) {
 }
 
 function renderUptimeTrendChart(buckets) {
-    if(!buckets.length) return '<div class="empty">暂无数据</div>';
-    const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
-    const innerW=width-padL-padR, innerH=height-padT-padB;
-    const stepX = buckets.length>1 ? innerW/(buckets.length-1) : 0;
-    const points = buckets.map((b,i)=>{
-        const x = padL + stepX*i;
-        const y = padT + innerH - (b.uptime_pct/100)*innerH;
-        return {x,y,b};
-    });
-    const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+        if(!buckets.length) return '<div class="empty">暂无数据</div>';
+        const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
+        const innerW=width-padL-padR, innerH=height-padT-padB;
+        const stepX = buckets.length>1 ? innerW/(buckets.length-1) : 0;
+        const points = buckets.map((b,i)=>{
+            const x = padL + stepX*i;
+            const y = padT + innerH - (b.uptime_pct/100)*innerH;
+            return {x,y,b};
+        });
+        const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
-    // Must match .uptime-trend-line's animation-duration and easing in app.css.
-    const LINE_DURATION_S = 4.5;
-    const EASE = [0.4, 0, 0.2, 1];
+        // Must match .uptime-trend-reveal's animation-duration and easing in app.css.
+        const LINE_DURATION_S = 4.5;
+        const EASE = [0.4, 0, 0.2, 1];
+        const clipId = `uptime-line-clip-${uptimeChartIdCounter++}`;
 
-    let cumulative = 0;
-    const distances = points.map((p,i)=>{
-        if(i===0) return 0;
-        const prev = points[i-1];
-        cumulative += Math.hypot(p.x-prev.x, p.y-prev.y);
-        return cumulative;
-    });
-    const totalLength = Math.max(cumulative, 1);
+        let cumulative = 0;
+        const distances = points.map((p,i)=>{
+            if(i===0) return 0;
+            const prev = points[i-1];
+            cumulative += Math.hypot(p.x-prev.x, p.y-prev.y);
+            return cumulative;
+        });
+        const totalLength = Math.max(cumulative, 1);
 
-    const gridLines=[0,25,50,75,100].map(v=>{
-        const y=padT+innerH-(v/100)*innerH;
-        return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
-    }).join("");
-    const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
-    const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
-    const dots = points.map((p,i)=>{
-        const progress = distances[i] / totalLength;
-        const timeFraction = bezierTimeForProgress(progress, ...EASE);
-        const delay = (timeFraction * LINE_DURATION_S).toFixed(3);
-        return `<circle class="uptime-trend-dot" style="animation-delay:${delay}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`;
-    }).join("");
-    return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
-        ${gridLines}
-        <path class="uptime-trend-line" pathLength="1000" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
-        ${dots}
-        ${xLabels}
-    </svg>`;
-}
+        const gridLines=[0,25,50,75,100].map(v=>{
+            const y=padT+innerH-(v/100)*innerH;
+            return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
+        }).join("");
+        const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
+        const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
+        const dots = points.map((p,i)=>{
+            const progress = distances[i] / totalLength;
+            const timeFraction = bezierTimeForProgress(progress, ...EASE);
+            const delay = (timeFraction * LINE_DURATION_S).toFixed(3);
+            return `<circle class="uptime-trend-dot" style="animation-delay:${delay}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`;
+        }).join("");
+        // The line is revealed by animating a clip-path rect's scaleX (compositor-only,
+        // no per-frame stroke repaint) instead of animating stroke-dashoffset directly.
+        return `<svg class="uptime-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+            <defs><clipPath id="${clipId}"><rect class="uptime-trend-reveal" x="${padL}" y="0" width="${innerW}" height="${height}"/></clipPath></defs>
+            ${gridLines}
+            <path class="uptime-trend-line" d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2" clip-path="url(#${clipId})"/>
+            ${dots}
+            ${xLabels}
+        </svg>`;
+    }
 
 
 
