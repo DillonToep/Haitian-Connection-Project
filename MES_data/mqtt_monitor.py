@@ -39,7 +39,7 @@ from backend.parameter_labels import PARAMETER_LABELS
 
 # ================= MQTT 配置 =================
 
-MQTT_HOST = "192.168.72.173"
+MQTT_HOST = "192.168.1.9"
 MQTT_PORT = 1883
 MQTT_USERNAME = "mqttadmin"
 MQTT_PASSWORD = "Mqttadmin@123"
