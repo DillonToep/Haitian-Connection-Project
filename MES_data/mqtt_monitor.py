@@ -16,7 +16,7 @@ MQTT_PORT = 1883
 MQTT_USERNAME = "mqttadmin"
 MQTT_PASSWORD = "Mqttadmin@123"
 MQTT_SUB_TOPIC = "#"
-MQTT_CLIENT_ID = "mes_sql_collector_test"
+MQTT_CLIENT_ID = "mes_sql_collector_v2"
 
 
 # ================= SQL Server 配置 =================
@@ -321,6 +321,7 @@ def on_disconnect(
 
 
 def on_message(client, userdata, message):
+    print("RAW MESSAGE RECEIVED:", message.topic)
     """收到 MQTT 消息后解析并写入 SQL。"""
     try:
         raw_payload = message.payload.decode("utf-8")
