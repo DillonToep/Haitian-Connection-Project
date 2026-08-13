@@ -28,9 +28,10 @@
 
 <aside class="sidebar">
     <button class="nav-item active" data-page="dashboard"><span class="nav-icon">◉</span>设备看板</button>
+        <button class="nav-item" data-page="changelog"><span class="nav-icon">▤</span>参数变更记录</button>
+    <button class="nav-item" data-page="warnings"><span class="nav-icon">⚠</span>预警通知<span class="nav-badge hidden" id="warnings-badge"></span></button>
     <button class="nav-item" data-page="utilization"><span class="nav-icon">◲</span>利用率报表</button>
     <button class="nav-item" data-page="molds"><span class="nav-icon">▣</span>模具管理</button>
-    <button class="nav-item" data-page="changelog"><span class="nav-icon">▤</span>参数变更记录</button>
     <div class="sidebar-divider"></div>
     <button class="nav-item" id="theme-toggle" type="button"><span class="nav-icon" id="theme-icon">☾</span><span id="theme-label">深色模式</span></button>
 </aside>
@@ -103,6 +104,16 @@
                 <div id="changelog-table"></div>
             </article>
         </section>
+
+        <section id="warnings-page" class="hidden">
+            <article class="detail-card">
+                <div class="detail-header">
+                    <div class="detail-title">预警通知</div>
+                    <div class="detail-header-actions"><span class="muted" id="warnings-summary"></span><button id="clear-all-warnings" class="secondary-button" type="button">清除全部</button></div>
+                </div>
+                <div id="warnings-table"></div>
+            </article>
+        </section>
     </main>
 </div>
 
@@ -114,6 +125,7 @@
     </div>
     <div id="day-detail-body"></div>
 </dialog>
+    <div id="toast-container" class="toast-container"></div>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

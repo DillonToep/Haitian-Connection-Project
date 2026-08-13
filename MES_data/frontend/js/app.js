@@ -28,8 +28,17 @@ let currentPage = "dashboard";
     // (e.g. clicking a device card from the dashboard).
     let highlightParameter = null;
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
-    const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录" };
+    const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录", warnings: "预警通知" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
+
+    // Warning notifications (unacknowledged rows from GET /api/warnings).
+    // seenWarningIds tracks which warning IDs have already been shown as a
+    // toast this session, so re-polling the same still-pending warning
+    // doesn't toast it again. warningsInitialized guards the very first
+    // poll after login: existing warnings are seeded into seenWarningIds
+    // silently there instead of toasting a stack of old warnings at once.
+    let seenWarningIds = new Set();
+    let warningsInitialized = false;
 
     // Units shown next to each 工艺参数 value, keyed by the same category
     // buckets produced by backend/parameter_labels.py::categorize(). Categories
@@ -123,6 +132,7 @@ let currentPage = "dashboard";
         document.getElementById("mold-form").querySelectorAll("input,textarea,button").forEach(el=>el.disabled=readOnly);
         document.getElementById("mount-button").disabled=readOnly;
         document.getElementById("unmount-button").disabled=readOnly;
+        document.getElementById("clear-all-warnings").disabled=readOnly;
     }
     async function loadDevices() {
         devices=await requestJson("/api/devices");
@@ -601,6 +611,91 @@ let currentPage = "dashboard";
         } catch(error){ alert(error.message); }
     }
 
+    // ---- 预警通知 (warnings) ----
+    // A warning is an unacknowledged dbo.tech_parameter_changelog row (see
+    // GET /api/warnings). Clicking a toast or a row in the 预警通知 tab
+    // redirects to 参数变更记录 / the highlighted parameter, matching how
+    // changelog rows already behave -- warnings are just "changelog entries
+    // you haven't dismissed yet", not a separate record type.
+
+    function showToast(warning) {
+        const container=document.getElementById("toast-container");
+        if(!container) return;
+        const toast=document.createElement("div");
+        toast.className="toast";
+        toast.innerHTML=`
+            <div class="toast-icon">⚠</div>
+            <div class="toast-body">
+                <div class="toast-title">参数变更：设备 ${escapeHtml(warning.device_id)}</div>
+                <div class="toast-detail">${escapeHtml(warning.label)}　${showValue(warning.previous_value)} → ${showValue(warning.new_value)}</div>
+            </div>
+            <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        toast.addEventListener("click",event=>{
+            if(event.target.closest(".toast-close")) return;
+            switchPage("changelog");
+            toast.remove();
+        });
+        toast.querySelector(".toast-close").addEventListener("click",event=>{
+            event.stopPropagation();
+            toast.remove();
+        });
+        container.appendChild(toast);
+        setTimeout(()=>{
+            toast.classList.add("toast-hide");
+            setTimeout(()=>toast.remove(),300);
+        },8000);
+    }
+
+    // Polls pending warnings independently of the current page/tab, so a
+    // toast can appear (and the sidebar badge update) no matter what the
+    // user is looking at. Runs on its own interval -- see setInterval call
+    // near initialize() below -- separate from scheduleAutoRefresh, which
+    // only ticks while on the dashboard/device-detail pages.
+    async function pollWarnings() {
+        try {
+            const rows=await requestJson("/api/warnings");
+            const badge=document.getElementById("warnings-badge");
+            if(badge){
+                if(rows.length>0){ badge.textContent=rows.length>99?"99+":rows.length; badge.classList.remove("hidden"); }
+                else badge.classList.add("hidden");
+            }
+            if(!warningsInitialized){
+                rows.forEach(r=>seenWarningIds.add(r.id));
+                warningsInitialized=true;
+                return;
+            }
+            const newOnes=rows.filter(r=>!seenWarningIds.has(r.id)).sort((a,b)=>a.id-b.id);
+            newOnes.forEach(r=>{ seenWarningIds.add(r.id); showToast(r); });
+            if(currentPage==="warnings" && newOnes.length) await loadWarnings();
+        } catch(error) { /* transient network errors shouldn't spam toasts */ }
+    }
+
+    async function loadWarnings() {
+        const rows=await requestJson("/api/warnings");
+        document.getElementById("warnings-summary").textContent=`共 ${rows.length} 条待处理`;
+        const readOnly=currentUser.role==="viewer";
+        const table=document.getElementById("warnings-table");
+        table.innerHTML=rows.length?`<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr class="warning-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" type="button">清除</button>`}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无预警</div>';
+
+        table.querySelectorAll(".warning-row").forEach(row=>{
+            row.addEventListener("click",event=>{
+                if(event.target.closest(".warning-clear-button")) return;
+                openChangelogDetail(row.dataset.id);
+            });
+        });
+        table.querySelectorAll(".warning-clear-button").forEach(button=>{
+            button.addEventListener("click",async event=>{
+                event.stopPropagation();
+                try {
+                    await requestJson(`/api/warnings/${encodeURIComponent(button.dataset.id)}/clear`,{method:"POST"});
+                    seenWarningIds.delete(Number(button.dataset.id));
+                    await loadWarnings();
+                    await pollWarnings();
+                } catch(error){ alert(error.message); }
+            });
+        });
+    }
+
     // Loads whichever tab is currently active inside the device detail view.
     async function loadActiveDetailTab() {
         if(!detailDeviceId) return;
@@ -736,6 +831,15 @@ let currentPage = "dashboard";
     document.getElementById("search-button").addEventListener("click",()=>{dashboardPage=1;renderDashboard();});
     document.querySelectorAll(".status-filter").forEach(input=>input.addEventListener("change",()=>{dashboardPage=1;renderDashboard();}));
     document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
+    document.getElementById("clear-all-warnings").addEventListener("click",async()=>{
+        if(!confirm("确认清除全部预警？"))return;
+        try {
+            await requestJson("/api/warnings/clear-all",{method:"POST"});
+            seenWarningIds.clear();
+            await loadWarnings();
+            await pollWarnings();
+        } catch(error){ alert(error.message); }
+    });
     document.querySelectorAll(".util-tab-button").forEach(button => button.addEventListener("click", () => switchUtilTab(button.dataset.utilTab)));
     document.getElementById("mold-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/molds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_code:f.get("mold_code"),mold_name:f.get("mold_name"),product_code:f.get("product_code")||null,cavities:Number(f.get("cavities")),remark:f.get("remark")||null})});event.target.reset();event.target.cavities.value=1;await loadMolds();}catch(error){alert(error.message);}});
     document.getElementById("mount-button").addEventListener("click",async()=>{const moldId=Number(document.getElementById("mold-select").value);if(!moldId)return alert("请先选择模具");if(!confirm(`确认将所选模具安装到设备 ${selectedDeviceId()}？`))return;try{await requestJson(`/api/devices/${encodeURIComponent(selectedDeviceId())}/mold`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_id:moldId,remark:null})});await loadMolds();}catch(error){alert(error.message);}});
@@ -757,6 +861,7 @@ let currentPage = "dashboard";
             if(currentPage==="device-detail")await loadActiveDetailTab();
             if(currentPage==="molds")await loadMolds();
             if(currentPage==="changelog")await loadChangelog();
+            if(currentPage==="warnings")await loadWarnings();
             if(currentPage==="utilization") await loadUtilization(activeUtilTab);
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
@@ -780,6 +885,7 @@ let currentPage = "dashboard";
         }, 2000);
     }
 
-    async function initialize(){try{await loadSession();await loadDevices();await refreshPage();}catch(error){document.getElementById("connection-status").textContent=error.message;}}
+    async function initialize(){try{await loadSession();await loadDevices();await refreshPage();await pollWarnings();}catch(error){document.getElementById("connection-status").textContent=error.message;}}
     initialize();
     scheduleAutoRefresh();
+    setInterval(pollWarnings,5000);
