@@ -223,13 +223,24 @@
             transform: none !important;
         }
 
-        /* Trend chart line + dots render fully visible immediately -- no
-           grow-in reveal. */
         .uptime-trend-fg {
-            clip-path: none;
+            animation: uptime-trend-reveal 1.1s cubic-bezier(.4,0,.2,1) both;
         }
-        .uptime-trend-dot {
-            opacity: 1;
+        @keyframes uptime-trend-reveal {
+            from { clip-path: inset(0 100% 0 0); }
+            to   { clip-path: inset(0 0% 0 0); }
+        }
+
+        .no-anim .uptime-trend-fg {
+            animation: none !important;
+            clip-path: none !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .uptime-trend-fg {
+                animation: none !important;
+                clip-path: none !important;
+            }
         }
 
         @keyframes uptime-bar-grow {

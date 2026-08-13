@@ -634,8 +634,9 @@ async function loadUtilization(tab) {
     document.getElementById("password-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:f.get("current_password"),new_password:f.get("new_password")})});event.target.reset();passwordDialog.close();alert("密码修改成功");}catch(error){alert(error.message);}});
 
     let isRefreshingPage = false;
+    let pendingRefresh = false;
     async function refreshPage() {
-        if (isRefreshingPage) return;
+        if (isRefreshingPage) { pendingRefresh = true; return; }
         isRefreshingPage = true;
         const status=document.getElementById("connection-status");
         try {
@@ -646,7 +647,13 @@ async function loadUtilization(tab) {
             if(currentPage==="utilization") await loadUtilization(activeUtilTab);
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
-        finally { isRefreshingPage = false; }
+        finally {
+            isRefreshingPage = false;
+            if (pendingRefresh) {
+                pendingRefresh = false;
+                refreshPage();
+            }
+        }
     }
 
     let autoRefreshTimer = null;
