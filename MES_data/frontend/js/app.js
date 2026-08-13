@@ -387,26 +387,16 @@ let currentPage = "dashboard";
         document.getElementById("mold-history").innerHTML=history.length?`<table><thead><tr><th>模具</th><th>装模时间</th><th>卸模时间</th><th>操作人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(h.mold_code)}</td><td>${formatTime(h.mounted_at)}</td><td>${formatTime(h.unmounted_at)}</td><td>${showValue(h.operator_username)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无装模履历</div>';
     }
 
-
-    // `collapsed`: when true, bakes the animation's start state (scaleX(0))
-    // directly into each segment's inline style attribute, as part of the
-    // markup string itself -- not applied afterward by JS. This guarantees
-    // the very first frame the browser ever paints for this element is
-    // already collapsed, regardless of any gap between DOM insertion and
-    // the animate() call actually taking effect. That gap is what caused
-    // the snap-back: relying on fill:"both" alone still left one frame
-    // where the browser could paint the natural (full) CSS state before
-    // the animation's first keyframe landed.
     function renderUptimeBar(bucket, collapsed = false) {
         const total = bucket.total_seconds || 1;
         const activePct = bucket.active_seconds/total*100;
         const standbyPct = bucket.standby_seconds/total*100;
         const offPct = bucket.off_seconds/total*100;
-        const collapseStyle = collapsed ? ";transform:scaleX(0)" : "";
+        const collapseClass = collapsed ? " entrance-collapsed" : "";
         return `<div class="uptime-bar" title="生产 ${activePct.toFixed(1)}% · 待机 ${standbyPct.toFixed(1)}% · 关机 ${offPct.toFixed(1)}%">
-            <div class="uptime-bar-segment off" style="width:${Math.min(100, activePct+standbyPct+offPct)}%${collapseStyle}"></div>
-            <div class="uptime-bar-segment standby" style="width:${Math.min(100, activePct+standbyPct)}%${collapseStyle}"></div>
-            <div class="uptime-bar-segment active" style="width:${Math.min(100, activePct)}%${collapseStyle}"></div>
+            <div class="uptime-bar-segment off${collapseClass}" style="width:${Math.min(100, activePct+standbyPct+offPct)}%"></div>
+            <div class="uptime-bar-segment standby${collapseClass}" style="width:${Math.min(100, activePct+standbyPct)}%"></div>
+            <div class="uptime-bar-segment active${collapseClass}" style="width:${Math.min(100, activePct)}%"></div>
         </div>`;
     }
 
@@ -431,53 +421,46 @@ let currentPage = "dashboard";
         const dots = points.map((p)=>
             `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`
         ).join("");
-
-        // See renderUptimeBar's comment on `collapsed` -- same reasoning:
-        // baking clip-path:inset(0 100% 0 0) into the inline style attribute
-        // here means the fg <svg> is already fully clipped the instant it
-        // exists, before any JS runs against it.
-        const fgStyle = collapsed ? ' style="clip-path:inset(0 100% 0 0)"' : "";
+        const fgClass = collapsed ? " entrance-collapsed" : "";
         return `<div class="uptime-trend-wrap">
             <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
                 ${gridLines}
                 ${xLabels}
             </svg>
-            <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet"${fgStyle}>
+            <svg class="uptime-trend-svg uptime-trend-fg${fgClass}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
                 <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
                 ${dots}
             </svg>
         </div>`;
     }
 
-    // Plays the "grow-in" entrance animation on a freshly-rendered
-    // utilization tab. Uses the Web Animations API directly on the real
-    // elements rather than toggling a CSS class, so playback always starts
-    // from an explicit first keyframe instead of depending on paint timing.
-    //
-    // IMPORTANT: fill must be "both", not "forwards". "forwards" only
-    // holds the *end* keyframe after the animation finishes -- it applies
-    // nothing before playback starts. Since these elements have no CSS
-    // collapsed state (they render at real, final size by default), a
-    // "forwards"-only animation can let the browser paint one frame of the
-    // natural full-size element before the animation's first keyframe
-    // (scaleX(0) / clip-path 100%) takes over, which shows up exactly as
-    // "full -> snap to empty -> refill". fill:"both" applies keyframe 0
-    // immediately when animate() is called, removing that gap entirely.
+
     function playUtilEntranceAnimation(container) {
-        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        const bars = [...container.querySelectorAll(".uptime-bar-segment")];
+        const trends = [...container.querySelectorAll(".uptime-trend-fg")];
 
-        container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
-            segment.animate(
-                [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
-                { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
-            );
-        });
-
-        container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
-            fg.animate(
-                [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
-                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
-            );
+        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            bars.forEach(el => el.classList.remove("entrance-collapsed"));
+            trends.forEach(el => el.classList.remove("entrance-collapsed"));
+            return;
+        }
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                bars.forEach(segment => {
+                    segment.animate(
+                        [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
+                        { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                    );
+                    segment.classList.remove("entrance-collapsed");
+                });
+                trends.forEach(fg => {
+                    fg.animate(
+                        [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+                        { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                    );
+                    fg.classList.remove("entrance-collapsed");
+                });
+            });
         });
     }
 
