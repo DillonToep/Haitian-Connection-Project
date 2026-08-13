@@ -29,7 +29,7 @@ let currentPage = "dashboard";
     let highlightParameter = null;
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录", warnings: "预警通知" };
-    const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
+    const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", changelog: "变更记录" };
 
     // Warning notifications (unacknowledged rows from GET /api/warnings).
     // seenWarningIds tracks which warning IDs have already been shown as a
@@ -607,6 +607,25 @@ let currentPage = "dashboard";
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
     }
 
+    async function loadDeviceChangelog(id) {
+        const rows = await requestJson(`/api/changelog/by-device/${encodeURIComponent(id)}`);
+        document.getElementById("detail-tab-changelog").innerHTML = `<article class="detail-card">
+            <div class="detail-header"><div class="detail-title">变更记录</div><div class="muted">共 ${rows.length} 条记录</div></div>
+            ${rows.length ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">该设备暂无变更记录</div>'}
+        </article>`;
+        document.querySelectorAll("#detail-tab-changelog .changelog-row").forEach(row => {
+            row.addEventListener("click", () => {
+                highlightParameter = {
+                    parameter_id: row.dataset.parameter,
+                    previous_value: row.dataset.previous,
+                    new_value: row.dataset.new,
+                };
+                highlightApplied = false;
+                switchDetailTab("tech");
+            });
+        });
+    }
+
     async function openChangelogDetail(id) {
         try {
             const entry=await requestJson(`/api/changelog/${encodeURIComponent(id)}`);
@@ -708,6 +727,7 @@ let currentPage = "dashboard";
         if(activeDetailTab==="realtime") await loadRealtime(detailDeviceId);
         if(activeDetailTab==="tech") await loadTech(detailDeviceId);
         if(activeDetailTab==="spc") await loadSpc(detailDeviceId);
+        if(activeDetailTab==="changelog") await loadDeviceChangelog(detailDeviceId);
     }
 
     // options.tab: which detail tab to open on ("realtime" by default).

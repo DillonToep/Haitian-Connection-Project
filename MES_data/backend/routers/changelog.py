@@ -39,6 +39,28 @@ def get_changelog(user: dict = Depends(require_user)):
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
+@router.get("/changelog/by-device/{device_id}")
+def get_changelog_for_device(device_id: str, user: dict = Depends(require_user)):
+    """Same records as GET /api/changelog, filtered to one machine -- powers
+    the 变更记录 tab inside the device detail view."""
+    del user
+    sql = """
+        SELECT TOP 200
+            c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
+            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id
+        FROM dbo.tech_parameter_changelog AS c
+        WHERE c.device_id = ?
+        ORDER BY c.detected_at DESC
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql, device_id)
+            return [_decorate(row_to_dict(cursor, row)) for row in cursor.fetchall()]
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
 @router.get("/changelog/{changelog_id}")
 def get_changelog_entry(changelog_id: int, user: dict = Depends(require_user)):
     del user
@@ -61,6 +83,8 @@ def get_changelog_entry(changelog_id: int, user: dict = Depends(require_user)):
         raise
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+
+    
 
 
 @router.get("/changelog/by-spc/{spc_message_id}")
