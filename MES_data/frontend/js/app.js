@@ -394,9 +394,9 @@ let currentPage = "dashboard";
         const standbyPct = bucket.standby_seconds/total*100;
         const offPct = bucket.off_seconds/total*100;
         return `<div class="uptime-bar" title="生产 ${activePct.toFixed(1)}% · 待机 ${standbyPct.toFixed(1)}% · 关机 ${offPct.toFixed(1)}%">
-            <div class="uptime-bar-segment active" style="width:${activePct}%"></div>
-            <div class="uptime-bar-segment standby" style="width:${standbyPct}%"></div>
-            <div class="uptime-bar-segment off" style="width:${offPct}%"></div>
+            <div class="uptime-bar-segment off" style="width:${Math.min(100, activePct+standbyPct+offPct)}%"></div>
+            <div class="uptime-bar-segment standby" style="width:${Math.min(100, activePct+standbyPct)}%"></div>
+            <div class="uptime-bar-segment active" style="width:${Math.min(100, activePct)}%"></div>
         </div>`;
     }
 
@@ -434,105 +434,105 @@ let currentPage = "dashboard";
         </div>`;
     }
 
-function playUtilEntranceAnimation(container) {
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    function playUtilEntranceAnimation(container) {
+        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    container.querySelectorAll(".uptime-bar").forEach(bar => {
-        bar.animate(
-            [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
-            { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
-        );
-    });
+        container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
+            segment.animate(
+                [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
+                { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+            );
+        });
 
-    container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
-        fg.animate(
-            [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
-            { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
-        );
-    });
-}
+        container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
+            fg.animate(
+                [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+            );
+        });
+    }
 
-async function loadUtilizationOverview(id) {
-    const overviewContainer = document.getElementById("util-tab-overview");
-    const freshEntry = !utilRenderedOnce.overview;
-    const [dayData, weekData, monthData] = await Promise.all([
-        requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`),
-        requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=1`),
-        requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=1`),
-    ]);
-    const today = dayData.buckets[dayData.buckets.length-1];
-    const thisWeek = weekData.buckets[weekData.buckets.length-1];
-    const thisMonth = monthData.buckets[monthData.buckets.length-1];
-    overviewContainer.innerHTML = `
-        <div class="uptime-summary-grid">
-            <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
-            <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
-            <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
-        </div>
-        <article class="detail-card">
-            <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>
-                <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
+    async function loadUtilizationOverview(id) {
+        const overviewContainer = document.getElementById("util-tab-overview");
+        const freshEntry = !utilRenderedOnce.overview;
+        const [dayData, weekData, monthData] = await Promise.all([
+            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`),
+            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=1`),
+            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=1`),
+        ]);
+        const today = dayData.buckets[dayData.buckets.length-1];
+        const thisWeek = weekData.buckets[weekData.buckets.length-1];
+        const thisMonth = monthData.buckets[monthData.buckets.length-1];
+        overviewContainer.innerHTML = `
+            <div class="uptime-summary-grid">
+                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
             </div>
-            ${renderUptimeTrendChart(dayData.buckets)}
-        </article>`;
-    if (freshEntry) playUtilEntranceAnimation(overviewContainer);
-    utilRenderedOnce.overview = true;
-}
+            <article class="detail-card">
+                <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>
+                    <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
+                </div>
+                ${renderUptimeTrendChart(dayData.buckets)}
+            </article>`;
+        if (freshEntry) playUtilEntranceAnimation(overviewContainer);
+        utilRenderedOnce.overview = true;
+    }
 
-async function loadUtilizationDaily(id) {
-    const dailyContainer = document.getElementById("util-tab-daily");
-    const freshEntry = !utilRenderedOnce.daily;
-    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
-    dailyContainer.innerHTML = `
-        <article class="detail-card">
-            <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
-            ${renderUptimeTrendChart(data.buckets)}
-        </article>
-        <article class="detail-card">
-            <div class="detail-title">每日明细</div>
-            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
-                    <div class="uptime-bucket-row" data-date="${b.period_start}">
-                    <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
-                    ${renderUptimeBar(b)}
-                    <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
-                </div>`).join("")}</div>
-        </article>`;
-    document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
-        row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
-    });
-    if (freshEntry) playUtilEntranceAnimation(dailyContainer);
-    utilRenderedOnce.daily = true;
-}
+    async function loadUtilizationDaily(id) {
+        const dailyContainer = document.getElementById("util-tab-daily");
+        const freshEntry = !utilRenderedOnce.daily;
+        const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
+        dailyContainer.innerHTML = `
+            <article class="detail-card">
+                <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
+                ${renderUptimeTrendChart(data.buckets)}
+            </article>
+            <article class="detail-card">
+                <div class="detail-title">每日明细</div>
+                <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
+                        <div class="uptime-bucket-row" data-date="${b.period_start}">
+                        <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
+                        ${renderUptimeBar(b)}
+                        <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
+                    </div>`).join("")}</div>
+            </article>`;
+        document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
+            row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
+        });
+        if (freshEntry) playUtilEntranceAnimation(dailyContainer);
+        utilRenderedOnce.daily = true;
+    }
 
-async function loadUtilizationMonthly(id) {
-    const monthlyContainer = document.getElementById("util-tab-monthly");
-    const freshEntry = !utilRenderedOnce.monthly;
-    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
-    monthlyContainer.innerHTML = `
-        <article class="detail-card">
-            <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
-            ${renderUptimeTrendChart(data.buckets)}
-        </article>
-        <article class="detail-card">
-            <div class="detail-title">每月明细</div>
-            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
-                <div class="uptime-bucket-row">
-                    <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
-                    ${renderUptimeBar(b)}
-                    <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
-                </div>`).join("")}</div>
-        </article>`;
-    if (freshEntry) playUtilEntranceAnimation(monthlyContainer);
-    utilRenderedOnce.monthly = true;
-}
+    async function loadUtilizationMonthly(id) {
+        const monthlyContainer = document.getElementById("util-tab-monthly");
+        const freshEntry = !utilRenderedOnce.monthly;
+        const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
+        monthlyContainer.innerHTML = `
+            <article class="detail-card">
+                <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
+                ${renderUptimeTrendChart(data.buckets)}
+            </article>
+            <article class="detail-card">
+                <div class="detail-title">每月明细</div>
+                <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
+                    <div class="uptime-bucket-row">
+                        <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
+                        ${renderUptimeBar(b)}
+                        <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
+                    </div>`).join("")}</div>
+            </article>`;
+        if (freshEntry) playUtilEntranceAnimation(monthlyContainer);
+        utilRenderedOnce.monthly = true;
+    }
 
-async function loadUtilization(tab) {
-    const id = selectedDeviceId();
-    if(!id) { document.getElementById(`util-tab-${tab}`).innerHTML = '<div class="empty panel">请先选择设备</div>'; return; }
-    if(tab==="overview") await loadUtilizationOverview(id);
-    else if(tab==="daily") await loadUtilizationDaily(id);
-    else if(tab==="monthly") await loadUtilizationMonthly(id);
-}
+    async function loadUtilization(tab) {
+        const id = selectedDeviceId();
+        if(!id) { document.getElementById(`util-tab-${tab}`).innerHTML = '<div class="empty panel">请先选择设备</div>'; return; }
+        if(tab==="overview") await loadUtilizationOverview(id);
+        else if(tab==="daily") await loadUtilizationDaily(id);
+        else if(tab==="monthly") await loadUtilizationMonthly(id);
+    }
 
     async function loadChangelog() {
         const rows=await requestJson("/api/changelog");

@@ -185,10 +185,18 @@
         .uptime-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
         .uptime-summary-card { padding: 16px; border: 1px solid var(--line); background: var(--panel); }
         .uptime-summary-value { margin: 6px 0 10px; font-size: 26px; font-weight: 800; color: var(--green); }
-        .uptime-bar { display: flex; height: 14px; overflow: hidden; border-radius: 7px; background: var(--gray); }
-        .uptime-bar-segment.active { background: var(--green); }
-        .uptime-bar-segment.standby { background: var(--orange); }
-        .uptime-bar-segment.off { background: var(--gray); }
+        .uptime-bar { position: relative; height: 14px; overflow: hidden; border-radius: 7px; background: var(--gray); }
+        /* Segments are stacked absolutely (not laid out side by side) with
+           cumulative widths -- see renderUptimeBar in app.js -- so active
+           sits on top of standby, which sits on top of off/background.
+           Each is only visible in the region beyond where the segment
+           above it ends. This lets all three grow from the true left edge
+           (x=0) at the same time (see playUtilEntranceAnimation) while
+           still settling into the correct visual split at rest. */
+        .uptime-bar-segment { position: absolute; top: 0; left: 0; height: 100%; transform-origin: left center; }
+        .uptime-bar-segment.active { background: var(--green); z-index: 3; }
+        .uptime-bar-segment.standby { background: var(--orange); z-index: 2; }
+        .uptime-bar-segment.off { background: var(--gray); z-index: 1; }
         .uptime-legend { display: flex; gap: 14px; margin-left: auto; font-size: 12px; color: var(--muted); }
         .uptime-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
         .uptime-legend .dot.active { background: var(--green); }
@@ -211,13 +219,7 @@
            which always starts from its own first keyframe regardless of
            what's currently painted -- unlike toggling CSS classes across
            animation frames, this can't race with the browser's paint
-           timing and show the finished state first.
-           The three segments inside a .uptime-bar are laid out (via flex)
-           at their real final positions from the start; the entrance
-           animation is a single left-to-right clip-path sweep on the
-           .uptime-bar container itself, not a per-segment transform, so
-           it reveals a standby/off segment exactly where it already sits
-           rather than growing it from wherever the previous segment ends. */
+           timing and show the finished state first. */
 
         .day-detail-dialog { width: min(640px, calc(100% - 28px)); padding: 22px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
         .day-detail-dialog::backdrop { background: rgba(15,23,42,.5); }
