@@ -568,6 +568,7 @@ async function loadUtilization(tab) {
 
     function switchUtilTab(tab) {
         activeUtilTab = tab;
+        utilRenderedOnce[tab] = false;
         document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
         document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
         document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
@@ -583,9 +584,10 @@ async function loadUtilization(tab) {
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
         } else if(page==="utilization") {
             activeUtilTab="overview";
+            utilRenderedOnce.overview = false; // re-play animation on every entry into the page
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
             document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
-            document.getElementById("page-title").textContent=`利用率报表 · ${utilTabTitles.overview}`;
+            document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
         } else {
             document.getElementById("page-title").textContent=pageTitles[page];
         }

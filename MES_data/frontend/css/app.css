@@ -224,7 +224,7 @@
         }
 
         .uptime-trend-fg {
-            animation: uptime-trend-reveal 1.1s cubic-bezier(.4,0,.2,1) both;
+            animation: uptime-trend-reveal 4.2s cubic-bezier(.4,0,.2,1) both;
         }
         @keyframes uptime-trend-reveal {
             from { clip-path: inset(0 100% 0 0); }
