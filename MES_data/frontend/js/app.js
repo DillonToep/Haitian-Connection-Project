@@ -433,10 +433,33 @@ let currentPage = "dashboard";
     }
 
 
+    // Collapses whatever bars/trend-line are currently sitting in a
+    // 利用率 tab's DOM -- leftover from a previous visit -- back to their
+    // zero-width starting point. Must be called synchronously, in the
+    // same tick as deciding a tab needs a fresh entrance animation and
+    // BEFORE that tab's container is unhidden. Without this, the stale
+    // fully-drawn content (kept around on purpose so refreshes don't
+    // flash) stays visible for the whole async data fetch every time you
+    // click back into a tab, and then visibly snaps to empty the instant
+    // the fetch resolves and playUtilEntranceAnimation() takes over --
+    // that snap is the bug, not the animation itself.
+    function collapseUtilAnimatables(container) {
+        container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
+            segment.style.transform = "scaleX(0)";
+        });
+        container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
+            fg.style.clipPath = "inset(0 100% 0 0)";
+        });
+    }
+
     function playUtilEntranceAnimation(container) {
         if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
+            // Clear the inline collapse style from collapseUtilAnimatables --
+            // these are freshly-rendered nodes from the new innerHTML, so
+            // this is a no-op for them, but harmless either way.
+            segment.style.transform = "";
             segment.animate(
                 [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
                 { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
@@ -444,6 +467,7 @@ let currentPage = "dashboard";
         });
 
         container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
+            fg.style.clipPath = "";
             fg.animate(
                 [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
                 { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
@@ -590,8 +614,12 @@ let currentPage = "dashboard";
         // rendering when utilRenderedOnce[tab] is false). The previous
         // render is deliberately left in place -- not cleared -- so the
         // bars/chart stay static and visible right up until the fresh data
-        // arrives and replaces them.
+        // arrives and replaces them. But that stale content must not be
+        // visible in its old, fully-drawn state during the async fetch
+        // that's about to happen -- collapse it now, synchronously, before
+        // this container is unhidden below (see collapseUtilAnimatables).
         utilRenderedOnce[tab] = false;
+        collapseUtilAnimatables(document.getElementById(`util-tab-${tab}`));
         document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
         document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
         document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
@@ -607,10 +635,12 @@ let currentPage = "dashboard";
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
         } else if(page==="utilization") {
             activeUtilTab="overview";
-            // See switchUtilTab -- flag reset only, no clearing. The
-            // snap-back fix lives in playUtilEntranceAnimation() using
-            // element.animate(), not in the markup.
+            // See switchUtilTab -- same fix applies here: collapse the
+            // stale overview content synchronously, before it's unhidden
+            // below, so nothing flashes at its old full-drawn state while
+            // the fresh data fetch is in flight.
             utilRenderedOnce.overview = false;
+            collapseUtilAnimatables(document.getElementById("util-tab-overview"));
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
             document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
             document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
