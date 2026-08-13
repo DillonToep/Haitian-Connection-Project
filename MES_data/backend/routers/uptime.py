@@ -3,7 +3,7 @@
 Uptime is derived from the historical stream of realtime samples in
 dbo.vw_machine_realtime (the same view GET /api/realtime/{device_id} already
 uses). Each sample carries `machine_status`; a machine reporting
-machine_status == 1 is "active" (producing), any other reported value is
+machine_status == 2 is "active" (producing), any other reported value is
 "standby" (idle but still online). A gap between two consecutive samples
 longer than OFFLINE_GAP_SECONDS is treated as "off" -- this mirrors the live
 dashboard's own offline detection (see statusOf()/ageText() in
@@ -85,7 +85,7 @@ def _compute_day_totals(rows, range_start: datetime, range_end: datetime) -> dic
 
         previous_time = data_time
         previous_status = (
-            "active" if machine_status is not None and int(machine_status) == 1 else "standby"
+            "active" if machine_status is not None and int(machine_status) == 2 else "standby"
         )
 
     gap = (range_end - previous_time).total_seconds()
@@ -106,7 +106,7 @@ def _compute_day_segments(prev_row, rows, day_start: datetime, day_end: datetime
     segments: list[dict] = []
     previous_time = day_start
     if prev_row is not None and prev_row.machine_status is not None:
-        previous_status = "active" if int(prev_row.machine_status) == 1 else "standby"
+        previous_status = "active" if int(prev_row.machine_status) == 2 else "standby"
     else:
         previous_status = "off"
 
@@ -125,7 +125,7 @@ def _compute_day_segments(prev_row, rows, day_start: datetime, day_end: datetime
         status_for_gap = previous_status if (previous_status == "off" or gap <= OFFLINE_GAP_SECONDS) else "off"
         add_segment(previous_time, data_time, status_for_gap)
         previous_time = data_time
-        previous_status = "active" if machine_status is not None and int(machine_status) == 1 else "standby"
+        previous_status = "active" if machine_status is not None and int(machine_status) == 2 else "standby"
 
     gap = (day_end - previous_time).total_seconds()
     status_for_gap = previous_status if (previous_status == "off" or gap <= OFFLINE_GAP_SECONDS) else "off"

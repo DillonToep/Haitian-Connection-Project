@@ -245,12 +245,6 @@ let currentPage = "dashboard";
             </article>`;
     }
 
-    // Groups parameters within a category by "base name" -- the label with
-    // any digit run stripped out. e.g. 中子1进压力 / 中子2进压力 / 中子3进压力 / 中子4进压力
-    // all collapse to the base name 中子进压力 and become one row with each
-    // numbered value shown side by side. Labels with no sibling (no other
-    // parameter sharing the same stripped base name) are left as their own
-    // normal single-value row, keeping their original numbered label text.
     function groupTechParameters(items) {
         const groups=new Map();
         const order=[];
