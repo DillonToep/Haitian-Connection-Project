@@ -207,12 +207,17 @@
         /* Bars and the trend line/dots render at their real, final size by
            default -- no CSS here controls a "collapsed" state. Animating
            them in on a fresh tab/page entry is handled explicitly in JS
-           via element.animate() (see loadUtilizationOverview/Daily/Monthly
-           in app.js), which always starts from its own first keyframe
-           regardless of what's currently painted -- unlike toggling CSS
-           classes across animation frames, this can't race with the
-           browser's paint timing and show the finished state first. */
-        .uptime-bar-segment { transform-origin: left center; }
+           via element.animate() (see playUtilEntranceAnimation in app.js),
+           which always starts from its own first keyframe regardless of
+           what's currently painted -- unlike toggling CSS classes across
+           animation frames, this can't race with the browser's paint
+           timing and show the finished state first.
+           The three segments inside a .uptime-bar are laid out (via flex)
+           at their real final positions from the start; the entrance
+           animation is a single left-to-right clip-path sweep on the
+           .uptime-bar container itself, not a per-segment transform, so
+           it reveals a standby/off segment exactly where it already sits
+           rather than growing it from wherever the previous segment ends. */
 
         .day-detail-dialog { width: min(640px, calc(100% - 28px)); padding: 22px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
         .day-detail-dialog::backdrop { background: rgba(15,23,42,.5); }

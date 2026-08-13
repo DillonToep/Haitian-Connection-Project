@@ -437,13 +437,10 @@ let currentPage = "dashboard";
 function playUtilEntranceAnimation(container) {
     if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
-        const delay = segment.classList.contains("standby") ? 80
-                    : segment.classList.contains("off") ? 160
-                    : 0;
-        segment.animate(
-            [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
-            { duration: 700, delay, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+    container.querySelectorAll(".uptime-bar").forEach(bar => {
+        bar.animate(
+            [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+            { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
         );
     });
 
