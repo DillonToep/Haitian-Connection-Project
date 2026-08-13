@@ -564,13 +564,14 @@ async function loadUtilization(tab) {
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
         switchPage("device-detail");
     }
-
+        
     function switchDetailTab(tab) {
         activeDetailTab=tab;
         if(tab!=="tech") highlightParameter=null;
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===tab));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
         refreshPage();
+        scheduleAutoRefresh();
     }
 
     function switchUtilTab(tab) {
@@ -579,6 +580,7 @@ async function loadUtilization(tab) {
         document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
         document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
         refreshPage();
+        scheduleAutoRefresh();
     }
 
     async function refreshPage() {
@@ -599,6 +601,11 @@ async function loadUtilization(tab) {
         if(page==="device-detail") {
             document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
+        } else if(page==="utilization") {
+            activeUtilTab="overview";
+            document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
+            document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
+            document.getElementById("page-title").textContent=`利用率报表 · ${utilTabTitles.overview}`;
         } else {
             document.getElementById("page-title").textContent=pageTitles[page];
         }
@@ -607,6 +614,7 @@ async function loadUtilization(tab) {
         const sectionId = page==="device-detail" ? "device-detail-page" : `${page}-page`;
         document.getElementById(sectionId).classList.remove("hidden");
         await refreshPage();
+        scheduleAutoRefresh();
     }
 
     const themeToggle=document.getElementById("theme-toggle");
@@ -647,4 +655,33 @@ async function loadUtilization(tab) {
 
     async function initialize(){try{await loadSession();await loadDevices();await refreshPage();}catch(error){document.getElementById("connection-status").textContent=error.message;}}
     initialize();
-    setInterval(()=>{if(currentPage==="dashboard"||currentPage==="device-detail")refreshPage();},2000);
+    let isRefreshingPage = false;
+    async function refreshPage() {
+        if (isRefreshingPage) return;
+        isRefreshingPage = true;
+        const status=document.getElementById("connection-status");
+        try {
+            if(currentPage==="dashboard")await loadDashboard();
+            if(currentPage==="device-detail")await loadActiveDetailTab();
+            if(currentPage==="molds")await loadMolds();
+            if(currentPage==="changelog")await loadChangelog();
+            if(currentPage==="utilization") await loadUtilization(activeUtilTab);
+            status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
+        } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
+        finally { isRefreshingPage = false; }
+    }
+
+    let autoRefreshTimer = null;
+    function scheduleAutoRefresh() {
+        if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+        autoRefreshTimer = setTimeout(async () => {
+            if (currentPage === "dashboard" || currentPage === "device-detail") {
+                await refreshPage();
+            }
+            scheduleAutoRefresh();
+        }, 2000);
+    }
+
+    async function initialize(){try{await loadSession();await loadDevices();await refreshPage();}catch(error){document.getElementById("connection-status").textContent=error.message;}}
+    initialize();
+    scheduleAutoRefresh();
