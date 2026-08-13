@@ -444,6 +444,17 @@ let currentPage = "dashboard";
     // the fetch resolves and playUtilEntranceAnimation() takes over --
     // that snap is the bug, not the animation itself.
     function collapseUtilAnimatables(container) {
+        // Cancel any still-active entrance animations left over from the
+        // last time this container was rendered. playUtilEntranceAnimation
+        // uses fill:"both", which means a *finished* animation keeps
+        // forcing its end-state (full size) onto the element with higher
+        // priority than any inline style set below. Without canceling it
+        // first, the stale bars/chart stay visually stuck at full size for
+        // the whole time this container sits here waiting for fresh data
+        // on a return visit -- our collapse below would otherwise silently
+        // have no visible effect, which is exactly the "shows fully, then
+        // swaps" flash this function exists to prevent.
+        container.getAnimations({ subtree: true }).forEach(animation => animation.cancel());
         container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
             segment.style.transform = "scaleX(0)";
         });
