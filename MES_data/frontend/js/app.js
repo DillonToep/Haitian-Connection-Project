@@ -6,16 +6,34 @@ let currentPage = "dashboard";
     let dashboardPage = 1;
     const pageSize = 8;
     let uptimeChartIdCounter = 0;
+    // Whether each 利用率 sub-tab has already been rendered once this
+    // session. The .uptime-bar-segment grow-in animation is only meant to
+    // play the first time a tab's content appears -- re-fetching the same
+    // tab (e.g. navigating away and back) replaces the DOM but should not
+    // replay the animation, since that's what reads as a stutter/reload.
     const utilRenderedOnce = { overview: false, daily: false, monthly: false };
+    // Device currently open in the detail view, and which tab is active there.
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
     let activeUtilTab = "overview";
+    // Categories the user has manually expanded in the 工艺参数 tab. Categories
+    // not in this set render collapsed by default (all-closed on first view of
+    // a device). Kept outside loadTech so the 2-second auto-refresh doesn't
+    // reset what the user opened/closed.
     let techOpenCategories = new Set();
+    // Set when the device detail view was opened from a changelog entry:
+    // { parameter_id, previous_value, new_value }. loadTech() uses this to
+    // force-open the relevant category and mark the changed row in red.
+    // Cleared whenever openDeviceDetail() is called without a highlight
+    // (e.g. clicking a device card from the dashboard).
     let highlightParameter = null;
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据" };
 
+    // Units shown next to each 工艺参数 value, keyed by the same category
+    // buckets produced by backend/parameter_labels.py::categorize(). Categories
+    // not listed here (模式设置, 其他参数, 未知参数) are left without a unit.
     const techCategoryUnits = {
         "温度参数": " ℃",
         "压力参数": " MPa",
@@ -24,6 +42,10 @@ let currentPage = "dashboard";
         "时间参数": " s"
     };
 
+    // SPC page fields: sourced from dbo.vw_machine_spc, scaled server-side
+    // using the raw tag's scale factor (see backend/parameter_labels.py).
+    // Values already arrive pre-scaled from the API, so this dict is only
+    // used for labels/units, not for scaling in the browser.
     const spcFields = {
         cycle_number:["模数",""],
         cycle_time:["周期时间"," s"],
@@ -54,6 +76,7 @@ let currentPage = "dashboard";
         oil_temperature:["生产油温",""]
     };
 
+    // Map specific device IDs to a real machine photo instead of the generic SVG.
     const deviceMachineImages = {
         "C02": "/static/img/haitianMars.png"
     };
@@ -155,6 +178,10 @@ let currentPage = "dashboard";
         buttons.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>{dashboardPage=Number(button.dataset.pageNumber);renderDashboard();}));
     }
 
+    // Renders the 24h horizontal timeline for one day, using the raw
+    // {start,end,status} segments from GET /api/uptime/{id}/day. Block widths
+    // are positioned by real elapsed time (not evenly spaced), so a 3-hour
+    // standby period is visibly wider than a 20-minute one.
     function renderDayTimeline(dayStart, dayEnd, segments) {
         const startMs = new Date(dayStart).getTime();
         const endMs = new Date(dayEnd).getTime();
@@ -198,6 +225,8 @@ let currentPage = "dashboard";
     }
     document.getElementById("day-detail-close").addEventListener("click",()=>document.getElementById("day-detail-dialog").close());
 
+    // Realtime tab: labelled status + temperature tiles. Values arrive
+    // already scaled from the API (backend/parameter_labels.py).
     async function loadRealtime(id) {
         const m=await requestJson(`/api/realtime/${encodeURIComponent(id)}`);
         const statusTiles=[
@@ -218,6 +247,12 @@ let currentPage = "dashboard";
             </article>`;
     }
 
+    // Groups parameters within a category by "base name" -- the label with
+    // any digit run stripped out. e.g. 中子1进压力 / 中子2进压力 / 中子3进压力 / 中子4进压力
+    // all collapse to the base name 中子进压力 and become one row with each
+    // numbered value shown side by side. Labels with no sibling (no other
+    // parameter sharing the same stripped base name) are left as their own
+    // normal single-value row, keeping their original numbered label text.
     function groupTechParameters(items) {
         const groups=new Map();
         const order=[];
@@ -231,6 +266,22 @@ let currentPage = "dashboard";
         return order.map(key=>({key,items:groups.get(key)}));
     }
 
+    // Tech (工艺参数) tab: fully driven by the API, which already joins
+    // each parameter_id against the label file, applies scale, drops
+    // parameters flagged use=0, and assigns a display category. The
+    // category also picks which unit (if any) is appended to the value.
+    // Within each category, numbered variants of the same parameter are
+    // grouped onto a single row (see groupTechParameters above).
+    //
+    // Categories render collapsed by default when a device is first opened
+    // (techOpenCategories starts empty); the "展开全部" / "收起全部" buttons
+    // and each section's own toggle update techOpenCategories so state
+    // survives the 2-second auto-refresh.
+    //
+    // When this tab is opened from a changelog entry (see openChangelogDetail),
+    // highlightParameter names the changed tag: its category is force-opened
+    // and its row gets the .parameter-changed style, with a banner showing
+    // the previous -> new value at the top of the card.
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
@@ -273,7 +324,10 @@ let currentPage = "dashboard";
                 <div class="parameter-grid">${rows}</div>
             </details>`;
         }
-
+        // Categories are split into two fixed columns up front (instead of
+        // CSS multi-column flow) so opening/closing one section never moves
+        // another section into a different column -- each category has a
+        // permanent left/right slot for the lifetime of this render.
         const leftCategories=orderedCategories.filter((_,i)=>i%2===0);
         const rightCategories=orderedCategories.filter((_,i)=>i%2===1);
         const leftHtml=leftCategories.map(renderCategory).join("");
@@ -438,7 +492,7 @@ let currentPage = "dashboard";
                 <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
                         <div class="uptime-bucket-row" data-date="${b.period_start}">
                         <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
-                        ${renderUptimeBar(b, freshEntry)}
+                        ${renderUptimeBar(b)}
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
@@ -456,7 +510,7 @@ let currentPage = "dashboard";
         monthlyContainer.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
-                ${renderUptimeTrendChart(data.buckets, freshEntry)}
+                ${renderUptimeTrendChart(data.buckets)}
             </article>
             <article class="detail-card">
                 <div class="detail-title">每月明细</div>
@@ -497,6 +551,7 @@ let currentPage = "dashboard";
         } catch(error){ alert(error.message); }
     }
 
+    // Loads whichever tab is currently active inside the device detail view.
     async function loadActiveDetailTab() {
         if(!detailDeviceId) return;
         if(activeDetailTab==="realtime") await loadRealtime(detailDeviceId);
@@ -504,6 +559,10 @@ let currentPage = "dashboard";
         if(activeDetailTab==="spc") await loadSpc(detailDeviceId);
     }
 
+    // options.tab: which detail tab to open on ("realtime" by default).
+    // options.highlight: {parameter_id, previous_value, new_value} to flag
+    // in the 工艺参数 tab -- set when arriving from a changelog entry, and
+    // cleared automatically otherwise (e.g. clicking a device card).
     function openDeviceDetail(deviceId, options={}) {
         detailDeviceId=deviceId;
         activeDetailTab=options.tab||"realtime";
@@ -525,6 +584,13 @@ let currentPage = "dashboard";
 
     function switchUtilTab(tab) {
         activeUtilTab = tab;
+        // Replays the grow-in animation every time this tab is re-entered
+        // (see loadUtilizationOverview/Daily/Monthly, which call
+        // playUtilEntranceAnimation() via element.animate() right after
+        // rendering when utilRenderedOnce[tab] is false). The previous
+        // render is deliberately left in place -- not cleared -- so the
+        // bars/chart stay static and visible right up until the fresh data
+        // arrives and replaces them.
         utilRenderedOnce[tab] = false;
         document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
         document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
@@ -541,6 +607,9 @@ let currentPage = "dashboard";
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
         } else if(page==="utilization") {
             activeUtilTab="overview";
+            // See switchUtilTab -- flag reset only, no clearing. The
+            // snap-back fix lives in playUtilEntranceAnimation() using
+            // element.animate(), not in the markup.
             utilRenderedOnce.overview = false;
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
             document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
