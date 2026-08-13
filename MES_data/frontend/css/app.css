@@ -204,53 +204,15 @@
         .uptime-bucket-row { cursor: pointer; }
         .uptime-bucket-row:hover { background: #f0f3f7; }
 
-        /* Default (static) state: bars fully grown, trend line/dots fully
-           drawn, no animation. This is what data refreshes render straight
-           into -- an instant swap with no transition -- and it's also the
-           state ".play-anim" animates *toward*. */
-        .uptime-bar-segment { transform-origin: left center; transform: scaleX(1); }
-        .uptime-trend-fg { clip-path: inset(0 0% 0 0); }
-
-        /* Set on the container synchronously (in JS) right before fresh
-           HTML is inserted, so the new bars/line start collapsed with no
-           flash of their finished state first. */
-        .prime-anim .uptime-bar-segment { transform: scaleX(0); }
-        .prime-anim .uptime-trend-fg { clip-path: inset(0 100% 0 0); }
-
-        /* Swapped in for "prime-anim" on the next animation frame (see
-           app.js), so the browser animates from the primed collapsed state
-           to the default final state. Only applied on a genuine fresh
-           entry into a tab/page -- periodic data refreshes skip both
-           classes entirely and land straight on the static default above. */
-        .play-anim .uptime-bar-segment {
-            animation: uptime-bar-grow .7s cubic-bezier(.4,0,.2,1) both;
-        }
-        .play-anim .uptime-bar-segment.active { animation-delay: 0s; }
-        .play-anim .uptime-bar-segment.standby { animation-delay: .08s; }
-        .play-anim .uptime-bar-segment.off { animation-delay: .16s; }
-        .play-anim .uptime-trend-fg {
-            animation: uptime-trend-reveal 4.2s cubic-bezier(.4,0,.2,1) both;
-        }
-
-        @keyframes uptime-bar-grow {
-            from { transform: scaleX(0); }
-            to { transform: scaleX(1); }
-        }
-        @keyframes uptime-trend-reveal {
-            from { clip-path: inset(0 100% 0 0); }
-            to   { clip-path: inset(0 0% 0 0); }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .prime-anim .uptime-bar-segment,
-            .prime-anim .uptime-trend-fg,
-            .play-anim .uptime-bar-segment,
-            .play-anim .uptime-trend-fg {
-                animation: none !important;
-                transform: scaleX(1) !important;
-                clip-path: inset(0 0% 0 0) !important;
-            }
-        }
+        /* Bars and the trend line/dots render at their real, final size by
+           default -- no CSS here controls a "collapsed" state. Animating
+           them in on a fresh tab/page entry is handled explicitly in JS
+           via element.animate() (see loadUtilizationOverview/Daily/Monthly
+           in app.js), which always starts from its own first keyframe
+           regardless of what's currently painted -- unlike toggling CSS
+           classes across animation frames, this can't race with the
+           browser's paint timing and show the finished state first. */
+        .uptime-bar-segment { transform-origin: left center; }
 
         .day-detail-dialog { width: min(640px, calc(100% - 28px)); padding: 22px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
         .day-detail-dialog::backdrop { background: rgba(15,23,42,.5); }

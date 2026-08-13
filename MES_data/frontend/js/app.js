@@ -434,6 +434,27 @@ let currentPage = "dashboard";
         </div>`;
     }
 
+function playUtilEntranceAnimation(container) {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
+        const delay = segment.classList.contains("standby") ? 80
+                    : segment.classList.contains("off") ? 160
+                    : 0;
+        segment.animate(
+            [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
+            { duration: 700, delay, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+        );
+    });
+
+    container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
+        fg.animate(
+            [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+            { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+        );
+    });
+}
+
 async function loadUtilizationOverview(id) {
     const overviewContainer = document.getElementById("util-tab-overview");
     const freshEntry = !utilRenderedOnce.overview;
@@ -445,9 +466,6 @@ async function loadUtilizationOverview(id) {
     const today = dayData.buckets[dayData.buckets.length-1];
     const thisWeek = weekData.buckets[weekData.buckets.length-1];
     const thisMonth = monthData.buckets[monthData.buckets.length-1];
-
-    overviewContainer.classList.remove("play-anim");
-    overviewContainer.classList.toggle("prime-anim", freshEntry);
     overviewContainer.innerHTML = `
         <div class="uptime-summary-grid">
             <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
@@ -460,13 +478,7 @@ async function loadUtilizationOverview(id) {
             </div>
             ${renderUptimeTrendChart(dayData.buckets)}
         </article>`;
-    if (freshEntry) {
-        void overviewContainer.offsetWidth; // commit the primed (collapsed) state before switching to play-anim
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            overviewContainer.classList.remove("prime-anim");
-            overviewContainer.classList.add("play-anim");
-        }));
-    }
+    if (freshEntry) playUtilEntranceAnimation(overviewContainer);
     utilRenderedOnce.overview = true;
 }
 
@@ -474,9 +486,6 @@ async function loadUtilizationDaily(id) {
     const dailyContainer = document.getElementById("util-tab-daily");
     const freshEntry = !utilRenderedOnce.daily;
     const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
-
-    dailyContainer.classList.remove("play-anim");
-    dailyContainer.classList.toggle("prime-anim", freshEntry);
     dailyContainer.innerHTML = `
         <article class="detail-card">
             <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
@@ -494,13 +503,7 @@ async function loadUtilizationDaily(id) {
     document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
         row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
     });
-    if (freshEntry) {
-        void dailyContainer.offsetWidth;
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            dailyContainer.classList.remove("prime-anim");
-            dailyContainer.classList.add("play-anim");
-        }));
-    }
+    if (freshEntry) playUtilEntranceAnimation(dailyContainer);
     utilRenderedOnce.daily = true;
 }
 
@@ -508,9 +511,6 @@ async function loadUtilizationMonthly(id) {
     const monthlyContainer = document.getElementById("util-tab-monthly");
     const freshEntry = !utilRenderedOnce.monthly;
     const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
-
-    monthlyContainer.classList.remove("play-anim");
-    monthlyContainer.classList.toggle("prime-anim", freshEntry);
     monthlyContainer.innerHTML = `
         <article class="detail-card">
             <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
@@ -525,16 +525,9 @@ async function loadUtilizationMonthly(id) {
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                 </div>`).join("")}</div>
         </article>`;
-    if (freshEntry) {
-        void monthlyContainer.offsetWidth;
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            monthlyContainer.classList.remove("prime-anim");
-            monthlyContainer.classList.add("play-anim");
-        }));
-    }
+    if (freshEntry) playUtilEntranceAnimation(monthlyContainer);
     utilRenderedOnce.monthly = true;
 }
-
 
 async function loadUtilization(tab) {
     const id = selectedDeviceId();
@@ -544,9 +537,6 @@ async function loadUtilization(tab) {
     else if(tab==="monthly") await loadUtilizationMonthly(id);
 }
 
-    // 参数变更记录 (工艺参数 changelog) tab: lists every detected change,
-    // newest first. Clicking a row opens that device's 工艺参数 tab with the
-    // changed parameter expanded and highlighted (see openChangelogDetail).
     async function loadChangelog() {
         const rows=await requestJson("/api/changelog");
         document.getElementById("changelog-summary").textContent=`共 ${rows.length} 条记录`;
