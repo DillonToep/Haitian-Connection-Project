@@ -434,20 +434,34 @@ let currentPage = "dashboard";
         </div>`;
     }
 
+    // Plays the "grow-in" entrance animation on a freshly-rendered
+    // utilization tab. Uses the Web Animations API directly on the real
+    // elements rather than toggling a CSS class, so playback always starts
+    // from an explicit first keyframe instead of depending on paint timing.
+    //
+    // IMPORTANT: fill must be "both", not "forwards". "forwards" only
+    // holds the *end* keyframe after the animation finishes -- it applies
+    // nothing before playback starts. Since these elements have no CSS
+    // collapsed state (they render at real, final size by default), a
+    // "forwards"-only animation can let the browser paint one frame of the
+    // natural full-size element before the animation's first keyframe
+    // (scaleX(0) / clip-path 100%) takes over, which shows up exactly as
+    // "full -> snap to empty -> refill". fill:"both" applies keyframe 0
+    // immediately when animate() is called, removing that gap entirely.
     function playUtilEntranceAnimation(container) {
         if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
             segment.animate(
                 [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
-                { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+                { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
             );
         });
 
         container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
             fg.animate(
                 [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
-                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
+                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
             );
         });
     }
