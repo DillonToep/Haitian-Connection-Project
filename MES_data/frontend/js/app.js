@@ -114,14 +114,10 @@ let currentPage = "dashboard";
         return `${Math.floor(seconds/3600)} 小时前`;
     }
 
-    function ageText(value) {
-        if(!value) return "无数据";
-        const seconds=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/1000));
-        if(seconds<60) return `${seconds} 秒前`;
-        if(seconds<3600) return `${Math.floor(seconds/60)} 分钟前`;
-        return `${Math.floor(seconds/3600)} 小时前`;
-    }
-
+    // Formats a duration given in whole minutes as "X 分钟" under an hour, or
+    // "X 小时 Y 分钟" (dropping the minutes if they're exactly 0) once it
+    // crosses 60 minutes -- used by the day-detail timeline tooltip and the
+    // scrolling segment list below it.
     function formatDurationMinutes(totalMinutes) {
         if (totalMinutes < 60) return `${totalMinutes} 分钟`;
         const hours = Math.floor(totalMinutes / 60);
