@@ -457,9 +457,22 @@ let currentPage = "dashboard";
 
         const segments = container.querySelectorAll(".uptime-bar-segment");
         const trends = container.querySelectorAll(".uptime-trend-fg");
+
+        // The freshly-rendered bars/chart just landed in the DOM at their
+        // real, final size (see loadUtilizationOverview/Daily/Monthly,
+        // which set innerHTML right before calling this). Explicitly pin
+        // them back to their collapsed starting state first, and force the
+        // browser to commit that as an actual paint (the offsetHeight read
+        // forces a synchronous layout/reflow) before kicking off the
+        // animation. Without this forced reflow, batching this many
+        // simultaneous element.animate() calls right after a big innerHTML
+        // insert can let the browser's first paint land on the finished
+        // (full-size) state, which is what reads as a quick "everything
+        // shows fully, then flashes into the animation" stutter.
         segments.forEach(segment => { segment.style.transform = "scaleX(0)"; });
         trends.forEach(fg => { fg.style.clipPath = "inset(0 100% 0 0)"; });
-        void container.offsetHeight;
+        void container.offsetHeight; // force layout commit of the collapsed state
+
         segments.forEach(segment => {
             segment.style.transform = "";
             segment.animate(
@@ -467,6 +480,7 @@ let currentPage = "dashboard";
                 { duration: 3200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
             );
         });
+
         trends.forEach(fg => {
             fg.style.clipPath = "";
             fg.animate(
@@ -569,7 +583,7 @@ let currentPage = "dashboard";
     async function openChangelogDetail(id) {
         try {
             const entry=await requestJson(`/api/changelog/${encodeURIComponent(id)}`);
-            openDeviceDetail(entry.device_id,{
+            await openDeviceDetail(entry.device_id,{
                 tab:"tech",
                 highlight:{parameter_id:entry.parameter_id,previous_value:entry.previous_value,new_value:entry.new_value}
             });
@@ -588,22 +602,45 @@ let currentPage = "dashboard";
     // options.highlight: {parameter_id, previous_value, new_value} to flag
     // in the 工艺参数 tab -- set when arriving from a changelog entry, and
     // cleared automatically otherwise (e.g. clicking a device card).
-    function openDeviceDetail(deviceId, options={}) {
+    //
+    // Data for the target tab is fetched and rendered BEFORE switchPage()
+    // makes the device-detail section visible (see switchPage), so opening
+    // a device never flashes an empty or stale (previous device's) panel
+    // before the real content swaps in.
+    async function openDeviceDetail(deviceId, options={}) {
         detailDeviceId=deviceId;
         activeDetailTab=options.tab||"realtime";
         techOpenCategories=new Set();
         highlightParameter=options.highlight||null;
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===activeDetailTab));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
-        switchPage("device-detail");
+        await switchPage("device-detail");
     }
-        
+
+    // Switching detail tabs: the newly-selected tab's data is fetched and
+    // rendered first, while the previously-active tab stays visible on
+    // screen, and only then do we flip which panel is shown. This avoids
+    // revealing an empty/stale panel and then hard-swapping in the real
+    // content a moment later (the stutter this replaces).
     async function switchDetailTab(tab) {
-        if(tab!=="tech") highlightParameter=null;
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===tab));
-        await loadTabData(tab);   // fetch + build innerHTML for the NEW tab first
+        const previousTab=activeDetailTab;
+        const previousHighlight=highlightParameter;
+        if(tab!=="tech") highlightParameter=null;
         activeDetailTab=tab;
+        try {
+            await loadActiveDetailTab();
+        } catch(error) {
+            activeDetailTab=previousTab;
+            highlightParameter=previousHighlight;
+            document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===previousTab));
+            const status=document.getElementById("connection-status");
+            status.className="connection error";
+            status.textContent=`读取失败：${error.message}`;
+            return;
+        }
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
+        document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[tab]}`;
         scheduleAutoRefresh();
     }
 
@@ -634,6 +671,12 @@ let currentPage = "dashboard";
         if(page==="device-detail") {
             document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
+            // Load the active tab's data before this section is revealed
+            // below, so entering the device detail view never flashes an
+            // empty panel or stale content left over from a previously
+            // viewed device/tab. Errors are surfaced via the normal
+            // connection-status handling inside refreshPage() further down.
+            try { await loadActiveDetailTab(); } catch(error) { /* handled by refreshPage below */ }
         } else if(page==="utilization") {
             activeUtilTab="overview";
             // See switchUtilTab -- same fix applies here: collapse the
