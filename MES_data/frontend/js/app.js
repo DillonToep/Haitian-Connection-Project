@@ -447,11 +447,31 @@ let currentPage = "dashboard";
                 ${gridLines}
                 ${xLabels}
             </svg>
-            <svg class="uptime-trend-svg uptime-trend-fg uptime-trend-animate" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+            <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
                 <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
                 ${dots}
             </svg>
         </div>`;
+    }
+
+    // Kicks off the clip-path reveal for every trend-chart foreground layer
+    // inside `root`. The SVG is inserted already clipped (see .uptime-trend-fg
+    // in app.css), so waiting a couple of animation frames before adding
+    // .uptime-trend-animate guarantees the browser has committed that hidden
+    // state to a real paint first. Without this, adding the class in the same
+    // tick the element is inserted can have the animation's first frame land
+    // on a tick where the main thread was still busy (e.g. the day/week/month
+    // fetches + card rendering in loadUtilizationOverview), so the reveal
+    // appears to jump-start partway through -- most noticeable on repeat
+    // visits to the tab rather than the very first page load.
+    function startTrendAnimations(root) {
+        const layers = root.querySelectorAll(".uptime-trend-fg");
+        if (!layers.length) return;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                layers.forEach(svg => svg.classList.add("uptime-trend-animate"));
+            });
+        });
     }
 
 
@@ -478,6 +498,7 @@ async function loadUtilizationOverview(id) {
             </div>
             ${renderUptimeTrendChart(dayData.buckets)}
         </article>`;
+    startTrendAnimations(document.getElementById("util-tab-overview"));
 }
 
 async function loadUtilizationDaily(id) {
@@ -499,6 +520,7 @@ async function loadUtilizationDaily(id) {
     document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
         row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
     });
+    startTrendAnimations(document.getElementById("util-tab-daily"));
 }
 
 async function loadUtilizationMonthly(id) {
@@ -517,6 +539,7 @@ async function loadUtilizationMonthly(id) {
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                 </div>`).join("")}</div>
         </article>`;
+    startTrendAnimations(document.getElementById("util-tab-monthly"));
 }
 
 async function loadUtilization(tab) {

@@ -214,8 +214,15 @@
         .uptime-bar-segment.off { animation-delay: .16s; }
 
 
-        .uptime-trend-svg.uptime-trend-animate {
+        /* Foreground (line + dots) is clipped by default, independent of the
+           animate class, so the very first frame the browser paints is
+           already the hidden state -- the animation can never start
+           "mid-way" on repeat loads. The animate class (added a frame later
+           via JS) just runs the reveal on top of that guaranteed start. */
+        .uptime-trend-fg {
             clip-path: inset(0 100% 0 0);
+        }
+        .uptime-trend-fg.uptime-trend-animate {
             animation: uptime-line-draw 4.5s cubic-bezier(.4,0,.2,1) forwards;
             will-change: clip-path;
         }
@@ -245,7 +252,7 @@
                 opacity: 1 !important;
                 transform: none !important;
             }
-            .uptime-trend-svg.uptime-trend-animate {
+            .uptime-trend-fg {
                 animation: none !important;
                 clip-path: none !important;
             }
