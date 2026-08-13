@@ -102,7 +102,7 @@ let currentPage = "dashboard";
         if(!machine.received_at) return "offline";
         const age=Date.now()-new Date(machine.received_at).getTime();
         if(!Number.isFinite(age)||age>120000) return "offline";
-        return Number(machine.machine_status)===1 ? "production" : "waiting";
+        return Number(machine.machine_status)===2 ? "production" : "waiting";
     }
     function statusMeta(status) { return status==="production"?["生产","production"]:status==="waiting"?["待机","waiting"]:["离线","offline"]; }
     function ageText(value) {
@@ -166,7 +166,7 @@ let currentPage = "dashboard";
                 <div class="info-row"><span class="info-label">模具编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
                 <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.received_at)}</span></span></div>
-                <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
+                <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
             </div></article>`;
         }).join(""):'<div class="empty panel">没有符合条件的设备</div>';
         grid.querySelectorAll(".device-card").forEach(card=>card.addEventListener("click",()=>openDeviceDetail(card.dataset.device)));
@@ -228,9 +228,9 @@ let currentPage = "dashboard";
     async function loadRealtime(id) {
         const m=await requestJson(`/api/realtime/${encodeURIComponent(id)}`);
         const statusTiles=[
-            metric("机器状态 (STS)",m.machine_status,"",true),
-            metric("模式 (OPM)",m.operation_mode,"",true),
-            metric("警报状态 (ASTS)",m.alarm_status,"",true),
+            metric("机器状态 (STS)",m.machine_status_label,"",true),
+            metric("模式 (OPM)",m.operation_mode_label,"",true),
+            metric("警报状态 (ASTS)",m.alarm_status_label,"",true),
             metric("生产油温 (OT)",m.oil_temperature," ℃",true),
         ].join("");
         const temperatureTiles=[1,2,3,4,5,6,7].map(i=>metric(`温度 T${i}`,m[`temperature_${i}`]," ℃")).join("");

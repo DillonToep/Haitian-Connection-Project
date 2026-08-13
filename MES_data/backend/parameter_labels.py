@@ -247,6 +247,50 @@ PARAMETER_LABELS: dict[str, dict] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# 实时状态编码 (OPM / STS / ASTS) -- these come from vw_machine_realtime as
+# small integer codes and need a code -> Chinese label lookup, unlike
+# PARAMETER_LABELS (工艺参数 tag -> name).
+# ---------------------------------------------------------------------------
+
+OPERATION_MODE_LABELS: dict[int, str] = {
+    0: '手动',
+    1: '半自动',
+    2: '电眼自动',
+    3: '时间自动',
+    4: '调模使用',
+}
+
+MACHINE_STATUS_LABELS: dict[int, str] = {
+    1: '待机',
+    2: '生产',
+}
+
+ALARM_STATUS_LABELS: dict[int, str] = {
+    0: '-',
+    2: '安全门未关',
+    3: '请开安全门',
+    28: '中子未到定位',
+    46: '请按安全确认键',
+    50: '背面安全门未关',
+    62: '请开安全门二',
+    90: '电热马达未启动',
+}
+
+
+def label_status_code(mapping: dict[int, str], value) -> str | None:
+    """Map a raw OPM/STS/ASTS integer code to its Chinese label. Unknown
+    codes fail open (return the raw value as text) instead of disappearing,
+    same philosophy as the unmapped-工艺参数-tag handling in devices.py."""
+    if value is None:
+        return None
+    try:
+        code = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return mapping.get(code, str(value))
+
+
 def get_label(parameter_id: str) -> dict | None:
     """Return the label metadata for a raw parameter id, or None if unknown."""
     return PARAMETER_LABELS.get(parameter_id)

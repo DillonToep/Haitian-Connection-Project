@@ -4,7 +4,14 @@ import pyodbc
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import get_connection, row_to_dict
-from ..parameter_labels import PARAMETER_LABELS, categorize
+from ..parameter_labels import (
+    PARAMETER_LABELS,
+    categorize,
+    ALARM_STATUS_LABELS,
+    MACHINE_STATUS_LABELS,
+    OPERATION_MODE_LABELS,
+    label_status_code,
+)
 from ..security import require_user
 
 
@@ -24,6 +31,17 @@ def get_single_device_row(sql: str, device_id: str, missing_message: str):
         raise
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+
+def _decorate_status_labels(record: dict) -> dict:
+    """Attach human-readable labels for STS/OPM/ASTS alongside their raw
+    codes, so the frontend doesn't need to know the code tables itself."""
+    if "machine_status" in record:
+        record["machine_status_label"] = label_status_code(MACHINE_STATUS_LABELS, record.get("machine_status"))
+    if "operation_mode" in record:
+        record["operation_mode_label"] = label_status_code(OPERATION_MODE_LABELS, record.get("operation_mode"))
+    if "alarm_status" in record:
+        record["alarm_status_label"] = label_status_code(ALARM_STATUS_LABELS, record.get("alarm_status"))
+    return record
 
 
 @router.get("/devices")
@@ -104,7 +122,7 @@ def get_dashboard(user: dict = Depends(require_user)):
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
             cursor.execute(sql)
-            return [row_to_dict(cursor, row) for row in cursor.fetchall()]
+            return [_decorate_status_labels(row_to_dict(cursor, row)) for row in cursor.fetchall()]
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
@@ -137,7 +155,7 @@ def get_all_realtime(user: dict = Depends(require_user)):
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
             cursor.execute(sql)
-            return [row_to_dict(cursor, row) for row in cursor.fetchall()]
+            return [_decorate_status_labels(row_to_dict(cursor, row)) for row in cursor.fetchall()]
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
@@ -157,7 +175,7 @@ def get_device_realtime(device_id: str, user: dict = Depends(require_user)):
         WHERE device_id = ?
         ORDER BY data_time DESC, raw_message_id DESC
     """
-    return get_single_device_row(sql, device_id, "没有找到该设备的实时数据")
+    return _decorate_status_labels(get_single_device_row(sql, device_id, "没有找到该设备的实时数据"))
 
 
 @router.get("/tech/{device_id}")
