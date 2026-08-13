@@ -455,15 +455,19 @@ let currentPage = "dashboard";
     function playUtilEntranceAnimation(container) {
         if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-        container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
+        const segments = container.querySelectorAll(".uptime-bar-segment");
+        const trends = container.querySelectorAll(".uptime-trend-fg");
+        segments.forEach(segment => { segment.style.transform = "scaleX(0)"; });
+        trends.forEach(fg => { fg.style.clipPath = "inset(0 100% 0 0)"; });
+        void container.offsetHeight;
+        segments.forEach(segment => {
             segment.style.transform = "";
             segment.animate(
                 [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
                 { duration: 3200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
             );
         });
-
-        container.querySelectorAll(".uptime-trend-fg").forEach(fg => {
+        trends.forEach(fg => {
             fg.style.clipPath = "";
             fg.animate(
                 [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
@@ -594,12 +598,12 @@ let currentPage = "dashboard";
         switchPage("device-detail");
     }
         
-    function switchDetailTab(tab) {
-        activeDetailTab=tab;
+    async function switchDetailTab(tab) {
         if(tab!=="tech") highlightParameter=null;
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===tab));
+        await loadTabData(tab);   // fetch + build innerHTML for the NEW tab first
+        activeDetailTab=tab;
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
-        refreshPage();
         scheduleAutoRefresh();
     }
 
