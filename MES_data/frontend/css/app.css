@@ -119,6 +119,9 @@
         .detail-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
         .detail-title { font-size: 19px; font-weight: 700; }
         .muted { color: var(--muted); }
+        /* Header actions row on the 工艺参数 card: expand/collapse-all buttons
+           sit next to the "参数时间" timestamp, right-aligned like the plain
+           .muted text did before these buttons were added. */
         .tech-header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
         .tech-action-button {
             height: 28px; padding: 0 12px; border: 1px solid #ccd4dd; border-radius: 3px;
@@ -134,12 +137,20 @@
         .parameter { display: flex; justify-content: space-between; align-items: baseline; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
         .parameter span:first-child { min-width: 58px; color: var(--muted); }
         .parameter span:last-child { margin-left: auto; font-weight: 650; text-align: right; }
+        /* Grouped row for numbered variants of the same parameter, e.g.
+           中子1进压力..中子4进压力 collapse into one 中子进压力 row with each
+           numbered value shown as a chip, right-aligned as a unified block. */
         .parameter-group { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; flex-wrap: wrap; }
         .parameter-group-label { flex: 0 0 auto; color: var(--muted); }
         .parameter-group-values { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 16px; margin-left: auto; }
         .parameter-chip { display: flex; align-items: baseline; gap: 6px; }
         .chip-index { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; padding: 0 4px; border-radius: 9px; background: var(--line); color: var(--muted); font-size: 11px; font-weight: 700; }
         .chip-value { font-weight: 650; }
+        /* Two-column layout for the 工艺参数 categories: categories are split
+           into two fixed lists in JS (alternating), each rendered into its
+           own independent-height grid column. Unlike CSS multi-column flow,
+           a section never jumps to the other column when a sibling
+           expands or collapses -- its column assignment is permanent. */
         .tech-groups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
         .tech-groups-column { display: flex; flex-direction: column; gap: 14px; }
         .tech-group { display: block; }
@@ -154,6 +165,9 @@
         .tech-group-count { color: var(--muted); font-size: 12px; font-weight: 600; }
         .chevron { display: inline-block; color: var(--muted); font-size: 11px; transition: transform .15s ease; }
         details.tech-group[open] .chevron { transform: rotate(90deg); }
+        /* 工艺参数 changelog: the row/chip for the parameter a changelog
+           entry points at, and the summary banner shown above the card
+           when the 工艺参数 tab was opened from a changelog click. */
         .parameter.parameter-changed {
             border: 1px solid var(--red); background: #fdecec;
             box-shadow: 0 0 0 2px rgba(239,68,68,.15);
@@ -189,9 +203,25 @@
         .uptime-bucket-pct { text-align: right; font-weight: 700; }
         .uptime-bucket-row { cursor: pointer; }
         .uptime-bucket-row:hover { background: #f0f3f7; }
-        .uptime-bar-segment { transform-origin: left center; transform: scaleX(0); }
-        .uptime-trend-fg { clip-path: inset(0 100% 0 0); }
 
+        /* Default (static) state: bars fully grown, trend line/dots fully
+           drawn, no animation. This is what data refreshes render straight
+           into -- an instant swap with no transition -- and it's also the
+           state ".play-anim" animates *toward*. */
+        .uptime-bar-segment { transform-origin: left center; transform: scaleX(1); }
+        .uptime-trend-fg { clip-path: inset(0 0% 0 0); }
+
+        /* Set on the container synchronously (in JS) right before fresh
+           HTML is inserted, so the new bars/line start collapsed with no
+           flash of their finished state first. */
+        .prime-anim .uptime-bar-segment { transform: scaleX(0); }
+        .prime-anim .uptime-trend-fg { clip-path: inset(0 100% 0 0); }
+
+        /* Swapped in for "prime-anim" on the next animation frame (see
+           app.js), so the browser animates from the primed collapsed state
+           to the default final state. Only applied on a genuine fresh
+           entry into a tab/page -- periodic data refreshes skip both
+           classes entirely and land straight on the static default above. */
         .play-anim .uptime-bar-segment {
             animation: uptime-bar-grow .7s cubic-bezier(.4,0,.2,1) both;
         }
@@ -200,15 +230,6 @@
         .play-anim .uptime-bar-segment.off { animation-delay: .16s; }
         .play-anim .uptime-trend-fg {
             animation: uptime-trend-reveal 4.2s cubic-bezier(.4,0,.2,1) both;
-        }
-
-        .no-anim .uptime-bar-segment {
-            animation: none !important;
-            transform: none !important;
-        }
-        .no-anim .uptime-trend-fg {
-            animation: none !important;
-            clip-path: none !important;
         }
 
         @keyframes uptime-bar-grow {
@@ -221,10 +242,13 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .uptime-bar-segment, .uptime-trend-fg {
+            .prime-anim .uptime-bar-segment,
+            .prime-anim .uptime-trend-fg,
+            .play-anim .uptime-bar-segment,
+            .play-anim .uptime-trend-fg {
                 animation: none !important;
-                transform: none !important;
-                clip-path: none !important;
+                transform: scaleX(1) !important;
+                clip-path: inset(0 0% 0 0) !important;
             }
         }
 
@@ -266,6 +290,9 @@
         dialog::backdrop { background: rgba(15,23,42,.5); }
         dialog input { width: 100%; margin: 5px 0 12px; }
 
+        /* Device detail view: opened by clicking a machine card on the dashboard.
+           Live parameters, process parameters, and SPC data all live here,
+           switched via the tab bar instead of separate sidebar pages. */
         .detail-topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
         .detail-device-title { font-size: 19px; font-weight: 700; }
         .detail-tabs {
