@@ -459,7 +459,7 @@ let currentPage = "dashboard";
             segment.style.transform = "";
             segment.animate(
                 [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
-                { duration: 3800, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                { duration: 3500, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
             );
         });
 
