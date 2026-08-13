@@ -605,9 +605,27 @@ let currentPage = "dashboard";
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
     }
 
+    // The 变更记录 tab is split into a "shell" (card header + filter bar)
+    // and a "results" pane (count + table). loadDeviceChangelog() is what
+    // the 2-second auto-refresh calls; it only rebuilds the shell the
+    // first time a device's changelog tab is opened (or when switching to
+    // a different device) and otherwise just refreshes the results pane.
+    // This keeps the filter <select>/<input> elements untouched by the
+    // periodic refresh, so an open dropdown or a focused date field never
+    // gets yanked out from under the user mid-interaction.
     async function loadDeviceChangelog(id) {
+        const container = document.getElementById("detail-tab-changelog");
+        if (container.dataset.deviceId !== id || !container.querySelector(".filter-body")) {
+            await renderDeviceChangelogShell(id);
+        } else {
+            await refreshDeviceChangelogRows(id);
+        }
+    }
+
+    async function renderDeviceChangelogShell(id) {
         const tree = await loadChangelogFieldTree();
-        const rows = await requestJson(`/api/changelog/by-device/${encodeURIComponent(id)}${changelogQuery(deviceChangelogFilters)}`);
+        const container = document.getElementById("detail-tab-changelog");
+        container.dataset.deviceId = id;
 
         const fieldOptions = Object.keys(tree).map(f =>
             `<option value="${escapeHtml(f)}"${deviceChangelogFilters.field===f?" selected":""}>${escapeHtml(f)}</option>`).join("");
@@ -616,36 +634,62 @@ let currentPage = "dashboard";
                 `<option value="${escapeHtml(s)}"${deviceChangelogFilters.sub===s?" selected":""}>${escapeHtml(s)}</option>`).join("")
             : "";
 
-        document.getElementById("detail-tab-changelog").innerHTML = `<article class="detail-card">
-            <div class="detail-header"><div class="detail-title">变更记录</div><div class="muted">共 ${rows.length} 条记录</div></div>
+        container.innerHTML = `<article class="detail-card">
+            <div class="detail-header"><div class="detail-title">变更记录</div><div class="muted" id="device-changelog-count"></div></div>
             <div class="filter-body" style="padding:0 0 14px;">
                 <div class="field"><label>日期</label><input type="date" id="device-changelog-filter-date" value="${escapeHtml(deviceChangelogFilters.date)}"></div>
                 <div class="field"><label>参数分类</label><select id="device-changelog-filter-field"><option value="">全部分类</option>${fieldOptions}</select></div>
                 <div class="field"><label>具体参数</label><select id="device-changelog-filter-sub" ${deviceChangelogFilters.field?"":"disabled"}><option value="">全部参数</option>${subOptions}</select></div>
                 <div class="field"><label>&nbsp;</label><button id="device-changelog-filter-clear" class="secondary-button" type="button">清除筛选</button></div>
             </div>
-            ${rows.length ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">没有符合筛选条件的变更记录</div>'}
+            <div id="device-changelog-results"></div>
         </article>`;
 
         document.getElementById("device-changelog-filter-date").addEventListener("change", async e => {
             deviceChangelogFilters.date = e.target.value;
-            await loadDeviceChangelog(id);
+            await refreshDeviceChangelogRows(id);
         });
         document.getElementById("device-changelog-filter-field").addEventListener("change", async e => {
             deviceChangelogFilters.field = e.target.value;
             deviceChangelogFilters.sub = "";
-            await loadDeviceChangelog(id);
+            const subSelect = document.getElementById("device-changelog-filter-sub");
+            if (deviceChangelogFilters.field && tree[deviceChangelogFilters.field]) {
+                subSelect.innerHTML = '<option value="">全部参数</option>' +
+                    Object.keys(tree[deviceChangelogFilters.field]).map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+                subSelect.disabled = false;
+            } else {
+                subSelect.innerHTML = '<option value="">全部参数</option>';
+                subSelect.disabled = true;
+            }
+            await refreshDeviceChangelogRows(id);
         });
         document.getElementById("device-changelog-filter-sub").addEventListener("change", async e => {
             deviceChangelogFilters.sub = e.target.value;
-            await loadDeviceChangelog(id);
+            await refreshDeviceChangelogRows(id);
         });
         document.getElementById("device-changelog-filter-clear").addEventListener("click", async () => {
             deviceChangelogFilters = { date: "", field: "", sub: "" };
-            await loadDeviceChangelog(id);
+            document.getElementById("device-changelog-filter-date").value = "";
+            document.getElementById("device-changelog-filter-field").value = "";
+            const subSelect = document.getElementById("device-changelog-filter-sub");
+            subSelect.innerHTML = '<option value="">全部参数</option>';
+            subSelect.disabled = true;
+            await refreshDeviceChangelogRows(id);
         });
 
-        document.querySelectorAll("#detail-tab-changelog .changelog-row").forEach(row => {
+        await refreshDeviceChangelogRows(id);
+    }
+
+    async function refreshDeviceChangelogRows(id) {
+        const rows = await requestJson(`/api/changelog/by-device/${encodeURIComponent(id)}${changelogQuery(deviceChangelogFilters)}`);
+        const countEl = document.getElementById("device-changelog-count");
+        if (countEl) countEl.textContent = `共 ${rows.length} 条记录`;
+        const resultsEl = document.getElementById("device-changelog-results");
+        if (!resultsEl) return; // tab was navigated away from mid-fetch
+        resultsEl.innerHTML = rows.length
+            ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
+            : '<div class="empty">没有符合筛选条件的变更记录</div>';
+        resultsEl.querySelectorAll(".changelog-row").forEach(row => {
             row.addEventListener("click", () => {
                 highlightParameter = {
                     parameter_id: row.dataset.parameter,
