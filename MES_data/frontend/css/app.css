@@ -203,7 +203,6 @@
         .uptime-bucket-pct { text-align: right; font-weight: 700; }
         .uptime-bucket-row { cursor: pointer; }
         .uptime-bucket-row:hover { background: #f0f3f7; }
-        .uptime-bucket-row { animation: uptime-fade-up .4s ease both; }
 
         .uptime-bar-segment {
             transform-origin: left center;
@@ -213,6 +212,16 @@
         .uptime-bar-segment.standby { animation-delay: .08s; }
         .uptime-bar-segment.off { animation-delay: .16s; }
 
+        /* Applied to a util tab's container on every render after its first
+           (see utilRenderedOnce in app.js). Without this, .uptime-bar-segment
+           replays its grow-in animation every single time the tab is
+           re-fetched -- including simply navigating back to a page you've
+           already visited -- which reads as a stutter/reload even though no
+           actual duplicate fetch is happening. */
+        .no-anim .uptime-bar-segment {
+            animation: none !important;
+            transform: none !important;
+        }
 
         /* Trend chart line + dots render fully visible immediately -- no
            grow-in reveal. */
@@ -223,10 +232,6 @@
             opacity: 1;
         }
 
-        @keyframes uptime-fade-up {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
         @keyframes uptime-bar-grow {
             from { transform: scaleX(0); }
             to { transform: scaleX(1); }

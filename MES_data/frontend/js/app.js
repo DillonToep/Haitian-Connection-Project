@@ -6,6 +6,12 @@ let currentPage = "dashboard";
     let dashboardPage = 1;
     const pageSize = 8;
     let uptimeChartIdCounter = 0;
+    // Whether each 利用率 sub-tab has already been rendered once this
+    // session. The .uptime-bar-segment grow-in animation is only meant to
+    // play the first time a tab's content appears -- re-fetching the same
+    // tab (e.g. navigating away and back) replaces the DOM but should not
+    // replay the animation, since that's what reads as a stutter/reload.
+    const utilRenderedOnce = { overview: false, daily: false, monthly: false };
     // Device currently open in the detail view, and which tab is active there.
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
@@ -437,7 +443,9 @@ async function loadUtilizationOverview(id) {
     const today = dayData.buckets[dayData.buckets.length-1];
     const thisWeek = weekData.buckets[weekData.buckets.length-1];
     const thisMonth = monthData.buckets[monthData.buckets.length-1];
-    document.getElementById("util-tab-overview").innerHTML = `
+    const overviewContainer = document.getElementById("util-tab-overview");
+    overviewContainer.classList.toggle("no-anim", utilRenderedOnce.overview);
+    overviewContainer.innerHTML = `
         <div class="uptime-summary-grid">
             <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
             <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
@@ -449,19 +457,22 @@ async function loadUtilizationOverview(id) {
             </div>
             ${renderUptimeTrendChart(dayData.buckets)}
         </article>`;
+    utilRenderedOnce.overview = true;
 }
 
 async function loadUtilizationDaily(id) {
     const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
-    document.getElementById("util-tab-daily").innerHTML = `
+    const dailyContainer = document.getElementById("util-tab-daily");
+    dailyContainer.classList.toggle("no-anim", utilRenderedOnce.daily);
+    dailyContainer.innerHTML = `
         <article class="detail-card">
             <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
             ${renderUptimeTrendChart(data.buckets)}
         </article>
         <article class="detail-card">
             <div class="detail-title">每日明细</div>
-            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b,i)=>`
-                    <div class="uptime-bucket-row" data-date="${b.period_start}" style="animation-delay:${i*35}ms">
+            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
+                    <div class="uptime-bucket-row" data-date="${b.period_start}">
                     <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
                     ${renderUptimeBar(b)}
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
@@ -470,25 +481,30 @@ async function loadUtilizationDaily(id) {
     document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
         row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
     });
+    utilRenderedOnce.daily = true;
 }
 
 async function loadUtilizationMonthly(id) {
     const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
-    document.getElementById("util-tab-monthly").innerHTML = `
+    const monthlyContainer = document.getElementById("util-tab-monthly");
+    monthlyContainer.classList.toggle("no-anim", utilRenderedOnce.monthly);
+    monthlyContainer.innerHTML = `
         <article class="detail-card">
             <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
             ${renderUptimeTrendChart(data.buckets)}
         </article>
         <article class="detail-card">
             <div class="detail-title">每月明细</div>
-            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b,i)=>`
-                <div class="uptime-bucket-row" style="animation-delay:${i*35}ms">
+            <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
+                <div class="uptime-bucket-row">
                     <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
                     ${renderUptimeBar(b)}
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                 </div>`).join("")}</div>
         </article>`;
+    utilRenderedOnce.monthly = true;
 }
+
 
 async function loadUtilization(tab) {
     const id = selectedDeviceId();
