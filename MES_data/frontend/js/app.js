@@ -105,12 +105,28 @@ let currentPage = "dashboard";
         return Number(machine.machine_status)===2 ? "production" : "waiting";
     }
     function statusMeta(status) { return status==="production"?["生产","production"]:status==="waiting"?["待机","waiting"]:["离线","offline"]; }
+
     function ageText(value) {
         if(!value) return "无数据";
         const seconds=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/1000));
         if(seconds<60) return `${seconds} 秒前`;
         if(seconds<3600) return `${Math.floor(seconds/60)} 分钟前`;
         return `${Math.floor(seconds/3600)} 小时前`;
+    }
+
+    function ageText(value) {
+        if(!value) return "无数据";
+        const seconds=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/1000));
+        if(seconds<60) return `${seconds} 秒前`;
+        if(seconds<3600) return `${Math.floor(seconds/60)} 分钟前`;
+        return `${Math.floor(seconds/3600)} 小时前`;
+    }
+
+    function formatDurationMinutes(totalMinutes) {
+        if (totalMinutes < 60) return `${totalMinutes} 分钟`;
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
     }
 
     async function loadSession() {
@@ -176,10 +192,6 @@ let currentPage = "dashboard";
         buttons.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>{dashboardPage=Number(button.dataset.pageNumber);renderDashboard();}));
     }
 
-    // Renders the 24h horizontal timeline for one day, using the raw
-    // {start,end,status} segments from GET /api/uptime/{id}/day. Block widths
-    // are positioned by real elapsed time (not evenly spaced), so a 3-hour
-    // standby period is visibly wider than a 20-minute one.
     function renderDayTimeline(dayStart, dayEnd, segments) {
         const startMs = new Date(dayStart).getTime();
         const endMs = new Date(dayEnd).getTime();
@@ -191,7 +203,7 @@ let currentPage = "dashboard";
             const width = Math.max(0.15, (segEnd - segStart) / totalMs * 100);
             const durationMin = Math.round((segEnd - segStart) / 60000);
             const meta = statusMeta(seg.status);
-            return `<div class="day-timeline-segment ${meta[1]}" style="left:${left}%;width:${width}%" title="${meta[0]} ${formatTime(seg.start)} - ${formatTime(seg.end)} (${durationMin} 分钟)"></div>`;
+            return `<div class="day-timeline-segment ${meta[1]}" style="left:${left}%;width:${width}%" title="${meta[0]} ${formatTime(seg.start)} - ${formatTime(seg.end)} (${formatDurationMinutes(durationMin)})"></div>`;
         }).join("");
         const hourLabels = Array.from({length:9},(_,i)=>`<span>${i*3}:00</span>`).join("");
         return `<div class="day-timeline">${blocks}</div><div class="day-timeline-hours">${hourLabels}</div>`;
@@ -202,7 +214,7 @@ let currentPage = "dashboard";
         return `<div class="day-detail-segments">${segments.map(seg=>{
             const durationMin=Math.round((new Date(seg.end)-new Date(seg.start))/60000);
             const meta=statusMeta(seg.status);
-            return `<div class="day-detail-segment-row"><span class="badge ${meta[1]}">${meta[0]}</span><span>${formatTime(seg.start)} → ${formatTime(seg.end)}</span><span class="muted">${durationMin} 分钟</span></div>`;
+            return `<div class="day-detail-segment-row"><span class="badge ${meta[1]}">${meta[0]}</span><span>${formatTime(seg.start)} → ${formatTime(seg.end)}</span><span class="muted">${formatDurationMinutes(durationMin)}</span></div>`;
         }).join("")}</div>`;
     }
 

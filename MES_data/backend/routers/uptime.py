@@ -32,6 +32,11 @@ router = APIRouter(prefix="/api", tags=["uptime"])
 # in frontend/js/app.js): no data for more than this long => treat as off.
 OFFLINE_GAP_SECONDS = 120
 
+# machine_status code that means the machine is actively producing.
+# Matches MACHINE_STATUS_LABELS (parameter_labels.py) and statusOf() in
+# app.js, both of which treat 2 = 生产/production and 1 = 待机/standby.
+ACTIVE_STATUS_CODE = 2
+
 DEFAULT_PERIODS = {"day": 30, "week": 12, "month": 12}
 MAX_PERIODS = {"day": 366, "week": 104, "month": 36}
 
@@ -85,7 +90,9 @@ def _compute_day_totals(rows, range_start: datetime, range_end: datetime) -> dic
 
         previous_time = data_time
         previous_status = (
-            "active" if machine_status is not None and int(machine_status) == 2 else "standby"
+            "active"
+            if machine_status is not None and int(machine_status) == ACTIVE_STATUS_CODE
+            else "standby"
         )
 
     gap = (range_end - previous_time).total_seconds()
@@ -106,7 +113,7 @@ def _compute_day_segments(prev_row, rows, day_start: datetime, day_end: datetime
     segments: list[dict] = []
     previous_time = day_start
     if prev_row is not None and prev_row.machine_status is not None:
-        previous_status = "active" if int(prev_row.machine_status) == 2 else "standby"
+        previous_status = "active" if int(prev_row.machine_status) == ACTIVE_STATUS_CODE else "standby"
     else:
         previous_status = "off"
 
@@ -125,7 +132,7 @@ def _compute_day_segments(prev_row, rows, day_start: datetime, day_end: datetime
         status_for_gap = previous_status if (previous_status == "off" or gap <= OFFLINE_GAP_SECONDS) else "off"
         add_segment(previous_time, data_time, status_for_gap)
         previous_time = data_time
-        previous_status = "active" if machine_status is not None and int(machine_status) == 2 else "standby"
+        previous_status = "active" if machine_status is not None and int(machine_status) == ACTIVE_STATUS_CODE else "standby"
 
     gap = (day_end - previous_time).total_seconds()
     status_for_gap = previous_status if (previous_status == "off" or gap <= OFFLINE_GAP_SECONDS) else "off"
