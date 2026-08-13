@@ -599,14 +599,19 @@ let currentPage = "dashboard";
 
     function switchUtilTab(tab) {
         activeUtilTab = tab;
-        // Deliberately NOT resetting utilRenderedOnce[tab] here. Doing so
-        // made the grow-in animation replay every time this tab was
-        // re-entered, on top of DOM content still sitting at its previous
-        // full/finished state (sections are hidden via CSS, not cleared) --
-        // that combination is what produced the "full -> snap to empty ->
-        // refill" flash. The animation should only ever play the first
-        // time a given tab's content appears for the life of the page
-        // session (see utilRenderedOnce's own doc comment above).
+        // We DO want the grow-in animation to replay every time this tab is
+        // re-entered. The bug was never the replay itself -- it was that the
+        // section's previous render (already at full size) stays sitting in
+        // the DOM while the fresh data fetch is in flight (sections are
+        // hidden via CSS, not cleared), so re-entering showed that stale
+        // full content for a moment before the new render snapped it back
+        // to empty and animated it in again. Clearing the container to a
+        // loading placeholder right here, synchronously, removes the stale
+        // full frame entirely -- there's nothing to "snap back" from, just
+        // loading -> empty -> grow.
+        utilRenderedOnce[tab] = false;
+        const utilContainer = document.getElementById(`util-tab-${tab}`);
+        if (utilContainer) utilContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
         document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
         document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
         document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
@@ -622,10 +627,14 @@ let currentPage = "dashboard";
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
         } else if(page==="utilization") {
             activeUtilTab="overview";
-            // See switchUtilTab: not resetting utilRenderedOnce.overview here
-            // either, for the same reason -- it made the entrance animation
-            // replay on top of stale (already-full) content every time this
-            // page was re-opened, which read as a flash back to empty.
+            // See switchUtilTab for why this clears the container instead of
+            // just leaving the flag reset -- the flag alone replays the
+            // animation on top of stale full-size content and looks like a
+            // snap-back; clearing first removes the stale frame so the
+            // replay just goes loading -> empty -> grow, every time.
+            utilRenderedOnce.overview = false;
+            const overviewContainer = document.getElementById("util-tab-overview");
+            if (overviewContainer) overviewContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
             document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
             document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
