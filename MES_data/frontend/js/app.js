@@ -388,19 +388,29 @@ let currentPage = "dashboard";
     }
 
 
-    function renderUptimeBar(bucket) {
+    // `collapsed`: when true, bakes the animation's start state (scaleX(0))
+    // directly into each segment's inline style attribute, as part of the
+    // markup string itself -- not applied afterward by JS. This guarantees
+    // the very first frame the browser ever paints for this element is
+    // already collapsed, regardless of any gap between DOM insertion and
+    // the animate() call actually taking effect. That gap is what caused
+    // the snap-back: relying on fill:"both" alone still left one frame
+    // where the browser could paint the natural (full) CSS state before
+    // the animation's first keyframe landed.
+    function renderUptimeBar(bucket, collapsed = false) {
         const total = bucket.total_seconds || 1;
         const activePct = bucket.active_seconds/total*100;
         const standbyPct = bucket.standby_seconds/total*100;
         const offPct = bucket.off_seconds/total*100;
+        const collapseStyle = collapsed ? ";transform:scaleX(0)" : "";
         return `<div class="uptime-bar" title="生产 ${activePct.toFixed(1)}% · 待机 ${standbyPct.toFixed(1)}% · 关机 ${offPct.toFixed(1)}%">
-            <div class="uptime-bar-segment off" style="width:${Math.min(100, activePct+standbyPct+offPct)}%"></div>
-            <div class="uptime-bar-segment standby" style="width:${Math.min(100, activePct+standbyPct)}%"></div>
-            <div class="uptime-bar-segment active" style="width:${Math.min(100, activePct)}%"></div>
+            <div class="uptime-bar-segment off" style="width:${Math.min(100, activePct+standbyPct+offPct)}%${collapseStyle}"></div>
+            <div class="uptime-bar-segment standby" style="width:${Math.min(100, activePct+standbyPct)}%${collapseStyle}"></div>
+            <div class="uptime-bar-segment active" style="width:${Math.min(100, activePct)}%${collapseStyle}"></div>
         </div>`;
     }
 
-    function renderUptimeTrendChart(buckets) {
+    function renderUptimeTrendChart(buckets, collapsed = false) {
         if(!buckets.length) return '<div class="empty">暂无数据</div>';
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
@@ -422,12 +432,17 @@ let currentPage = "dashboard";
             `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`
         ).join("");
 
+        // See renderUptimeBar's comment on `collapsed` -- same reasoning:
+        // baking clip-path:inset(0 100% 0 0) into the inline style attribute
+        // here means the fg <svg> is already fully clipped the instant it
+        // exists, before any JS runs against it.
+        const fgStyle = collapsed ? ' style="clip-path:inset(0 100% 0 0)"' : "";
         return `<div class="uptime-trend-wrap">
             <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
                 ${gridLines}
                 ${xLabels}
             </svg>
-            <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+            <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet"${fgStyle}>
                 <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
                 ${dots}
             </svg>
@@ -479,15 +494,15 @@ let currentPage = "dashboard";
         const thisMonth = monthData.buckets[monthData.buckets.length-1];
         overviewContainer.innerHTML = `
             <div class="uptime-summary-grid">
-                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today, freshEntry):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek, freshEntry):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth, freshEntry):""}</div>
             </div>
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>
                     <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
                 </div>
-                ${renderUptimeTrendChart(dayData.buckets)}
+                ${renderUptimeTrendChart(dayData.buckets, freshEntry)}
             </article>`;
         if (freshEntry) playUtilEntranceAnimation(overviewContainer);
         utilRenderedOnce.overview = true;
@@ -500,14 +515,14 @@ let currentPage = "dashboard";
         dailyContainer.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
-                ${renderUptimeTrendChart(data.buckets)}
+                ${renderUptimeTrendChart(data.buckets, freshEntry)}
             </article>
             <article class="detail-card">
                 <div class="detail-title">每日明细</div>
                 <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
                         <div class="uptime-bucket-row" data-date="${b.period_start}">
                         <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
-                        ${renderUptimeBar(b)}
+                        ${renderUptimeBar(b, freshEntry)}
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
@@ -525,14 +540,14 @@ let currentPage = "dashboard";
         monthlyContainer.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
-                ${renderUptimeTrendChart(data.buckets)}
+                ${renderUptimeTrendChart(data.buckets, freshEntry)}
             </article>
             <article class="detail-card">
                 <div class="detail-title">每月明细</div>
                 <div class="uptime-bucket-list">${data.buckets.slice().reverse().map((b)=>`
                     <div class="uptime-bucket-row">
                         <span class="uptime-bucket-label">${escapeHtml(b.label)}</span>
-                        ${renderUptimeBar(b)}
+                        ${renderUptimeBar(b, freshEntry)}
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
@@ -599,19 +614,14 @@ let currentPage = "dashboard";
 
     function switchUtilTab(tab) {
         activeUtilTab = tab;
-        // We DO want the grow-in animation to replay every time this tab is
-        // re-entered. The bug was never the replay itself -- it was that the
-        // section's previous render (already at full size) stays sitting in
-        // the DOM while the fresh data fetch is in flight (sections are
-        // hidden via CSS, not cleared), so re-entering showed that stale
-        // full content for a moment before the new render snapped it back
-        // to empty and animated it in again. Clearing the container to a
-        // loading placeholder right here, synchronously, removes the stale
-        // full frame entirely -- there's nothing to "snap back" from, just
-        // loading -> empty -> grow.
+        // Replays the grow-in animation every time this tab is re-entered
+        // (see loadUtilizationOverview/Daily/Monthly + renderUptimeBar /
+        // renderUptimeTrendChart's `collapsed` argument). The previous
+        // render is deliberately left in place -- not cleared -- so the
+        // bars/chart stay static and visible right up until the fresh data
+        // arrives and replaces them. The snap-back is prevented at the
+        // markup level, not here: see the `collapsed` argument below.
         utilRenderedOnce[tab] = false;
-        const utilContainer = document.getElementById(`util-tab-${tab}`);
-        if (utilContainer) utilContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
         document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
         document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
         document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
@@ -627,14 +637,9 @@ let currentPage = "dashboard";
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
         } else if(page==="utilization") {
             activeUtilTab="overview";
-            // See switchUtilTab for why this clears the container instead of
-            // just leaving the flag reset -- the flag alone replays the
-            // animation on top of stale full-size content and looks like a
-            // snap-back; clearing first removes the stale frame so the
-            // replay just goes loading -> empty -> grow, every time.
+            // See switchUtilTab -- flag reset only, no clearing. The
+            // snap-back fix lives in the markup itself (collapsed argument).
             utilRenderedOnce.overview = false;
-            const overviewContainer = document.getElementById("util-tab-overview");
-            if (overviewContainer) overviewContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
             document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
             document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
