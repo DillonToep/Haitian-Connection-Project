@@ -458,23 +458,23 @@ let currentPage = "dashboard";
         const segments = container.querySelectorAll(".uptime-bar-segment");
         const trends = container.querySelectorAll(".uptime-trend-fg");
 
-        // The freshly-rendered bars/chart just landed in the DOM at their
-        // real, final size (see loadUtilizationOverview/Daily/Monthly,
-        // which set innerHTML right before calling this). Explicitly pin
-        // them back to their collapsed starting state first, and force the
-        // browser to commit that as an actual paint (the offsetHeight read
-        // forces a synchronous layout/reflow) before kicking off the
-        // animation. Without this forced reflow, batching this many
-        // simultaneous element.animate() calls right after a big innerHTML
-        // insert can let the browser's first paint land on the finished
-        // (full-size) state, which is what reads as a quick "everything
-        // shows fully, then flashes into the animation" stutter.
-        segments.forEach(segment => { segment.style.transform = "scaleX(0)"; });
-        trends.forEach(fg => { fg.style.clipPath = "inset(0 100% 0 0)"; });
-        void container.offsetHeight; // force layout commit of the collapsed state
-
+        // The freshly-rendered bars/chart just landed in the DOM (via
+        // innerHTML) at their real, final size -- none of these elements
+        // have ever had the collapsed inline style applied, since they're
+        // brand new nodes. For each element we pin it to its collapsed
+        // starting point AND start its animation in the same step, back to
+        // back, rather than doing "reset all elements to collapsed" and
+        // "start all animations" as two separate passes over the list.
+        // With ~90 bar segments on the daily/monthly views, a two-pass
+        // approach leaves a real window, after the reset pass finishes but
+        // before every element's animate() call has run, where the
+        // browser can paint the elements at their true uncollapsed size --
+        // that's what read as "everything shows fully, then flashes into
+        // the animation". Setting the inline style immediately before
+        // calling .animate() on the very same element closes that window,
+        // since nothing else can be painted in between the two calls.
         segments.forEach(segment => {
-            segment.style.transform = "";
+            segment.style.transform = "scaleX(0)";
             segment.animate(
                 [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
                 { duration: 3200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
@@ -482,7 +482,7 @@ let currentPage = "dashboard";
         });
 
         trends.forEach(fg => {
-            fg.style.clipPath = "";
+            fg.style.clipPath = "inset(0 100% 0 0)";
             fg.animate(
                 [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
                 { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
