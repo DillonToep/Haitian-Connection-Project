@@ -383,27 +383,27 @@ let currentPage = "dashboard";
 
 
     function renderUptimeBar(bucket) {
-    const total = bucket.total_seconds || 1;
-    const activePct = bucket.active_seconds/total*100;
-    const standbyPct = bucket.standby_seconds/total*100;
-    const offPct = bucket.off_seconds/total*100;
-    return `<div class="uptime-bar" title="生产 ${activePct.toFixed(1)}% · 待机 ${standbyPct.toFixed(1)}% · 关机 ${offPct.toFixed(1)}%">
-        <div class="uptime-bar-segment active" style="width:${activePct}%"></div>
-        <div class="uptime-bar-segment standby" style="width:${standbyPct}%"></div>
-        <div class="uptime-bar-segment off" style="width:${offPct}%"></div>
-    </div>`;
-}
-
-function bezierTimeForProgress(targetY, p1x, p1y, p2x, p2y, iterations = 24) {
-    let lo = 0, hi = 1;
-    for (let i = 0; i < iterations; i++) {
-        const u = (lo + hi) / 2;
-        const y = 3 * (1 - u) ** 2 * u * p1y + 3 * (1 - u) * u ** 2 * p2y + u ** 3;
-        if (y < targetY) lo = u; else hi = u;
+        const total = bucket.total_seconds || 1;
+        const activePct = bucket.active_seconds/total*100;
+        const standbyPct = bucket.standby_seconds/total*100;
+        const offPct = bucket.off_seconds/total*100;
+        return `<div class="uptime-bar" title="生产 ${activePct.toFixed(1)}% · 待机 ${standbyPct.toFixed(1)}% · 关机 ${offPct.toFixed(1)}%">
+            <div class="uptime-bar-segment active" style="width:${activePct}%"></div>
+            <div class="uptime-bar-segment standby" style="width:${standbyPct}%"></div>
+            <div class="uptime-bar-segment off" style="width:${offPct}%"></div>
+        </div>`;
     }
-    const u = (lo + hi) / 2;
-    return 3 * (1 - u) ** 2 * u * p1x + 3 * (1 - u) * u ** 2 * p2x + u ** 3;
-}
+
+    function bezierTimeForProgress(targetY, p1x, p1y, p2x, p2y, iterations = 24) {
+        let lo = 0, hi = 1;
+        for (let i = 0; i < iterations; i++) {
+            const u = (lo + hi) / 2;
+            const y = 3 * (1 - u) ** 2 * u * p1y + 3 * (1 - u) * u ** 2 * p2y + u ** 3;
+            if (y < targetY) lo = u; else hi = u;
+        }
+        const u = (lo + hi) / 2;
+        return 3 * (1 - u) ** 2 * u * p1x + 3 * (1 - u) * u ** 2 * p2x + u ** 3;
+    }
 
     function renderUptimeTrendChart(buckets) {
         if(!buckets.length) return '<div class="empty">暂无数据</div>';
@@ -441,12 +441,17 @@ function bezierTimeForProgress(targetY, p1x, p1y, p2x, p2y, iterations = 24) {
             const delay = (timeFraction * LINE_DURATION_S).toFixed(3);
             return `<circle class="uptime-trend-dot" style="animation-delay:${delay}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`;
         }).join("");
-        return `<svg class="uptime-trend-svg uptime-trend-animate" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
-            ${gridLines}
-            <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
-            ${dots}
-            ${xLabels}
-        </svg>`;
+
+        return `<div class="uptime-trend-wrap">
+            <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+                ${gridLines}
+                ${xLabels}
+            </svg>
+            <svg class="uptime-trend-svg uptime-trend-fg uptime-trend-animate" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+                <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
+                ${dots}
+            </svg>
+        </div>`;
     }
 
 

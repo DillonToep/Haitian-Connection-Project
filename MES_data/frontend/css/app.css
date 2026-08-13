@@ -194,7 +194,9 @@
         .uptime-legend .dot.active { background: var(--green); }
         .uptime-legend .dot.standby { background: var(--orange); }
         .uptime-legend .dot.off { background: var(--gray); }
+        .uptime-trend-wrap { position: relative; width: 100%; height: 300px; }
         .uptime-trend-svg { width: 100%; height: 300px; contain: paint; }
+        .uptime-trend-wrap .uptime-trend-svg { position: absolute; top: 0; left: 0; }
         .uptime-bucket-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
         .uptime-bucket-row { display: grid; grid-template-columns: 60px 1fr 50px; align-items: center; gap: 12px; }
         .uptime-bucket-label { color: var(--muted); font-size: 12.5px; }
@@ -211,14 +213,7 @@
         .uptime-bar-segment.standby { animation-delay: .08s; }
         .uptime-bar-segment.off { animation-delay: .16s; }
 
-        /* Reveals the whole chart (grid, line, dots) left-to-right on load.
-           clip-path: inset() is a simple shape the browser can accelerate
-           directly on the compositor -- unlike a url()-referenced
-           <clipPath> or animated stroke-dashoffset, both of which force a
-           software repaint of the geometry every frame. That per-frame
-           repaint was the stutter; a url()-referenced <clipPath> also has
-           inconsistent transform-origin support across browsers, which is
-           what caused the reveal to start from the wrong end. */
+
         .uptime-trend-svg.uptime-trend-animate {
             clip-path: inset(0 100% 0 0);
             animation: uptime-line-draw 4.5s cubic-bezier(.4,0,.2,1) forwards;
