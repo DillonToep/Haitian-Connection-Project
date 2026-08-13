@@ -394,17 +394,6 @@ let currentPage = "dashboard";
         </div>`;
     }
 
-    function bezierTimeForProgress(targetY, p1x, p1y, p2x, p2y, iterations = 24) {
-        let lo = 0, hi = 1;
-        for (let i = 0; i < iterations; i++) {
-            const u = (lo + hi) / 2;
-            const y = 3 * (1 - u) ** 2 * u * p1y + 3 * (1 - u) * u ** 2 * p2y + u ** 3;
-            if (y < targetY) lo = u; else hi = u;
-        }
-        const u = (lo + hi) / 2;
-        return 3 * (1 - u) ** 2 * u * p1x + 3 * (1 - u) * u ** 2 * p2x + u ** 3;
-    }
-
     function renderUptimeTrendChart(buckets) {
         if(!buckets.length) return '<div class="empty">暂无数据</div>';
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
@@ -417,30 +406,15 @@ let currentPage = "dashboard";
         });
         const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
-        const LINE_DURATION_S = 4.5;
-        const EASE = [0.4, 0, 0.2, 1];
-
-        let cumulative = 0;
-        const distances = points.map((p,i)=>{
-            if(i===0) return 0;
-            const prev = points[i-1];
-            cumulative += Math.hypot(p.x-prev.x, p.y-prev.y);
-            return cumulative;
-        });
-        const totalLength = Math.max(cumulative, 1);
-
         const gridLines=[0,25,50,75,100].map(v=>{
             const y=padT+innerH-(v/100)*innerH;
             return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
         }).join("");
         const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
         const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
-        const dots = points.map((p,i)=>{
-            const progress = distances[i] / totalLength;
-            const timeFraction = bezierTimeForProgress(progress, ...EASE);
-            const delay = (timeFraction * LINE_DURATION_S).toFixed(3);
-            return `<circle class="uptime-trend-dot" style="animation-delay:${delay}s" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`;
-        }).join("");
+        const dots = points.map((p)=>
+            `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`
+        ).join("");
 
         return `<div class="uptime-trend-wrap">
             <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
@@ -453,29 +427,6 @@ let currentPage = "dashboard";
             </svg>
         </div>`;
     }
-
-    // Kicks off the clip-path reveal for every trend-chart foreground layer
-    // inside `root`. The SVG is inserted already clipped (see .uptime-trend-fg
-    // in app.css), so waiting a couple of animation frames before adding
-    // .uptime-trend-animate guarantees the browser has committed that hidden
-    // state to a real paint first. Without this, adding the class in the same
-    // tick the element is inserted can have the animation's first frame land
-    // on a tick where the main thread was still busy (e.g. the day/week/month
-    // fetches + card rendering in loadUtilizationOverview), so the reveal
-    // appears to jump-start partway through -- most noticeable on repeat
-    // visits to the tab rather than the very first page load.
-    function startTrendAnimations(root) {
-        const layers = root.querySelectorAll(".uptime-trend-fg");
-        if (!layers.length) return;
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                layers.forEach(svg => svg.classList.add("uptime-trend-animate"));
-            });
-        });
-    }
-
-
-
 
 async function loadUtilizationOverview(id) {
     const [dayData, weekData, monthData] = await Promise.all([
@@ -498,7 +449,6 @@ async function loadUtilizationOverview(id) {
             </div>
             ${renderUptimeTrendChart(dayData.buckets)}
         </article>`;
-    startTrendAnimations(document.getElementById("util-tab-overview"));
 }
 
 async function loadUtilizationDaily(id) {
@@ -520,7 +470,6 @@ async function loadUtilizationDaily(id) {
     document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
         row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
     });
-    startTrendAnimations(document.getElementById("util-tab-daily"));
 }
 
 async function loadUtilizationMonthly(id) {
@@ -539,7 +488,6 @@ async function loadUtilizationMonthly(id) {
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                 </div>`).join("")}</div>
         </article>`;
-    startTrendAnimations(document.getElementById("util-tab-monthly"));
 }
 
 async function loadUtilization(tab) {
@@ -611,18 +559,6 @@ async function loadUtilization(tab) {
         scheduleAutoRefresh();
     }
 
-    async function refreshPage() {
-        const status=document.getElementById("connection-status");
-        try {
-            if(currentPage==="dashboard")await loadDashboard();
-            if(currentPage==="device-detail")await loadActiveDetailTab();
-            if(currentPage==="molds")await loadMolds();
-            if(currentPage==="changelog")await loadChangelog();
-            if(currentPage==="utilization") await loadUtilization(activeUtilTab);
-            status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
-        } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
-    }
-    
     async function switchPage(page) {
         currentPage=page;
         document.getElementById("device-select").classList.toggle("hidden", page!=="molds" && page!=="utilization");
@@ -681,8 +617,6 @@ async function loadUtilization(tab) {
     document.getElementById("password-cancel").addEventListener("click",()=>passwordDialog.close());
     document.getElementById("password-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:f.get("current_password"),new_password:f.get("new_password")})});event.target.reset();passwordDialog.close();alert("密码修改成功");}catch(error){alert(error.message);}});
 
-    async function initialize(){try{await loadSession();await loadDevices();await refreshPage();}catch(error){document.getElementById("connection-status").textContent=error.message;}}
-    initialize();
     let isRefreshingPage = false;
     async function refreshPage() {
         if (isRefreshingPage) return;
