@@ -291,7 +291,12 @@ let currentPage = "dashboard";
     // When this tab is opened from a changelog entry (see openChangelogDetail),
     // highlightParameter names the changed tag: its category is force-opened
     // and its row gets the .parameter-changed style, with a banner showing
-    // the previous -> new value at the top of the card.
+    // the previous -> new value at the top of the card. The force-open and
+    // the scroll-into-view below only happen the FIRST time loadTech() runs
+    // for this highlight (see highlightApplied) -- loadTech() also runs on
+    // every 2-second auto-refresh while this tab stays open, and without
+    // this guard it would keep re-opening the category (even if the user
+    // just closed it) and re-scrolling the page on every tick.
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();
@@ -303,7 +308,7 @@ let currentPage = "dashboard";
         let highlightMatch=null;
         if(highlightParameter && highlightParameter.parameter_id){
             highlightMatch=result.parameters.find(p=>p.parameter_id===highlightParameter.parameter_id)||null;
-            if(highlightMatch) techOpenCategories.add(highlightMatch.category);
+            if(highlightMatch && !highlightApplied) techOpenCategories.add(highlightMatch.category);
         }
 
         const categoryOrder=["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数","未知参数"];
@@ -375,9 +380,10 @@ let currentPage = "dashboard";
         });
         updateToggleAllLabel();
 
-        if(highlightParameter && highlightParameter.parameter_id){
+        if(highlightParameter && highlightParameter.parameter_id && !highlightApplied){
             const target=document.querySelector(`#detail-tab-tech [data-parameter="${CSS.escape(highlightParameter.parameter_id)}"]`);
             target?.scrollIntoView({block:"center",behavior:"smooth"});
+            highlightApplied=true;
         }
     }
     async function loadSpc(id) {
@@ -718,6 +724,9 @@ let currentPage = "dashboard";
         activeDetailTab=options.tab||"realtime";
         techOpenCategories=new Set();
         highlightParameter=options.highlight||null;
+        // Fresh page open -- reset so loadTech() will force-open the
+        // highlighted category and scroll to it exactly once.
+        highlightApplied=false;
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===activeDetailTab));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
         await switchPage("device-detail");
