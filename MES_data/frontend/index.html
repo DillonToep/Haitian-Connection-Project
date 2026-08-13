@@ -96,17 +96,33 @@
             <div id="util-tab-daily" class="tab-content hidden"></div>
             <div id="util-tab-monthly" class="tab-content hidden"></div>
         </section>
-
         <section id="changelog-page" class="hidden">
             <article class="detail-card">
                 <div class="detail-header">
                     <div class="detail-title">工艺参数变更记录</div>
                     <div class="muted" id="changelog-summary"></div>
                 </div>
+                <div class="filter-body" style="padding:0 0 14px;">
+                    <div class="field">
+                        <label for="changelog-filter-date">日期</label>
+                        <input type="date" id="changelog-filter-date">
+                    </div>
+                    <div class="field">
+                        <label for="changelog-filter-field">参数分类</label>
+                        <select id="changelog-filter-field"><option value="">全部分类</option></select>
+                    </div>
+                    <div class="field">
+                        <label for="changelog-filter-sub">具体参数</label>
+                        <select id="changelog-filter-sub" disabled><option value="">全部参数</option></select>
+                    </div>
+                    <div class="field">
+                        <label>&nbsp;</label>
+                        <button id="changelog-filter-clear" class="secondary-button" type="button">清除筛选</button>
+                    </div>
+                </div>
                 <div id="changelog-table"></div>
             </article>
         </section>
-
         <section id="warnings-page" class="hidden">
             <article class="detail-card">
                 <div class="detail-header">

@@ -9,6 +9,7 @@ Source: haitian_data_labels_csv.xlsx (id / remark / scale / use).
 - use: whether this machine/line actually uses this tag. Tags with
        use=False are hidden from the web app.
 """
+import re
 
 PARAMETER_LABELS: dict[str, dict] = {
     'TS1': {"label": '温度设定1', "use": True},
@@ -261,6 +262,13 @@ _CATEGORY_KEYWORDS = [
     ("延迟", "时间参数"),
     ("模式", "模式设置"),
 ]
+
+def base_name(label: str) -> str:
+    """Strip digit runs from a label to get its grouping key -- mirrors the
+    frontend's groupTechParameters() base-name logic in frontend/js/app.js,
+    e.g. '注射压力1'/'注射压力2' both map to '注射压力'."""
+    stripped = re.sub(r"\d+", "", label).strip()
+    return stripped or label
 
 
 def categorize(label: str) -> str:

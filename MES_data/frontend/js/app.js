@@ -6,43 +6,20 @@ let currentPage = "dashboard";
     let dashboardPage = 1;
     const pageSize = 8;
     let uptimeChartIdCounter = 0;
-    // Whether each 利用率 sub-tab has already been rendered once this
-    // session. The .uptime-bar-segment grow-in animation is only meant to
-    // play the first time a tab's content appears -- re-fetching the same
-    // tab (e.g. navigating away and back) replaces the DOM but should not
-    // replay the animation, since that's what reads as a stutter/reload.
     const utilRenderedOnce = { overview: false, daily: false, monthly: false };
-    // Device currently open in the detail view, and which tab is active there.
     let detailDeviceId = null;
     let activeDetailTab = "realtime";
     let activeUtilTab = "overview";
-    // Categories the user has manually expanded in the 工艺参数 tab. Categories
-    // not in this set render collapsed by default (all-closed on first view of
-    // a device). Kept outside loadTech so the 2-second auto-refresh doesn't
-    // reset what the user opened/closed.
     let techOpenCategories = new Set();
-    // Set when the device detail view was opened from a changelog entry:
-    // { parameter_id, previous_value, new_value }. loadTech() uses this to
-    // force-open the relevant category and mark the changed row in red.
-    // Cleared whenever openDeviceDetail() is called without a highlight
-    // (e.g. clicking a device card from the dashboard).
     let highlightParameter = null;
+    let changelogFilters = { date: "", field: "", sub: "" };
+    let deviceChangelogFilters = { date: "", field: "", sub: "" };
+    let changelogFieldTree = null;
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录", warnings: "预警通知" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", changelog: "变更记录" };
-
-    // Warning notifications (unacknowledged rows from GET /api/warnings).
-    // seenWarningIds tracks which warning IDs have already been shown as a
-    // toast this session, so re-polling the same still-pending warning
-    // doesn't toast it again. warningsInitialized guards the very first
-    // poll after login: existing warnings are seeded into seenWarningIds
-    // silently there instead of toasting a stack of old warnings at once.
     let seenWarningIds = new Set();
     let warningsInitialized = false;
-
-    // Units shown next to each 工艺参数 value, keyed by the same category
-    // buckets produced by backend/parameter_labels.py::categorize(). Categories
-    // not listed here (模式设置, 其他参数, 未知参数) are left without a unit.
     const techCategoryUnits = {
         "温度参数": " ℃",
         "压力参数": " MPa",
@@ -51,10 +28,6 @@ let currentPage = "dashboard";
         "时间参数": " s"
     };
 
-    // SPC page fields: sourced from dbo.vw_machine_spc, scaled server-side
-    // using the raw tag's scale factor (see backend/parameter_labels.py).
-    // Values already arrive pre-scaled from the API, so this dict is only
-    // used for labels/units, not for scaling in the browser.
     const spcFields = {
         cycle_number:["模数",""],
         cycle_time:["周期时间"," s"],
@@ -108,6 +81,21 @@ let currentPage = "dashboard";
         const body=await response.json().catch(()=>({}));
         if(!response.ok) throw new Error(body.detail||`HTTP ${response.status}`);
         return body;
+    }
+
+    async function loadChangelogFieldTree() {
+        if (changelogFieldTree) return changelogFieldTree;
+        changelogFieldTree = await requestJson("/api/changelog/filters");
+        return changelogFieldTree;
+    }
+
+    function changelogQuery(filters) {
+        const params = new URLSearchParams();
+        if (filters.date) params.set("date", filters.date);
+        if (filters.field) params.set("field", filters.field);
+        if (filters.sub) params.set("sub", filters.sub);
+        const qs = params.toString();
+        return qs ? `?${qs}` : "";
     }
 
     function statusOf(machine) {
@@ -600,19 +588,63 @@ let currentPage = "dashboard";
     }
 
     async function loadChangelog() {
-        const rows=await requestJson("/api/changelog");
-        document.getElementById("changelog-summary").textContent=`共 ${rows.length} 条记录`;
-        const table=document.getElementById("changelog-table");
-        table.innerHTML=rows.length?`<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无变更记录</div>';
+        const tree = await loadChangelogFieldTree();
+        const fieldSelect = document.getElementById("changelog-filter-field");
+        if (!fieldSelect.dataset.populated) {
+            fieldSelect.innerHTML = '<option value="">全部分类</option>' +
+                Object.keys(tree).map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join("");
+            fieldSelect.dataset.populated = "1";
+        }
+
+        const rows = await requestJson(`/api/changelog${changelogQuery(changelogFilters)}`);
+        document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
+        const table = document.getElementById("changelog-table");
+        table.innerHTML = rows.length
+            ? `<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
+            : '<div class="empty">没有符合筛选条件的变更记录</div>';
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
     }
 
     async function loadDeviceChangelog(id) {
-        const rows = await requestJson(`/api/changelog/by-device/${encodeURIComponent(id)}`);
+        const tree = await loadChangelogFieldTree();
+        const rows = await requestJson(`/api/changelog/by-device/${encodeURIComponent(id)}${changelogQuery(deviceChangelogFilters)}`);
+
+        const fieldOptions = Object.keys(tree).map(f =>
+            `<option value="${escapeHtml(f)}"${deviceChangelogFilters.field===f?" selected":""}>${escapeHtml(f)}</option>`).join("");
+        const subOptions = (deviceChangelogFilters.field && tree[deviceChangelogFilters.field])
+            ? Object.keys(tree[deviceChangelogFilters.field]).map(s =>
+                `<option value="${escapeHtml(s)}"${deviceChangelogFilters.sub===s?" selected":""}>${escapeHtml(s)}</option>`).join("")
+            : "";
+
         document.getElementById("detail-tab-changelog").innerHTML = `<article class="detail-card">
             <div class="detail-header"><div class="detail-title">变更记录</div><div class="muted">共 ${rows.length} 条记录</div></div>
-            ${rows.length ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">该设备暂无变更记录</div>'}
+            <div class="filter-body" style="padding:0 0 14px;">
+                <div class="field"><label>日期</label><input type="date" id="device-changelog-filter-date" value="${escapeHtml(deviceChangelogFilters.date)}"></div>
+                <div class="field"><label>参数分类</label><select id="device-changelog-filter-field"><option value="">全部分类</option>${fieldOptions}</select></div>
+                <div class="field"><label>具体参数</label><select id="device-changelog-filter-sub" ${deviceChangelogFilters.field?"":"disabled"}><option value="">全部参数</option>${subOptions}</select></div>
+                <div class="field"><label>&nbsp;</label><button id="device-changelog-filter-clear" class="secondary-button" type="button">清除筛选</button></div>
+            </div>
+            ${rows.length ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">没有符合筛选条件的变更记录</div>'}
         </article>`;
+
+        document.getElementById("device-changelog-filter-date").addEventListener("change", async e => {
+            deviceChangelogFilters.date = e.target.value;
+            await loadDeviceChangelog(id);
+        });
+        document.getElementById("device-changelog-filter-field").addEventListener("change", async e => {
+            deviceChangelogFilters.field = e.target.value;
+            deviceChangelogFilters.sub = "";
+            await loadDeviceChangelog(id);
+        });
+        document.getElementById("device-changelog-filter-sub").addEventListener("change", async e => {
+            deviceChangelogFilters.sub = e.target.value;
+            await loadDeviceChangelog(id);
+        });
+        document.getElementById("device-changelog-filter-clear").addEventListener("click", async () => {
+            deviceChangelogFilters = { date: "", field: "", sub: "" };
+            await loadDeviceChangelog(id);
+        });
+
         document.querySelectorAll("#detail-tab-changelog .changelog-row").forEach(row => {
             row.addEventListener("click", () => {
                 highlightParameter = {
@@ -747,6 +779,7 @@ let currentPage = "dashboard";
         // Fresh page open -- reset so loadTech() will force-open the
         // highlighted category and scroll to it exactly once.
         highlightApplied=false;
+        deviceChangelogFilters = { date: "", field: "", sub: "" };
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===activeDetailTab));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
         await switchPage("device-detail");
@@ -868,6 +901,38 @@ let currentPage = "dashboard";
             await loadWarnings();
             await pollWarnings();
         } catch(error){ alert(error.message); }
+    });
+    document.getElementById("changelog-filter-date").addEventListener("change", async e => {
+        changelogFilters.date = e.target.value;
+        await loadChangelog();
+    });
+    document.getElementById("changelog-filter-field").addEventListener("change", async e => {
+        changelogFilters.field = e.target.value;
+        changelogFilters.sub = "";
+        const tree = await loadChangelogFieldTree();
+        const subSelect = document.getElementById("changelog-filter-sub");
+        if (changelogFilters.field && tree[changelogFilters.field]) {
+            subSelect.innerHTML = '<option value="">全部参数</option>' +
+                Object.keys(tree[changelogFilters.field]).map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+            subSelect.disabled = false;
+        } else {
+            subSelect.innerHTML = '<option value="">全部参数</option>';
+            subSelect.disabled = true;
+        }
+        await loadChangelog();
+    });
+    document.getElementById("changelog-filter-sub").addEventListener("change", async e => {
+        changelogFilters.sub = e.target.value;
+        await loadChangelog();
+    });
+    document.getElementById("changelog-filter-clear").addEventListener("click", async () => {
+        changelogFilters = { date: "", field: "", sub: "" };
+        document.getElementById("changelog-filter-date").value = "";
+        document.getElementById("changelog-filter-field").value = "";
+        const subSelect = document.getElementById("changelog-filter-sub");
+        subSelect.innerHTML = '<option value="">全部参数</option>';
+        subSelect.disabled = true;
+        await loadChangelog();
     });
     document.querySelectorAll(".util-tab-button").forEach(button => button.addEventListener("click", () => switchUtilTab(button.dataset.utilTab)));
     document.getElementById("mold-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/molds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_code:f.get("mold_code"),mold_name:f.get("mold_name"),product_code:f.get("product_code")||null,cavities:Number(f.get("cavities")),remark:f.get("remark")||null})});event.target.reset();event.target.cavities.value=1;await loadMolds();}catch(error){alert(error.message);}});
