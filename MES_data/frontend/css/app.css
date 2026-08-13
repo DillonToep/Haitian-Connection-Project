@@ -214,26 +214,15 @@
         .uptime-bar-segment.off { animation-delay: .16s; }
 
 
-        /* Foreground (line + dots) is clipped by default, independent of the
-           animate class, so the very first frame the browser paints is
-           already the hidden state -- the animation can never start
-           "mid-way" on repeat loads. The animate class (added a frame later
-           via JS) just runs the reveal on top of that guaranteed start. */
+        /* Trend chart line + dots render fully visible immediately -- no
+           grow-in reveal. */
         .uptime-trend-fg {
-            clip-path: inset(0 100% 0 0);
-        }
-        .uptime-trend-fg.uptime-trend-animate {
-            animation: uptime-line-draw 4.5s cubic-bezier(.4,0,.2,1) forwards;
-            will-change: clip-path;
+            clip-path: none;
         }
         .uptime-trend-dot {
-            opacity: 0;
-            animation: uptime-dot-in .12s linear forwards;
+            opacity: 1;
         }
 
-        @keyframes uptime-dot-in {
-            to { opacity: 1; }
-        }
         @keyframes uptime-fade-up {
             from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
@@ -242,19 +231,12 @@
             from { transform: scaleX(0); }
             to { transform: scaleX(1); }
         }
-        @keyframes uptime-line-draw {
-            to { clip-path: inset(0 0 0 0); }
-        }
 
         @media (prefers-reduced-motion: reduce) {
-            .uptime-bar-segment, .uptime-trend-dot {
+            .uptime-bar-segment {
                 animation: none !important;
                 opacity: 1 !important;
                 transform: none !important;
-            }
-            .uptime-trend-fg {
-                animation: none !important;
-                clip-path: none !important;
             }
         }
 
