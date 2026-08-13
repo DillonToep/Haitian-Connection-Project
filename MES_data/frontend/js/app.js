@@ -435,6 +435,12 @@ let currentPage = "dashboard";
     }
 
 async function loadUtilizationOverview(id) {
+    const overviewContainer = document.getElementById("util-tab-overview");
+    const freshEntry = !utilRenderedOnce.overview;
+    if (freshEntry) {
+        overviewContainer.classList.remove("play-anim", "no-anim");
+        overviewContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
+    }
     const [dayData, weekData, monthData] = await Promise.all([
         requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`),
         requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=1`),
@@ -443,8 +449,8 @@ async function loadUtilizationOverview(id) {
     const today = dayData.buckets[dayData.buckets.length-1];
     const thisWeek = weekData.buckets[weekData.buckets.length-1];
     const thisMonth = monthData.buckets[monthData.buckets.length-1];
-    const overviewContainer = document.getElementById("util-tab-overview");
-    overviewContainer.classList.toggle("no-anim", utilRenderedOnce.overview);
+    overviewContainer.classList.remove("play-anim");
+    overviewContainer.classList.toggle("no-anim", !freshEntry);
     overviewContainer.innerHTML = `
         <div class="uptime-summary-grid">
             <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
@@ -457,13 +463,23 @@ async function loadUtilizationOverview(id) {
             </div>
             ${renderUptimeTrendChart(dayData.buckets)}
         </article>`;
+    if (freshEntry) {
+        void overviewContainer.offsetWidth; // force reflow to lock in the collapsed/clipped starting state
+        requestAnimationFrame(() => requestAnimationFrame(() => overviewContainer.classList.add("play-anim")));
+    }
     utilRenderedOnce.overview = true;
 }
 
 async function loadUtilizationDaily(id) {
-    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
     const dailyContainer = document.getElementById("util-tab-daily");
-    dailyContainer.classList.toggle("no-anim", utilRenderedOnce.daily);
+    const freshEntry = !utilRenderedOnce.daily;
+    if (freshEntry) {
+        dailyContainer.classList.remove("play-anim", "no-anim");
+        dailyContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
+    }
+    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
+    dailyContainer.classList.remove("play-anim");
+    dailyContainer.classList.toggle("no-anim", !freshEntry);
     dailyContainer.innerHTML = `
         <article class="detail-card">
             <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
@@ -481,13 +497,23 @@ async function loadUtilizationDaily(id) {
     document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
         row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
     });
+    if (freshEntry) {
+        void dailyContainer.offsetWidth;
+        requestAnimationFrame(() => requestAnimationFrame(() => dailyContainer.classList.add("play-anim")));
+    }
     utilRenderedOnce.daily = true;
 }
 
 async function loadUtilizationMonthly(id) {
-    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
     const monthlyContainer = document.getElementById("util-tab-monthly");
-    monthlyContainer.classList.toggle("no-anim", utilRenderedOnce.monthly);
+    const freshEntry = !utilRenderedOnce.monthly;
+    if (freshEntry) {
+        monthlyContainer.classList.remove("play-anim", "no-anim");
+        monthlyContainer.innerHTML = '<div class="empty panel">正在读取……</div>';
+    }
+    const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
+    monthlyContainer.classList.remove("play-anim");
+    monthlyContainer.classList.toggle("no-anim", !freshEntry);
     monthlyContainer.innerHTML = `
         <article class="detail-card">
             <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
@@ -502,6 +528,10 @@ async function loadUtilizationMonthly(id) {
                     <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                 </div>`).join("")}</div>
         </article>`;
+    if (freshEntry) {
+        void monthlyContainer.offsetWidth;
+        requestAnimationFrame(() => requestAnimationFrame(() => monthlyContainer.classList.add("play-anim")));
+    }
     utilRenderedOnce.monthly = true;
 }
 
@@ -584,7 +614,7 @@ async function loadUtilization(tab) {
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
         } else if(page==="utilization") {
             activeUtilTab="overview";
-            utilRenderedOnce.overview = false; // re-play animation on every entry into the page
+            utilRenderedOnce.overview = false;
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
             document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
             document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
