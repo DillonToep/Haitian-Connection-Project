@@ -456,13 +456,10 @@ let currentPage = "dashboard";
         if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         container.querySelectorAll(".uptime-bar-segment").forEach(segment => {
-            // Clear the inline collapse style from collapseUtilAnimatables --
-            // these are freshly-rendered nodes from the new innerHTML, so
-            // this is a no-op for them, but harmless either way.
             segment.style.transform = "";
             segment.animate(
                 [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
-                { duration: 700, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
             );
         });
 
