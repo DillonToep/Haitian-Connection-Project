@@ -106,6 +106,12 @@ let currentPage = "dashboard";
     }
     function statusMeta(status) { return status==="production"?["生产","production"]:status==="waiting"?["待机","waiting"]:["离线","offline"]; }
 
+    function daySegmentMeta(status) {
+        if (status === "active") return ["生产", "production"];
+        if (status === "standby") return ["待机", "waiting"];
+        return ["离线", "offline"];
+    }
+
     function ageText(value) {
         if(!value) return "无数据";
         const seconds=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/1000));
@@ -198,7 +204,7 @@ let currentPage = "dashboard";
             const left = (segStart - startMs) / totalMs * 100;
             const width = Math.max(0.15, (segEnd - segStart) / totalMs * 100);
             const durationMin = Math.round((segEnd - segStart) / 60000);
-            const meta = statusMeta(seg.status);
+            const meta = daySegmentMeta(seg.status);
             return `<div class="day-timeline-segment ${meta[1]}" style="left:${left}%;width:${width}%" title="${meta[0]} ${formatTime(seg.start)} - ${formatTime(seg.end)} (${formatDurationMinutes(durationMin)})"></div>`;
         }).join("");
         const hourLabels = Array.from({length:9},(_,i)=>`<span>${i*3}:00</span>`).join("");
@@ -209,7 +215,7 @@ let currentPage = "dashboard";
         if(!segments.length) return '<div class="empty">暂无数据</div>';
         return `<div class="day-detail-segments">${segments.map(seg=>{
             const durationMin=Math.round((new Date(seg.end)-new Date(seg.start))/60000);
-            const meta=statusMeta(seg.status);
+            const meta=daySegmentMeta(seg.status);
             return `<div class="day-detail-segment-row"><span class="badge ${meta[1]}">${meta[0]}</span><span>${formatTime(seg.start)} → ${formatTime(seg.end)}</span><span class="muted">${formatDurationMinutes(durationMin)}</span></div>`;
         }).join("")}</div>`;
     }
