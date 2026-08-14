@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from ..config import MOLD_UPLOAD_DIR
 from ..database import get_connection, row_to_dict
-from ..schemas import MoldUpdateRequest
+from ..schemas import MoldAssignmentRequest, MoldUpdateRequest
 from ..security import require_editor, require_user
 
 
@@ -248,8 +248,87 @@ def update_mold(
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
-
-# ---- mount/unmount/history endpoints (unchanged) ----
 @router.post("/devices/{device_id}/mold")
-def mount_mold(device_id: str, data: dict, user: dict = Depends(require_user)):
-    ...  # keep your existing implementation from the current file
+def mount_mold(device_id: str, data: MoldAssignmentRequest, user: dict = Depends(require_user)):
+    require_editor(user)
+    sql_check_mold = "SELECT id, is_active FROM dbo.molds WHERE id = ?"
+    sql_unmount_existing = """
+        UPDATE dbo.device_mold_assignments
+        SET unmounted_at = SYSDATETIME()
+        WHERE device_id = ? AND unmounted_at IS NULL
+    """
+    sql_insert = """
+        INSERT INTO dbo.device_mold_assignments
+            (device_id, mold_id, operator_user_id, remark)
+        OUTPUT INSERTED.id
+        VALUES (?, ?, ?, ?)
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql_check_mold, data.mold_id)
+            mold_row = cursor.fetchone()
+            if mold_row is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+            if not mold_row.is_active:
+                raise HTTPException(status_code=400, detail="该模具已停用")
+
+            # Close out any assignment currently open on this device first
+            # (a device should only have one active mold at a time).
+            cursor.execute(sql_unmount_existing, device_id)
+            cursor.execute(sql_insert, device_id, data.mold_id, user["id"], data.remark)
+            row = cursor.fetchone()
+            connection.commit()
+            return {"status": "ok", "assignment_id": row[0]}
+    except HTTPException:
+        raise
+    except pyodbc.IntegrityError as error:
+        # UX_device_mold_active_mold: this mold is already mounted elsewhere.
+        raise HTTPException(status_code=409, detail="该模具当前已安装在其他设备上") from error
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.delete("/devices/{device_id}/mold")
+def unmount_mold(device_id: str, user: dict = Depends(require_user)):
+    require_editor(user)
+    sql = """
+        UPDATE dbo.device_mold_assignments
+        SET unmounted_at = SYSDATETIME()
+        WHERE device_id = ? AND unmounted_at IS NULL
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql, device_id)
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="该设备当前未装模")
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.get("/devices/{device_id}/mold-history")
+def get_mold_history(device_id: str, user: dict = Depends(require_user)):
+    del user
+    sql = """
+        SELECT
+            a.id, a.mold_id, m.mold_code, m.mold_name,
+            a.mounted_at, a.unmounted_at, a.remark,
+            u.username AS operator_username
+        FROM dbo.device_mold_assignments AS a
+        INNER JOIN dbo.molds AS m ON m.id = a.mold_id
+        LEFT JOIN dbo.app_users AS u ON u.id = a.operator_user_id
+        WHERE a.device_id = ?
+        ORDER BY a.mounted_at DESC
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql, device_id)
+            return [row_to_dict(cursor, row) for row in cursor.fetchall()]
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
