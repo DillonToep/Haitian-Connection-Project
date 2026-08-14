@@ -148,9 +148,10 @@ let currentPage = "dashboard";
                 : `<div class="mold-card-face mold-card-face-empty">无图片</div>`;
             return `<div class="mold-item">
                 ${face}
-                <strong>${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</strong>
-                <div class="muted">模穴：${showValue(m.cavities)}</div>
-                <div class="muted">${m.mounted_device_id ? `已安装：${escapeHtml(m.mounted_device_id)}` : "当前空闲"}</div>
+                <div class="mold-card-overlay">
+                    <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
+                    <div class="mold-card-meta">模穴：${showValue(m.cavities)}　${m.mounted_device_id ? `已安装：${escapeHtml(m.mounted_device_id)}` : "当前空闲"}</div>
+                </div>
             </div>`;
         }).join("") : '<div class="empty">尚未建立模具档案</div>';
     }
@@ -997,18 +998,9 @@ let currentPage = "dashboard";
         if(page==="device-detail") {
             document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
-            // Load the active tab's data before this section is revealed
-            // below, so entering the device detail view never flashes an
-            // empty panel or stale content left over from a previously
-            // viewed device/tab. Errors are surfaced via the normal
-            // connection-status handling inside refreshPage() further down.
             try { await loadActiveDetailTab(); } catch(error) { /* handled by refreshPage below */ }
         } else if(page==="utilization") {
             activeUtilTab="overview";
-            // See switchUtilTab -- same fix applies here: collapse the
-            // stale overview content synchronously, before it's unhidden
-            // below, so nothing flashes at its old full-drawn state while
-            // the fresh data fetch is in flight.
             utilRenderedOnce.overview = false;
             collapseUtilAnimatables(document.getElementById("util-tab-overview"));
             document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
