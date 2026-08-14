@@ -382,10 +382,28 @@ let currentPage = "dashboard";
             highlightApplied=true;
         }
     }
+
     async function loadSpc(id) {
-        const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`),fields=Object.entries(spcFields).filter(([name])=>Object.hasOwn(result,name));
-        document.getElementById("detail-tab-spc").innerHTML=`<article class="detail-card"><div class="detail-header"><div class="detail-title">最新 SPC</div><div class="muted">数据时间：${formatTime(result.data_time)}</div></div><div class="metric-grid">${fields.map(([name,meta])=>metric(meta[0],result[name],meta[1])).join("")}</div></article>`;
+        const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`);
+        const has=name=>Object.hasOwn(result,name);
+        const tile=name=>metric(spcFields[name][0],result[name],spcFields[name][1]);
+        const overviewNames=["cycle_number","cycle_time","oil_temperature","injection_max_pressure"];
+        const tempNames=["temperature_1","temperature_2","temperature_3","temperature_4","temperature_5","temperature_6","temperature_7"];
+        const injectionNames=["injection_start_position","injection_max_speed","injection_time","injection_end_position","switch_pressure","switch_position","switch_time"];
+        const timingNames=["mold_close_time","mold_open_time","plasticizing_time","plasticizing_max_pressure","pickup_time","low_pressure_time","high_pressure_time","screw_retract_time","eject_time"];
+        const overviewTiles=overviewNames.filter(has).map(name=>metric(spcFields[name][0],result[name],spcFields[name][1],true)).join("");
+        const tempTiles=tempNames.filter(has).map(tile).join("");
+        const injectionTiles=injectionNames.filter(has).map(tile).join("");
+        const timingTiles=timingNames.filter(has).map(tile).join("");
+
+        document.getElementById("detail-tab-spc").innerHTML=[
+            `<article class="detail-card"><div class="detail-header"><div class="detail-title">最新 SPC</div><div class="muted">数据时间：${formatTime(result.data_time)}</div></div><div class="metric-grid">${overviewTiles||'<div class="empty">暂无数据</div>'}</div></article>`,
+            tempTiles&&`<article class="detail-card"><div class="detail-title">生产温度</div><div class="metric-grid">${tempTiles}</div></article>`,
+            injectionTiles&&`<article class="detail-card"><div class="detail-title">注射 / 保压参数</div><div class="metric-grid">${injectionTiles}</div></article>`,
+            timingTiles&&`<article class="detail-card"><div class="detail-title">工艺时间参数</div><div class="metric-grid">${timingTiles}</div></article>`,
+        ].filter(Boolean).join("");
     }
+
     async function loadMolds() {
         const id=selectedDeviceId(); if(!id)return;
         [molds,devices]=await Promise.all([requestJson("/api/molds"),requestJson("/api/devices")]);
