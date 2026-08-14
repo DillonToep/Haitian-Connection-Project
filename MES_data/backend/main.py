@@ -4,14 +4,26 @@ import pyodbc
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-
+from starlette.middleware.base import BaseHTTPMiddleware
 from .config import FRONTEND_DIR
 from .database import get_connection
 from .routers import auth, changelog, devices, molds, uptime, warnings
 from .security import find_session_user
 
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    """Prevent browsers from caching /static assets (JS/CSS/images), so
+    edits to frontend files show up on a normal refresh instead of
+    requiring a hard refresh to bypass a stale cached copy."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+
 
 app = FastAPI(title="注塑机 MES API", version="2.2.0")
+app.add_middleware(NoCacheStaticMiddleware) 
 app.include_router(auth.router)
 app.include_router(devices.router)
 app.include_router(molds.router)
