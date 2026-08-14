@@ -76,46 +76,41 @@
             <div id="detail-tab-spc" class="tab-content hidden"></div>
             <div id="detail-tab-changelog" class="tab-content hidden"></div>
         </section>
-
         <section id="molds-page" class="hidden">
             <div class="mold-layout">
-            <div>
-                <article class="detail-card">
-                    <div class="detail-title">新增模具型号</div>
-                    <form id="mold-form" class="form-grid">
-                        <div class="field"><label>项目名称</label><input name="mold_name" required maxlength="200"></div>
-                        <div class="field"><label>项目编号</label><input name="mold_code" required maxlength="100"></div>
-                        <div class="field"><label>模穴数</label><input id="mold-cavities" name="cavities" type="number" min="1" value="1" required></div>
-                        <div class="field full"><label>备注</label><textarea name="remark" maxlength="500"></textarea></div>
+                <div>
+                    <article class="detail-card">
+                        <div class="detail-title">新增模具型号</div>
+                        <form id="mold-form" class="form-grid">
+                            <div class="field"><label>项目名称</label><input name="mold_name" required maxlength="200"></div>
+                            <div class="field"><label>项目编号</label><input name="mold_code" required maxlength="100"></div>
+                            <div class="field"><label>模穴数</label><input id="mold-cavities" name="cavities" type="number" min="1" value="1" required></div>
+                            <div class="field full"><label>备注</label><textarea name="remark" maxlength="500"></textarea></div>
 
-                        <div class="field full">
-                            <label>项目图片 (1-4 张，选择一张作为封面)</label>
-                            <input id="mold-images-input" type="file" accept="image/*" multiple>
-                            <div id="mold-image-previews" class="mold-image-previews"></div>
-                        </div>
+                            <div class="field full">
+                                <label>项目图片 (1-4 张，选择一张作为封面)</label>
+                                <input id="mold-images-input" type="file" accept="image/*" multiple>
+                                <div id="mold-image-previews" class="mold-image-previews"></div>
+                            </div>
 
-                        <div class="field full">
-                            <label>模穴温度表</label>
-                            <table id="mold-cavity-table" class="mold-cavity-table">
-                                <thead><tr><th>模穴数 #</th><th>模穴温度 (C°)</th></tr></thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
+                            <div class="field full">
+                                <label>模穴温度表</label>
+                                <table id="mold-cavity-table" class="mold-cavity-table">
+                                    <thead><tr><th>模穴数 #</th><th>模穴温度 (C°)</th></tr></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
 
-                        <div class="field full"><button class="primary-button" type="submit">保存模具档案</button></div>
-                    </form>
-                </article>
-            </div>
-            <article class="detail-card">
-                <div class="detail-title">当前模具</div>
-                <div id="current-mold"></div>
-                <select id="mold-select"><option value="">选择模具</option></select>
-                <div class="actions">
-                    <button id="mount-button" class="primary-button" type="button">安装模具</button>
-                    <button id="unmount-button" class="secondary-button" type="button">卸下模具</button>
+                            <div class="field full"><button class="primary-button" type="submit">保存模具档案</button></div>
+                        </form>
+                    </article>
                 </div>
-            </article>
-                <div><article class="detail-card"><div class="detail-title">模具档案</div><div id="mold-list" class="mold-list"></div></article><article class="detail-card"><div class="detail-title">设备装模履历</div><div id="mold-history"></div></article></div>
+                <div>
+                    <article class="detail-card">
+                        <div class="detail-title">模具档案</div>
+                        <div id="mold-list" class="mold-list"></div>
+                    </article>
+                </div>
             </div>
         </section>
         <section id="utilization-page" class="hidden">
