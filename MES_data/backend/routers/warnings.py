@@ -28,8 +28,10 @@ def get_warnings(user: dict = Depends(require_user)):
     sql = """
         SELECT TOP 200
             c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
-            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id
+            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id,
+            s.cycle_number AS spc_cycle_number
         FROM dbo.tech_parameter_changelog AS c
+        LEFT JOIN dbo.vw_machine_spc AS s ON s.raw_message_id = c.spc_message_id
         WHERE c.acknowledged_at IS NULL
         ORDER BY c.detected_at DESC
     """

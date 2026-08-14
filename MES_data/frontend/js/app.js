@@ -626,7 +626,7 @@ let currentPage = "dashboard";
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
         const table = document.getElementById("changelog-table");
         table.innerHTML = rows.length
-            ? `<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_cycle_number!=null?`模次 #${r.spc_cycle_number}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
     }
@@ -713,7 +713,7 @@ let currentPage = "dashboard";
         const resultsEl = document.getElementById("device-changelog-results");
         if (!resultsEl) return; // tab was navigated away from mid-fetch
         resultsEl.innerHTML = rows.length
-            ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>SPC</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_message_id?`SPC #${r.spc_message_id}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_cycle_number!=null?`模次 #${r.spc_cycle_number}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         resultsEl.querySelectorAll(".changelog-row").forEach(row => {
             row.addEventListener("click", () => {

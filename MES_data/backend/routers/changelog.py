@@ -67,6 +67,22 @@ def _build_where(date_value, tags: list[str] | None) -> tuple[str, list]:
     return where_clause, params
 
 
+# Every changelog SELECT joins in dbo.vw_machine_spc so we can show the
+# operator-facing 模数 (CYCN / cycle_number) instead of the raw internal
+# spc_message_id. The join key is unchanged: spc_message_id still points at
+# dbo.mqtt_messages.id, we're just resolving it to a friendlier display
+# value via the same view GET /api/spc/{device_id} already reads from.
+CHANGELOG_SELECT = """
+    c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
+    c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id,
+    s.cycle_number AS spc_cycle_number
+"""
+CHANGELOG_FROM = """
+    FROM dbo.tech_parameter_changelog AS c
+    LEFT JOIN dbo.vw_machine_spc AS s ON s.raw_message_id = c.spc_message_id
+"""
+
+
 @router.get("/changelog/filters")
 def get_changelog_filters(user: dict = Depends(require_user)):
     """Field -> sub-field -> [parameter_id...] tree used to populate the
@@ -95,9 +111,8 @@ def get_changelog(
     where_clause, params = _build_where(date_value, tags)
     sql = f"""
         SELECT TOP 500
-            c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
-            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id
-        FROM dbo.tech_parameter_changelog AS c
+            {CHANGELOG_SELECT}
+        {CHANGELOG_FROM}
         {where_clause}
         ORDER BY c.detected_at DESC
     """
@@ -130,9 +145,8 @@ def get_changelog_for_device(
     params = params + [device_id]
     sql = f"""
         SELECT TOP 200
-            c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
-            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id
-        FROM dbo.tech_parameter_changelog AS c
+            {CHANGELOG_SELECT}
+        {CHANGELOG_FROM}
         {where_clause}
         ORDER BY c.detected_at DESC
     """
@@ -148,11 +162,10 @@ def get_changelog_for_device(
 @router.get("/changelog/{changelog_id}")
 def get_changelog_entry(changelog_id: int, user: dict = Depends(require_user)):
     del user
-    sql = """
+    sql = f"""
         SELECT
-            c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
-            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id
-        FROM dbo.tech_parameter_changelog AS c
+            {CHANGELOG_SELECT}
+        {CHANGELOG_FROM}
         WHERE c.id = ?
     """
     try:
@@ -174,11 +187,10 @@ def get_changelog_for_spc(spc_message_id: int, user: dict = Depends(require_user
     """All 工艺参数 changes associated with a given SPC (cycle) message,
     supporting the Machine -> SPC -> 工艺参数 Changelog hierarchy."""
     del user
-    sql = """
+    sql = f"""
         SELECT
-            c.id, c.device_id, c.parameter_id, c.previous_value, c.new_value,
-            c.data_time, c.detected_at, c.raw_message_id, c.spc_message_id
-        FROM dbo.tech_parameter_changelog AS c
+            {CHANGELOG_SELECT}
+        {CHANGELOG_FROM}
         WHERE c.spc_message_id = ?
         ORDER BY c.detected_at
     """
