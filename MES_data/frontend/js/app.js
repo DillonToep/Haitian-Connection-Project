@@ -22,6 +22,9 @@ let currentPage = "dashboard";
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", changelog: "变更记录" };
     let seenWarningIds = new Set();
     let warningsInitialized = false;
+    let editMoldId = null;
+    let editImageItems = [];
+    let editFaceIndex = 0;
     const techCategoryUnits = {
         "温度参数": " ℃",
         "压力参数": " MPa",
@@ -77,10 +80,9 @@ let currentPage = "dashboard";
         return machineGraphic();
     }
 
-    function rebuildCavityTable() {
-        const cavities = Math.max(1, Number(document.getElementById("mold-cavities").value) || 1);
-        const tbody = document.querySelector("#mold-cavity-table tbody");
-        // Preserve any values already typed for labels that still exist.
+    function rebuildCavityTable(cavitiesInputId = "mold-cavities", tableId = "mold-cavity-table") {
+        const cavities = Math.max(1, Number(document.getElementById(cavitiesInputId).value) || 1);
+        const tbody = document.querySelector(`#${tableId} tbody`);
         const existing = {};
         tbody.querySelectorAll("tr").forEach(row => {
             const label = row.dataset.label;
@@ -88,26 +90,35 @@ let currentPage = "dashboard";
             if (label && input && input.value !== "") existing[label] = input.value;
         });
         const rows = [];
-        for (let i = 1; i <= cavities; i++) {
-            rows.push(`IN${i}`, `OUT${i}`);
-        }
+        for (let i = 1; i <= cavities; i++) rows.push(`IN${i}`, `OUT${i}`);
         tbody.innerHTML = rows.map(label => `
             <tr data-label="${label}">
                 <td>${label}</td>
                 <td><input type="number" step="0.1" class="cavity-temp-input" value="${existing[label] ?? ""}"></td>
             </tr>`).join("");
     }
-    document.getElementById("mold-cavities").addEventListener("input", rebuildCavityTable);
+    document.getElementById("mold-cavities").addEventListener("input", () => rebuildCavityTable());
     rebuildCavityTable();
+    document.getElementById("mold-edit-cavities").addEventListener("input", () => rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table"));
 
-    function collectCavityTemperatures() {
+    function collectCavityTemperatures(tableId = "mold-cavity-table") {
         const result = {};
-        document.querySelectorAll("#mold-cavity-table tbody tr").forEach(row => {
+        document.querySelectorAll(`#${tableId} tbody tr`).forEach(row => {
             const label = row.dataset.label;
             const value = row.querySelector(".cavity-temp-input").value;
             result[label] = value === "" ? null : Number(value);
         });
         return result;
+    }
+
+    function applyCavityTemperatures(tableId, temps) {
+        const map = {};
+        (temps || []).forEach(t => { map[t.cavity_label] = t.temperature_c; });
+        document.querySelectorAll(`#${tableId} tbody tr`).forEach(row => {
+            const input = row.querySelector(".cavity-temp-input");
+            const v = map[row.dataset.label];
+            input.value = (v === null || v === undefined) ? "" : v;
+        });
     }
 
     function renderMoldImagePreviews() {
@@ -132,6 +143,94 @@ let currentPage = "dashboard";
             });
         });
     }
+
+    function renderEditImagePreviews() {
+        const container = document.getElementById("mold-edit-image-previews");
+        container.innerHTML = editImageItems.map((item, i) => {
+            const url = item.type === "existing" ? item.url : URL.createObjectURL(item.file);
+            return `<div class="mold-image-preview${i===editFaceIndex?" is-face":""}" data-index="${i}">
+                <img src="${url}" alt="预览">
+                <label class="face-select"><input type="radio" name="edit-face-image" ${i===editFaceIndex?"checked":""} value="${i}"> 封面</label>
+                <button type="button" class="mold-image-remove" data-index="${i}">✕</button>
+            </div>`;
+        }).join("");
+        container.querySelectorAll('input[name="edit-face-image"]').forEach(radio => {
+            radio.addEventListener("change", e => { editFaceIndex = Number(e.target.value); renderEditImagePreviews(); });
+        });
+        container.querySelectorAll(".mold-image-remove").forEach(button => {
+            button.addEventListener("click", () => {
+                const idx = Number(button.dataset.index);
+                editImageItems.splice(idx, 1);
+                if (editFaceIndex >= editImageItems.length) editFaceIndex = 0;
+                renderEditImagePreviews();
+            });
+        });
+    }
+    document.getElementById("mold-edit-images-input").addEventListener("change", e => {
+        const incoming = Array.from(e.target.files || []).map(file => ({ type: "new", file }));
+        editImageItems = [...editImageItems, ...incoming].slice(0, 4);
+        if (editFaceIndex >= editImageItems.length) editFaceIndex = 0;
+        renderEditImagePreviews();
+        e.target.value = "";
+    });
+
+    function openMoldEdit(moldId) {
+        const m = molds.find(x => x.id === moldId);
+        if (!m) return;
+        editMoldId = moldId;
+        document.getElementById("edit-mold-name").value = m.mold_name;
+        document.getElementById("edit-mold-code").value = m.mold_code;
+        document.getElementById("mold-edit-cavities").value = m.cavities;
+        document.getElementById("edit-mold-remark").value = m.remark || "";
+        document.getElementById("edit-mold-active").value = m.is_active ? "1" : "0";
+
+        editImageItems = (m.images || []).map(img => ({ type: "existing", id: img.id, url: img.url, is_face: img.is_face }));
+        editFaceIndex = Math.max(0, editImageItems.findIndex(item => item.is_face));
+        renderEditImagePreviews();
+
+        rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table");
+        applyCavityTemperatures("mold-edit-cavity-table", m.cavity_temperatures);
+
+        const readOnly = currentUser.role === "viewer";
+        document.getElementById("mold-edit-form").querySelectorAll("input,textarea,select,button").forEach(el => el.disabled = readOnly);
+
+        document.getElementById("mold-edit-dialog").showModal();
+    }
+
+    document.getElementById("mold-edit-cancel").addEventListener("click", () => document.getElementById("mold-edit-dialog").close());
+
+    document.getElementById("mold-edit-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        if (editImageItems.length < 1) return alert("请至少保留一张项目图片");
+
+        const body = new FormData();
+        body.set("mold_code", document.getElementById("edit-mold-code").value);
+        body.set("mold_name", document.getElementById("edit-mold-name").value);
+        body.set("cavities", document.getElementById("mold-edit-cavities").value);
+        body.set("remark", document.getElementById("edit-mold-remark").value || "");
+        body.set("is_active", document.getElementById("edit-mold-active").value);
+        body.set("cavity_temperatures", JSON.stringify(collectCavityTemperatures("mold-edit-cavity-table")));
+
+        const keepIds = editImageItems.filter(i => i.type === "existing").map(i => i.id);
+        body.set("keep_image_ids", JSON.stringify(keepIds));
+
+        const faceItem = editImageItems[editFaceIndex];
+        if (faceItem.type === "existing") {
+            body.set("face_image_id", String(faceItem.id));
+        } else {
+            const newOnly = editImageItems.filter(i => i.type === "new");
+            body.set("face_new_index", String(newOnly.indexOf(faceItem)));
+        }
+        editImageItems.filter(i => i.type === "new").forEach(i => body.append("images", i.file));
+
+        try {
+            await requestJson(`/api/molds/${editMoldId}`, { method: "PUT", body });
+            document.getElementById("mold-edit-dialog").close();
+            await loadMolds();
+        } catch (error) { alert(error.message); }
+    });
+
+
     document.getElementById("mold-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []);
         moldImageFiles = [...moldImageFiles, ...incoming].slice(0, 4);
@@ -146,7 +245,7 @@ let currentPage = "dashboard";
             const face = m.face_image_url
                 ? `<img class="mold-card-face" src="${m.face_image_url}" alt="${escapeHtml(m.mold_name)}">`
                 : `<div class="mold-card-face mold-card-face-empty">无图片</div>`;
-            return `<div class="mold-item">
+            return `<div class="mold-item" data-mold-id="${m.id}">
                 ${face}
                 <div class="mold-card-overlay">
                     <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
@@ -154,6 +253,9 @@ let currentPage = "dashboard";
                 </div>
             </div>`;
         }).join("") : '<div class="empty">尚未建立模具档案</div>';
+        document.querySelectorAll(".mold-item").forEach(card =>
+            card.addEventListener("click", () => openMoldEdit(Number(card.dataset.moldId)))
+        );
     }
 
     document.getElementById("mold-form").addEventListener("submit", async event => {
@@ -374,27 +476,6 @@ let currentPage = "dashboard";
         return order.map(key=>({key,items:groups.get(key)}));
     }
 
-    // Tech (工艺参数) tab: fully driven by the API, which already joins
-    // each parameter_id against the label file, applies scale, drops
-    // parameters flagged use=0, and assigns a display category. The
-    // category also picks which unit (if any) is appended to the value.
-    // Within each category, numbered variants of the same parameter are
-    // grouped onto a single row (see groupTechParameters above).
-    //
-    // Categories render collapsed by default when a device is first opened
-    // (techOpenCategories starts empty); the "展开全部" / "收起全部" buttons
-    // and each section's own toggle update techOpenCategories so state
-    // survives the 2-second auto-refresh.
-    //
-    // When this tab is opened from a changelog entry (see openChangelogDetail),
-    // highlightParameter names the changed tag: its category is force-opened
-    // and its row gets the .parameter-changed style, with a banner showing
-    // the previous -> new value at the top of the card. The force-open and
-    // the scroll-into-view below only happen the FIRST time loadTech() runs
-    // for this highlight (see highlightApplied) -- loadTech() also runs on
-    // every 2-second auto-refresh while this tab stays open, and without
-    // this guard it would keep re-opening the category (even if the user
-    // just closed it) and re-scrolling the page on every tick.
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
         const groups=new Map();

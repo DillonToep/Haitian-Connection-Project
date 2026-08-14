@@ -170,6 +170,35 @@
     </div>
     <div id="day-detail-body"></div>
 </dialog>
+<dialog id="mold-edit-dialog" class="mold-edit-dialog">
+    <h3>编辑模具型号</h3>
+    <form id="mold-edit-form" class="form-grid">
+        <div class="field"><label>项目名称</label><input id="edit-mold-name" required maxlength="200"></div>
+        <div class="field"><label>项目编号</label><input id="edit-mold-code" required maxlength="100"></div>
+        <div class="field"><label>模穴数</label><input id="mold-edit-cavities" type="number" min="1" required></div>
+        <div class="field"><label>状态</label><select id="edit-mold-active"><option value="1">启用</option><option value="0">停用</option></select></div>
+        <div class="field full"><label>备注</label><textarea id="edit-mold-remark" maxlength="500"></textarea></div>
+
+        <div class="field full">
+            <label>项目图片 (1-4 张，选择一张作为封面)</label>
+            <input id="mold-edit-images-input" type="file" accept="image/*" multiple>
+            <div id="mold-edit-image-previews" class="mold-image-previews"></div>
+        </div>
+
+        <div class="field full">
+            <label>模穴温度表</label>
+            <table id="mold-edit-cavity-table" class="mold-cavity-table">
+                <thead><tr><th>模穴数 #</th><th>模穴温度 (C°)</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="field full actions">
+            <button class="primary-button" type="submit">保存修改</button>
+            <button id="mold-edit-cancel" class="secondary-button" type="button">取消</button>
+        </div>
+    </form>
+</dialog>
     <div id="toast-container" class="toast-container"></div>
     <script src="/static/js/app.js"></script>
 </body>
