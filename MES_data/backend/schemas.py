@@ -10,15 +10,6 @@ class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=200)
     new_password: str = Field(min_length=8, max_length=200)
 
-
-class MoldCreateRequest(BaseModel):
-    mold_code: str = Field(min_length=1, max_length=100)
-    mold_name: str = Field(min_length=1, max_length=200)
-    product_code: str | None = Field(default=None, max_length=100)
-    cavities: int = Field(default=1, ge=1, le=10_000)
-    remark: str | None = Field(default=None, max_length=500)
-
-
 class MoldUpdateRequest(MoldCreateRequest):
     is_active: bool = True
 

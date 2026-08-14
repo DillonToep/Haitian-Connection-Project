@@ -3,6 +3,8 @@ let currentPage = "dashboard";
     let devices = [];
     let dashboardMachines = [];
     let molds = [];
+    let moldImageFiles = [];
+    let moldFaceIndex = 0;
     let dashboardPage = 1;
     const pageSize = 8;
     let uptimeChartIdCounter = 0;
@@ -75,6 +77,107 @@ let currentPage = "dashboard";
         return machineGraphic();
     }
 
+    function rebuildCavityTable() {
+        const cavities = Math.max(1, Number(document.getElementById("mold-cavities").value) || 1);
+        const tbody = document.querySelector("#mold-cavity-table tbody");
+        // Preserve any values already typed for labels that still exist.
+        const existing = {};
+        tbody.querySelectorAll("tr").forEach(row => {
+            const label = row.dataset.label;
+            const input = row.querySelector("input");
+            if (label && input && input.value !== "") existing[label] = input.value;
+        });
+        const rows = [];
+        for (let i = 1; i <= cavities; i++) {
+            rows.push(`IN${i}`, `OUT${i}`);
+        }
+        tbody.innerHTML = rows.map(label => `
+            <tr data-label="${label}">
+                <td>${label}</td>
+                <td><input type="number" step="0.1" class="cavity-temp-input" value="${existing[label] ?? ""}"></td>
+            </tr>`).join("");
+    }
+    document.getElementById("mold-cavities").addEventListener("input", rebuildCavityTable);
+    rebuildCavityTable();
+
+    function collectCavityTemperatures() {
+        const result = {};
+        document.querySelectorAll("#mold-cavity-table tbody tr").forEach(row => {
+            const label = row.dataset.label;
+            const value = row.querySelector(".cavity-temp-input").value;
+            result[label] = value === "" ? null : Number(value);
+        });
+        return result;
+    }
+
+    function renderMoldImagePreviews() {
+        const container = document.getElementById("mold-image-previews");
+        container.innerHTML = moldImageFiles.map((file, i) => {
+            const url = URL.createObjectURL(file);
+            return `<div class="mold-image-preview${i===moldFaceIndex?" is-face":""}" data-index="${i}">
+                <img src="${url}" alt="预览">
+                <label class="face-select"><input type="radio" name="face-image" ${i===moldFaceIndex?"checked":""} value="${i}"> 封面</label>
+                <button type="button" class="mold-image-remove" data-index="${i}">✕</button>
+            </div>`;
+        }).join("");
+        container.querySelectorAll('input[name="face-image"]').forEach(radio => {
+            radio.addEventListener("change", e => { moldFaceIndex = Number(e.target.value); renderMoldImagePreviews(); });
+        });
+        container.querySelectorAll(".mold-image-remove").forEach(button => {
+            button.addEventListener("click", () => {
+                const idx = Number(button.dataset.index);
+                moldImageFiles.splice(idx, 1);
+                if (moldFaceIndex >= moldImageFiles.length) moldFaceIndex = 0;
+                renderMoldImagePreviews();
+            });
+        });
+    }
+    document.getElementById("mold-images-input").addEventListener("change", e => {
+        const incoming = Array.from(e.target.files || []);
+        moldImageFiles = [...moldImageFiles, ...incoming].slice(0, 4);
+        if (moldFaceIndex >= moldImageFiles.length) moldFaceIndex = 0;
+        renderMoldImagePreviews();
+        e.target.value = "";
+    });
+
+    async function loadMolds() {
+        molds = await requestJson("/api/molds");
+        document.getElementById("mold-list").innerHTML = molds.length ? molds.map(m => {
+            const face = m.face_image_url
+                ? `<img class="mold-card-face" src="${m.face_image_url}" alt="${escapeHtml(m.mold_name)}">`
+                : `<div class="mold-card-face mold-card-face-empty">无图片</div>`;
+            return `<div class="mold-item">
+                ${face}
+                <strong>${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</strong>
+                <div class="muted">模穴：${showValue(m.cavities)}</div>
+                <div class="muted">${m.mounted_device_id ? `已安装：${escapeHtml(m.mounted_device_id)}` : "当前空闲"}</div>
+            </div>`;
+        }).join("") : '<div class="empty">尚未建立模具档案</div>';
+    }
+
+    document.getElementById("mold-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        if (moldImageFiles.length < 1) return alert("请至少上传一张项目图片");
+        const f = new FormData(event.target);
+        const body = new FormData();
+        body.set("mold_code", f.get("mold_code"));
+        body.set("mold_name", f.get("mold_name"));
+        body.set("cavities", f.get("cavities"));
+        body.set("remark", f.get("remark") || "");
+        body.set("cavity_temperatures", JSON.stringify(collectCavityTemperatures()));
+        body.set("face_index", String(moldFaceIndex));
+        moldImageFiles.forEach(file => body.append("images", file));
+        try {
+            await requestJson("/api/molds", { method: "POST", body });
+            event.target.reset();
+            moldImageFiles = [];
+            moldFaceIndex = 0;
+            renderMoldImagePreviews();
+            rebuildCavityTable();
+            await loadMolds();
+        } catch (error) { alert(error.message); }
+    });
+
     async function requestJson(url,options={}) {
         const response=await fetch(url,{cache:"no-store",...options});
         if(response.status===401){window.location.replace("/login");throw new Error("登录已失效");}
@@ -136,8 +239,6 @@ let currentPage = "dashboard";
         document.getElementById("user-label").textContent=`${currentUser.username} · ${currentUser.role}`;
         const readOnly=currentUser.role==="viewer";
         document.getElementById("mold-form").querySelectorAll("input,textarea,button").forEach(el=>el.disabled=readOnly);
-        document.getElementById("mount-button").disabled=readOnly;
-        document.getElementById("unmount-button").disabled=readOnly;
         document.getElementById("clear-all-warnings").disabled=readOnly;
     }
     async function loadDevices() {

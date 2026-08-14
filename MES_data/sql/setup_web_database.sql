@@ -99,5 +99,3 @@ BEGIN
         ON dbo.device_mold_assignments(device_id, mounted_at DESC);
 END;
 GO
-
-

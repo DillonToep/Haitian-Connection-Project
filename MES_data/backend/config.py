@@ -5,6 +5,9 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 
+MOLD_UPLOAD_DIR = FRONTEND_DIR / "uploads" / "molds"
+MOLD_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 SESSION_COOKIE = "mes_session"
 SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 310_000
