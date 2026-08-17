@@ -437,7 +437,7 @@ let currentPage = "dashboard";
                         <option value="flat"${mode==="flat"?" selected":""}>固定值</option>
                     </select>
                     <input class="mold-param-tolerance" type="number" step="0.1" min="0"
-                        placeholder="${mode==="flat"?"公差(固定值)":"公差 %"}"
+                        placeholder="${mode==="flat"?"公差":"公差 %"}"
                         value="${toleranceValue!=null?toleranceValue:""}" ${readOnly?"disabled":""}>
                 </div>`;
             }).join("");
@@ -447,7 +447,7 @@ let currentPage = "dashboard";
         document.querySelectorAll("#mold-advanced-groups .mold-param-tolerance-mode").forEach(select => {
             select.addEventListener("change", e => {
                 const input = e.target.closest(".mold-param-row").querySelector(".mold-param-tolerance");
-                input.placeholder = e.target.value === "flat" ? "公差(固定值)" : "公差 %";
+                input.placeholder = e.target.value === "flat" ? "公差" : "公差 %";
             });
         });
     }
