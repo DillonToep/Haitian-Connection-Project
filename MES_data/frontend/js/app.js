@@ -289,19 +289,11 @@ let currentPage = "dashboard";
     });
 
     async function loadMolds() {
-        const id=selectedDeviceId(); if(!id)return;
-        [molds,devices]=await Promise.all([requestJson("/api/molds"),requestJson("/api/devices")]);
-        const device=devices.find(d=>d.device_id===id);
-        document.getElementById("current-mold").innerHTML=device?.mold_id?`<div class="muted">设备 ${escapeHtml(id)} 当前模具</div><div class="mold-code">${escapeHtml(device.mold_code)}</div><strong>${escapeHtml(device.mold_name)}</strong><div class="muted">产品：${showValue(device.product_code)} · ${showValue(device.cavities)} 穴</div><div class="muted">装模时间：${formatTime(device.mounted_at)}</div>`:`<div class="muted">设备 ${escapeHtml(id)}</div><div class="mold-code">未装模</div><div>请选择模具后执行装模。</div>`;
-        const available=molds.filter(m=>m.is_active&&(!m.mounted_device_id||m.mounted_device_id===id));
-        document.getElementById("mold-select").innerHTML='<option value="">选择模具</option>'+available.map(m=>`<option value="${m.id}">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</option>`).join("");
-        document.getElementById("unmount-button").disabled=currentUser.role==="viewer"||!device?.mold_id;
-        document.getElementById("mold-list").innerHTML=molds.length?molds.map(m=>`<div class="mold-item" data-mold-id="${m.id}"><strong>${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</strong><div class="muted">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div><div class="muted">${m.mounted_device_id?`已安装：${escapeHtml(m.mounted_device_id)}`:"当前空闲"}</div></div>`).join(""):'<div class="empty">尚未建立模具档案</div>';
+        molds=await requestJson("/api/molds");
+        document.getElementById("mold-list").innerHTML=molds.length?molds.map(m=>`<div class="mold-item" data-mold-id="${m.id}"><strong>${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</strong><div class="muted">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div></div>`).join(""):'<div class="empty">尚未建立模具档案</div>';
         document.querySelectorAll("#mold-list .mold-item").forEach(item=>item.addEventListener("click",()=>{
             openMoldEdit(Number(item.dataset.moldId));
         }));
-        const history=await requestJson(`/api/devices/${encodeURIComponent(id)}/mold-history`);
-        document.getElementById("mold-history").innerHTML=history.length?`<table><thead><tr><th>模具</th><th>装模时间</th><th>卸模时间</th><th>操作人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(h.mold_code)}</td><td>${formatTime(h.mounted_at)}</td><td>${formatTime(h.unmounted_at)}</td><td>${showValue(h.operator_username)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无装模履历</div>';
     }
 
     document.getElementById("mold-form").addEventListener("submit", async event => {
