@@ -128,6 +128,7 @@ let currentPage = "dashboard";
         container.innerHTML = moldImageFiles.map((file, i) => {
             const url = URL.createObjectURL(file);
             return `<div class="mold-image-preview${i===moldFaceIndex?" is-face":""}" data-index="${i}">
+                <button type="button" class="mold-image-expand" data-url="${url}" aria-label="放大查看">⤢</button>
                 <img src="${url}" alt="预览">
                 <label class="face-select"><input type="radio" name="face-image" ${i===moldFaceIndex?"checked":""} value="${i}"> 封面</label>
                 <button type="button" class="mold-image-remove" data-index="${i}">✕</button>
@@ -135,6 +136,9 @@ let currentPage = "dashboard";
         }).join("");
         container.querySelectorAll('input[name="face-image"]').forEach(radio => {
             radio.addEventListener("change", e => { moldFaceIndex = Number(e.target.value); renderMoldImagePreviews(); });
+        });
+        container.querySelectorAll(".mold-image-expand").forEach(button => {
+            button.addEventListener("click", () => openImageLightbox(button.dataset.url));
         });
         container.querySelectorAll(".mold-image-remove").forEach(button => {
             button.addEventListener("click", () => {
@@ -151,6 +155,7 @@ let currentPage = "dashboard";
         container.innerHTML = editImageItems.map((item, i) => {
             const url = item.type === "existing" ? item.url : URL.createObjectURL(item.file);
             return `<div class="mold-image-preview${i===editFaceIndex?" is-face":""}" data-index="${i}">
+                <button type="button" class="mold-image-expand" data-url="${url}" aria-label="放大查看">⤢</button>
                 <img src="${url}" alt="预览">
                 <label class="face-select"><input type="radio" name="edit-face-image" ${i===editFaceIndex?"checked":""} value="${i}"> 封面</label>
                 <button type="button" class="mold-image-remove" data-index="${i}">✕</button>
@@ -158,6 +163,9 @@ let currentPage = "dashboard";
         }).join("");
         container.querySelectorAll('input[name="edit-face-image"]').forEach(radio => {
             radio.addEventListener("change", e => { editFaceIndex = Number(e.target.value); renderEditImagePreviews(); });
+        });
+        container.querySelectorAll(".mold-image-expand").forEach(button => {
+            button.addEventListener("click", () => openImageLightbox(button.dataset.url));
         });
         container.querySelectorAll(".mold-image-remove").forEach(button => {
             button.addEventListener("click", () => {
@@ -168,6 +176,16 @@ let currentPage = "dashboard";
             });
         });
     }
+
+    // Shared lightbox for the mold-image "expand" button in both the
+    // create form and edit dialog -- works off a plain <img src> URL, so
+    // it doesn't care whether that URL is a local blob: preview or an
+    // already-uploaded /static path.
+    function openImageLightbox(url) {
+        document.getElementById("image-lightbox-img").src = url;
+        document.getElementById("image-lightbox-dialog").showModal();
+    }
+    document.getElementById("image-lightbox-close").addEventListener("click", () => document.getElementById("image-lightbox-dialog").close());
     document.getElementById("mold-edit-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []).map(file => ({ type: "new", file }));
         editImageItems = [...editImageItems, ...incoming].slice(0, 4);

@@ -264,9 +264,10 @@
         dialog { width: min(430px,calc(100% - 28px)); padding: 21px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
         dialog::backdrop { background: rgba(15,23,42,.5); }
         dialog input { width: 100%; margin: 5px 0 12px; }
-        .mold-image-preview { position: relative; width: 150px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #f8fafc; text-align: center; }
+        .mold-image-previews { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+        .mold-image-preview { position: relative; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: #f8fafc; text-align: center; }
         .mold-image-preview.is-face { border-color: var(--blue); box-shadow: 0 0 0 2px #d9f0e2; }
-        .mold-image-preview img { width: 100%; height: 112px; object-fit: cover; border-radius: 4px; }
+        .mold-image-preview img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; display: block; }
         .mold-image-preview .face-select { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 6px; font-size: 11px; color: var(--muted); }
         .mold-image-preview .face-select input[type="radio"] { width: 13px; height: 13px; margin: 0; accent-color: var(--blue); }
         .mold-image-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: white; font-size: 11px; line-height: 1; }
@@ -295,6 +296,13 @@
             box-shadow: 0 20px 60px rgba(0,0,0,.28);
         }
         .mold-edit-dialog::backdrop { background: rgba(15,23,42,.5); }
+        .mold-image-expand { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: white; font-size: 12px; line-height: 1; display: grid; place-items: center; }
+        .mold-image-expand:hover { background: rgba(0,0,0,.75); }
+
+        .image-lightbox-dialog { position: relative; width: min(90vw, 900px); padding: 0; border: 0; border-radius: 8px; background: transparent; }
+        .image-lightbox-dialog::backdrop { background: rgba(15,23,42,.75); }
+        .image-lightbox-dialog img { display: block; width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px; background: #11151b; }
+        .image-lightbox-close { position: absolute; top: -14px; right: -14px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: white; color: #202631; font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer; }
         .detail-topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
         .detail-device-title { font-size: 19px; font-weight: 700; }
         .detail-tabs {
