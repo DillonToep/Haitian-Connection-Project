@@ -8,8 +8,14 @@ from fastapi.responses import JSONResponse
 
 from ..config import MOLD_UPLOAD_DIR
 from ..database import get_connection, row_to_dict
-from ..schemas import MoldAssignmentRequest
 from ..security import require_editor, require_user
+from ..parameter_labels import PARAMETER_LABELS, categorize
+from ..schemas import (
+    MoldAssignmentRequest,
+    MoldCreateRequest,
+    MoldParametersUpdateRequest,
+    MoldUpdateRequest,
+)
 
 
 router = APIRouter(prefix="/api", tags=["molds"])
@@ -145,6 +151,84 @@ def get_molds(user: dict = Depends(require_user)):
             return _attach_images_and_temps(cursor, records)
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.get("/molds/{mold_id}/parameters")
+def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+            cursor.execute(
+                "SELECT parameter_id, target_value, tolerance_percent FROM dbo.mold_parameter_targets WHERE mold_id = ?",
+                mold_id,
+            )
+            saved = {row.parameter_id: row for row in cursor.fetchall()}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    parameters = []
+    for tag, meta in PARAMETER_LABELS.items():
+        if not meta["use"]:
+            continue
+        row = saved.get(tag)
+        parameters.append(
+            {
+                "parameter_id": tag,
+                "label": meta["label"],
+                "category": categorize(meta["label"]),
+                "value": row.target_value if row else None,
+                "tolerance_percent": float(row.tolerance_percent) if row and row.tolerance_percent is not None else None,
+            }
+        )
+    return {"mold_id": mold_id, "parameters": parameters}
+
+
+@router.put("/molds/{mold_id}/parameters")
+def update_mold_parameters(
+    mold_id: int,
+    data: MoldParametersUpdateRequest,
+    user: dict = Depends(require_user),
+):
+    require_editor(user)
+    valid_tags = set(PARAMETER_LABELS.keys())
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+
+            cursor.execute("DELETE FROM dbo.mold_parameter_targets WHERE mold_id = ?", mold_id)
+            for item in data.parameters:
+                if item.parameter_id not in valid_tags:
+                    continue
+                value = item.value.strip() if item.value else None
+                if not value and item.tolerance_percent is None:
+                    continue  # blank row, nothing to save
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_parameter_targets
+                        (mold_id, parameter_id, target_value, tolerance_percent)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    mold_id,
+                    item.parameter_id,
+                    value,
+                    item.tolerance_percent,
+                )
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
 
 
 @router.post("/molds", status_code=201)

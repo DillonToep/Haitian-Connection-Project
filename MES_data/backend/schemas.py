@@ -6,6 +6,15 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class MoldParameterInput(BaseModel):
+    parameter_id: str = Field(min_length=1, max_length=50)
+    value: str | None = Field(default=None, max_length=200)
+    tolerance_percent: float | None = Field(default=None, ge=0, le=1000)
+
+
+class MoldParametersUpdateRequest(BaseModel):
+    parameters: list[MoldParameterInput]
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=200)
     new_password: str = Field(min_length=8, max_length=200)

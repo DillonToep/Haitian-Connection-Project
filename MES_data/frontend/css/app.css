@@ -298,6 +298,13 @@
         .mold-edit-dialog::backdrop { background: rgba(15,23,42,.5); }
         .mold-image-expand { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: white; font-size: 12px; line-height: 1; display: grid; place-items: center; }
         .mold-image-expand:hover { background: rgba(0,0,0,.75); }
+        .mold-item { cursor: pointer; }
+        .mold-item:hover { background: #f0f3f7; }
+        .mold-edit-dialog { width: min(760px, calc(100% - 28px)); max-height: 86vh; overflow-y: auto; }
+        .mold-param-row { display: grid; grid-template-columns: 1fr 120px 110px; gap: 10px; align-items: center; padding: 7px 10px; margin-bottom: 8px; border: 1px solid #e9edf2; background: #f8fafc; }
+        .mold-param-label { color: var(--muted); }
+        .mold-param-value, .mold-param-tolerance { height: 30px; padding: 0 8px; }
+
 
         .image-lightbox-dialog { position: relative; width: min(90vw, 900px); padding: 0; border: 0; border-radius: 8px; background: transparent; }
         .image-lightbox-dialog::backdrop { background: rgba(15,23,42,.75); }
@@ -393,6 +400,9 @@
         html[data-theme="dark"] .day-detail-dialog { background: #1a1f27; color: var(--text); }
         html[data-theme="dark"] .day-detail-segment-row { border-color: #262c35; }
         html[data-theme="dark"] .uptime-bucket-row:hover { background: #0d1015; }
+        html[data-theme="dark"] .mold-item:hover { background: #20262f; }
+        html[data-theme="dark"] .mold-edit-dialog { background: #1a1f27; color: var(--text); }
+        html[data-theme="dark"] .mold-param-row { border-color: #262c35; background: #20262f; }
 
         .toast-container {
             position: fixed; top: 62px; right: 18px; z-index: 100;
