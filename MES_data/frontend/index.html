@@ -70,11 +70,22 @@
                 <button class="tab-button" data-tab="tech" type="button">工艺参数</button>
                 <button class="tab-button" data-tab="spc" type="button">SPC 数据</button>
                 <button class="tab-button" data-tab="changelog" type="button">变更记录</button>
+                <button class="tab-button" data-tab="uptime" type="button">利用率</button>
             </div>
             <div id="detail-tab-realtime" class="tab-content"></div>
             <div id="detail-tab-tech" class="tab-content hidden"></div>
             <div id="detail-tab-spc" class="tab-content hidden"></div>
             <div id="detail-tab-changelog" class="tab-content hidden"></div>
+            <div id="detail-tab-uptime" class="tab-content hidden">
+                <div class="detail-tabs" role="tablist">
+                    <button class="tab-button detail-util-tab-button active" data-detail-util-tab="overview" type="button">总览</button>
+                    <button class="tab-button detail-util-tab-button" data-detail-util-tab="daily" type="button">日统计</button>
+                    <button class="tab-button detail-util-tab-button" data-detail-util-tab="monthly" type="button">月统计</button>
+                </div>
+                <div id="detail-util-tab-overview" class="detail-uptime-panel"></div>
+                <div id="detail-util-tab-daily" class="detail-uptime-panel hidden"></div>
+                <div id="detail-util-tab-monthly" class="detail-uptime-panel hidden"></div>
+            </div>
         </section>
         <section id="molds-page" class="hidden">
             <div class="mold-layout">

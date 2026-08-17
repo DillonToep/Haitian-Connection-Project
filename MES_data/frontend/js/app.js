@@ -17,9 +17,11 @@ let currentPage = "dashboard";
     let changelogFilters = { date: "", field: "", sub: "" };
     let deviceChangelogFilters = { date: "", field: "", sub: "" };
     let changelogFieldTree = null;
+    let activeDetailUtilTab = "overview";
+    const detailUtilRenderedOnce = { overview: false, daily: false, monthly: false };
     const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录", warnings: "预警通知" };
-    const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", changelog: "变更记录" };
+    const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", changelog: "变更记录", uptime: "利用率" };
     let seenWarningIds = new Set();
     let warningsInitialized = false;
     let editMoldId = null;
@@ -701,9 +703,15 @@ let currentPage = "dashboard";
         });
     }
 
-    async function loadUtilizationOverview(id) {
-        const overviewContainer = document.getElementById("util-tab-overview");
-        const freshEntry = !utilRenderedOnce.overview;
+    // Generic uptime renderers -- take an explicit device id, target
+    // container id, and a { overview, daily, monthly } "rendered once"
+    // tracker, so the same rendering logic can power both the standalone
+    // 利用率报表 page (device chosen via #device-select) and the per-device
+    // 利用率 tab nested inside the device detail view (device is always
+    // whichever machine's detail page is open).
+    async function renderUptimeOverview(id, containerId, renderedOnce) {
+        const container = document.getElementById(containerId);
+        const freshEntry = !renderedOnce.overview;
         const [dayData, weekData, monthData] = await Promise.all([
             requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`),
             requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=1`),
@@ -712,7 +720,7 @@ let currentPage = "dashboard";
         const today = dayData.buckets[dayData.buckets.length-1];
         const thisWeek = weekData.buckets[weekData.buckets.length-1];
         const thisMonth = monthData.buckets[monthData.buckets.length-1];
-        overviewContainer.innerHTML = `
+        container.innerHTML = `
             <div class="uptime-summary-grid">
                 <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
                 <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
@@ -724,15 +732,15 @@ let currentPage = "dashboard";
                 </div>
                 ${renderUptimeTrendChart(dayData.buckets)}
             </article>`;
-        if (freshEntry) playUtilEntranceAnimation(overviewContainer);
-        utilRenderedOnce.overview = true;
+        if (freshEntry) playUtilEntranceAnimation(container);
+        renderedOnce.overview = true;
     }
 
-    async function loadUtilizationDaily(id) {
-        const dailyContainer = document.getElementById("util-tab-daily");
-        const freshEntry = !utilRenderedOnce.daily;
+    async function renderUptimeDaily(id, containerId, renderedOnce) {
+        const container = document.getElementById(containerId);
+        const freshEntry = !renderedOnce.daily;
         const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`);
-        dailyContainer.innerHTML = `
+        container.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
                 ${renderUptimeTrendChart(data.buckets)}
@@ -746,18 +754,18 @@ let currentPage = "dashboard";
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
-        document.querySelectorAll("#util-tab-daily .uptime-bucket-row").forEach(row=>{
+        container.querySelectorAll(".uptime-bucket-row").forEach(row=>{
             row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
         });
-        if (freshEntry) playUtilEntranceAnimation(dailyContainer);
-        utilRenderedOnce.daily = true;
+        if (freshEntry) playUtilEntranceAnimation(container);
+        renderedOnce.daily = true;
     }
 
-    async function loadUtilizationMonthly(id) {
-        const monthlyContainer = document.getElementById("util-tab-monthly");
-        const freshEntry = !utilRenderedOnce.monthly;
+    async function renderUptimeMonthly(id, containerId, renderedOnce) {
+        const container = document.getElementById(containerId);
+        const freshEntry = !renderedOnce.monthly;
         const data = await requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=12`);
-        monthlyContainer.innerHTML = `
+        container.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
                 ${renderUptimeTrendChart(data.buckets)}
@@ -771,9 +779,15 @@ let currentPage = "dashboard";
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
-        if (freshEntry) playUtilEntranceAnimation(monthlyContainer);
-        utilRenderedOnce.monthly = true;
+        if (freshEntry) playUtilEntranceAnimation(container);
+        renderedOnce.monthly = true;
     }
+
+    // Thin wrappers: the standalone 利用率报表 page always targets the
+    // device chosen in #device-select and tracks its own animation state.
+    async function loadUtilizationOverview(id) { await renderUptimeOverview(id, "util-tab-overview", utilRenderedOnce); }
+    async function loadUtilizationDaily(id) { await renderUptimeDaily(id, "util-tab-daily", utilRenderedOnce); }
+    async function loadUtilizationMonthly(id) { await renderUptimeMonthly(id, "util-tab-monthly", utilRenderedOnce); }
 
     async function loadUtilization(tab) {
         const id = selectedDeviceId();
@@ -781,6 +795,25 @@ let currentPage = "dashboard";
         if(tab==="overview") await loadUtilizationOverview(id);
         else if(tab==="daily") await loadUtilizationDaily(id);
         else if(tab==="monthly") await loadUtilizationMonthly(id);
+    }
+
+    // Device-detail 利用率 tab: same renderers, but always scoped to
+    // whichever device's detail page is currently open (detailDeviceId),
+    // never the standalone page's #device-select.
+    async function loadDetailUptime(id, tab) {
+        if(!id) return;
+        if(tab==="overview") await renderUptimeOverview(id, "detail-util-tab-overview", detailUtilRenderedOnce);
+        else if(tab==="daily") await renderUptimeDaily(id, "detail-util-tab-daily", detailUtilRenderedOnce);
+        else if(tab==="monthly") await renderUptimeMonthly(id, "detail-util-tab-monthly", detailUtilRenderedOnce);
+    }
+
+    function switchDetailUtilTab(tab) {
+        activeDetailUtilTab = tab;
+        detailUtilRenderedOnce[tab] = false;
+        collapseUtilAnimatables(document.getElementById(`detail-util-tab-${tab}`));
+        document.querySelectorAll("#detail-tab-uptime .detail-util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.detailUtilTab === tab));
+        document.querySelectorAll("#detail-tab-uptime .detail-uptime-panel").forEach(panel => panel.classList.toggle("hidden", panel.id !== `detail-util-tab-${tab}`));
+        loadDetailUptime(detailDeviceId, tab);
     }
 
     async function loadChangelog() {
@@ -1000,6 +1033,7 @@ let currentPage = "dashboard";
         if(activeDetailTab==="tech") await loadTech(detailDeviceId);
         if(activeDetailTab==="spc") await loadSpc(detailDeviceId);
         if(activeDetailTab==="changelog") await loadDeviceChangelog(detailDeviceId);
+        if(activeDetailTab==="uptime") await loadDetailUptime(detailDeviceId, activeDetailUtilTab);
     }
 
     // options.tab: which detail tab to open on ("realtime" by default).
@@ -1020,8 +1054,22 @@ let currentPage = "dashboard";
         // highlighted category and scroll to it exactly once.
         highlightApplied=false;
         deviceChangelogFilters = { date: "", field: "", sub: "" };
+        // Reset the nested 利用率 sub-tab back to 总览 for every device
+        // open, so a different machine never inherits the last one's
+        // 日统计/月统计 selection, and force a fresh entrance animation.
+        activeDetailUtilTab = "overview";
+        detailUtilRenderedOnce.overview = false;
+        detailUtilRenderedOnce.daily = false;
+        detailUtilRenderedOnce.monthly = false;
+        document.querySelectorAll("#detail-tab-uptime .detail-uptime-panel").forEach(panel=>panel.classList.toggle("hidden",panel.id!=="detail-util-tab-overview"));
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===activeDetailTab));
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
+        // The generic .tab-button toggle above also touches the nested
+        // 利用率 sub-tab buttons (they share the "tab-button" class for
+        // styling) and clears their "active" state since their
+        // data-detail-util-tab attribute never matches activeDetailTab --
+        // reapply it explicitly here.
+        document.querySelectorAll("#detail-tab-uptime .detail-util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.detailUtilTab==="overview"));
         await switchPage("device-detail");
     }
 
@@ -1048,6 +1096,7 @@ let currentPage = "dashboard";
             return;
         }
         document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
+        document.querySelectorAll("#detail-tab-uptime .detail-util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.detailUtilTab===activeDetailUtilTab));
         document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[tab]}`;
         scheduleAutoRefresh();
     }
@@ -1119,7 +1168,11 @@ let currentPage = "dashboard";
 
     document.querySelectorAll(".nav-item[data-page]").forEach(item=>item.addEventListener("click",()=>switchPage(item.dataset.page)));
     document.getElementById("detail-back-button").addEventListener("click",()=>switchPage("dashboard"));
-    document.querySelectorAll(".tab-button").forEach(button=>button.addEventListener("click",()=>switchDetailTab(button.dataset.tab)));
+    // Scoped to the outer tab bar only (direct child of #device-detail-page):
+    // the nested 利用率 sub-tab bar inside #detail-tab-uptime also uses the
+    // "tab-button" class for shared styling, but must only trigger
+    // switchDetailUtilTab, not this top-level switchDetailTab.
+    document.querySelectorAll("#device-detail-page > .detail-tabs > .tab-button").forEach(button=>button.addEventListener("click",()=>switchDetailTab(button.dataset.tab)));
     document.getElementById("device-select").addEventListener("change",refreshPage);
     document.getElementById("search-button").addEventListener("click",()=>{dashboardPage=1;renderDashboard();});
     document.querySelectorAll(".status-filter").forEach(input=>input.addEventListener("change",()=>{dashboardPage=1;renderDashboard();}));
@@ -1166,6 +1219,7 @@ let currentPage = "dashboard";
         await loadChangelog();
     });
     document.querySelectorAll(".util-tab-button").forEach(button => button.addEventListener("click", () => switchUtilTab(button.dataset.utilTab)));
+    document.querySelectorAll(".detail-util-tab-button").forEach(button => button.addEventListener("click", () => switchDetailUtilTab(button.dataset.detailUtilTab)));
     document.getElementById("mold-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/molds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_code:f.get("mold_code"),mold_name:f.get("mold_name"),product_code:f.get("product_code")||null,cavities:Number(f.get("cavities")),remark:f.get("remark")||null})});event.target.reset();event.target.cavities.value=1;await loadMolds();}catch(error){alert(error.message);}});
     const passwordDialog=document.getElementById("password-dialog");
     document.getElementById("password-button").addEventListener("click",()=>passwordDialog.showModal());
