@@ -19,12 +19,8 @@ MAX_IMAGES = 4
 
 
 def _cavity_rows_for(cavities: int) -> list[str]:
-    """['IN1','OUT1','IN2','OUT2', ...] for the given cavity count."""
-    labels = []
-    for i in range(1, cavities + 1):
-        labels.append(f"IN{i}")
-        labels.append(f"OUT{i}")
-    return labels
+    """['1', '2', ..., str(cavities)] -- one temperature entry per item."""
+    return [str(i) for i in range(1, cavities + 1)]
 
 
 def _parse_temperatures(raw: str | None, expected_labels: list[str]) -> dict[str, float | None]:

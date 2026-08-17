@@ -92,7 +92,7 @@ let currentPage = "dashboard";
             if (label && input && input.value !== "") existing[label] = input.value;
         });
         const rows = [];
-        for (let i = 1; i <= cavities; i++) rows.push(`IN${i}`, `OUT${i}`);
+        for (let i = 1; i <= cavities; i++) rows.push(String(i));
         tbody.innerHTML = rows.map(label => `
             <tr data-label="${label}">
                 <td>${label}</td>
