@@ -425,14 +425,31 @@ let currentPage = "dashboard";
         const ordered = [...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
         const readOnly = currentUser.role === "viewer";
         document.getElementById("mold-advanced-groups").innerHTML = ordered.map(category => {
-            const rows = groups.get(category).map(p => `
+            const rows = groups.get(category).map(p => {
+                const mode = p.tolerance_mode || "percent";
+                const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
+                return `
                 <div class="mold-param-row" data-parameter="${escapeHtml(p.parameter_id)}">
                     <span class="mold-param-label">${escapeHtml(p.label)}</span>
                     <input class="mold-param-value" type="text" placeholder="实际值" value="${p.value!=null?escapeHtml(p.value):""}" ${readOnly?"disabled":""}>
-                    <input class="mold-param-tolerance" type="number" step="0.1" min="0" placeholder="公差 %" value="${p.tolerance_percent!=null?p.tolerance_percent:""}" ${readOnly?"disabled":""}>
-                </div>`).join("");
+                    <select class="mold-param-tolerance-mode" ${readOnly?"disabled":""}>
+                        <option value="percent"${mode==="percent"?" selected":""}>百分比 %</option>
+                        <option value="flat"${mode==="flat"?" selected":""}>固定值</option>
+                    </select>
+                    <input class="mold-param-tolerance" type="number" step="0.1" min="0"
+                        placeholder="${mode==="flat"?"公差(固定值)":"公差 %"}"
+                        value="${toleranceValue!=null?toleranceValue:""}" ${readOnly?"disabled":""}>
+                </div>`;
+            }).join("");
             return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary><div class="parameter-grid">${rows}</div></details>`;
         }).join("");
+
+        document.querySelectorAll("#mold-advanced-groups .mold-param-tolerance-mode").forEach(select => {
+            select.addEventListener("change", e => {
+                const input = e.target.closest(".mold-param-row").querySelector(".mold-param-tolerance");
+                input.placeholder = e.target.value === "flat" ? "公差(固定值)" : "公差 %";
+            });
+        });
     }
 
     document.getElementById("mold-edit-advanced-button").addEventListener("click", async () => {
@@ -453,8 +470,16 @@ let currentPage = "dashboard";
     document.getElementById("mold-advanced-save").addEventListener("click", async () => {
         const parameters = [...document.querySelectorAll("#mold-advanced-groups .mold-param-row")].map(row => {
             const value = row.querySelector(".mold-param-value").value.trim();
-            const tolerance = row.querySelector(".mold-param-tolerance").value.trim();
-            return { parameter_id: row.dataset.parameter, value: value || null, tolerance_percent: tolerance === "" ? null : Number(tolerance) };
+            const mode = row.querySelector(".mold-param-tolerance-mode").value;
+            const toleranceRaw = row.querySelector(".mold-param-tolerance").value.trim();
+            const toleranceNum = toleranceRaw === "" ? null : Number(toleranceRaw);
+            return {
+                parameter_id: row.dataset.parameter,
+                value: value || null,
+                tolerance_mode: mode,
+                tolerance_percent: mode === "percent" ? toleranceNum : null,
+                tolerance_flat: mode === "flat" ? toleranceNum : null,
+            };
         });
         try {
             await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {

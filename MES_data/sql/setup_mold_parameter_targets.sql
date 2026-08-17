@@ -1,25 +1,30 @@
 USE MES_MQTT;
 GO
 
-IF OBJECT_ID(N'dbo.mold_parameter_targets', N'U') IS NULL
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.mold_parameter_targets') AND name = 'tolerance_mode'
+)
 BEGIN
-    CREATE TABLE dbo.mold_parameter_targets
-    (
-        id                  BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
-        mold_id             BIGINT NOT NULL,
-        parameter_id        NVARCHAR(50) NOT NULL,
-        target_value        NVARCHAR(200) NULL,
-        tolerance_percent   DECIMAL(6,2) NULL,
-        updated_at          DATETIME2(3) NOT NULL DEFAULT SYSDATETIME(),
+    ALTER TABLE dbo.mold_parameter_targets ADD tolerance_mode NVARCHAR(10) NOT NULL DEFAULT N'percent';
+END;
+GO
 
-        CONSTRAINT FK_mold_parameter_targets_mold
-            FOREIGN KEY (mold_id) REFERENCES dbo.molds(id) ON DELETE CASCADE,
-        CONSTRAINT UQ_mold_parameter_targets UNIQUE (mold_id, parameter_id),
-        CONSTRAINT CK_mold_parameter_targets_tolerance
-            CHECK (tolerance_percent IS NULL OR tolerance_percent >= 0)
-    );
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.mold_parameter_targets') AND name = 'tolerance_flat'
+)
+BEGIN
+    ALTER TABLE dbo.mold_parameter_targets ADD tolerance_flat DECIMAL(12,4) NULL;
+END;
+GO
 
-    CREATE INDEX IX_mold_parameter_targets_mold
-        ON dbo.mold_parameter_targets(mold_id);
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints WHERE name = N'CK_mold_parameter_targets_tolerance_mode'
+)
+BEGIN
+    ALTER TABLE dbo.mold_parameter_targets
+        ADD CONSTRAINT CK_mold_parameter_targets_tolerance_mode
+            CHECK (tolerance_mode IN (N'percent', N'flat'));
 END;
 GO

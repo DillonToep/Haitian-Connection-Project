@@ -147,7 +147,8 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
             if mold is None:
                 raise HTTPException(status_code=404, detail="模具不存在")
             cursor.execute(
-                "SELECT parameter_id, target_value, tolerance_percent FROM dbo.mold_parameter_targets WHERE mold_id = ?",
+                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
+                "FROM dbo.mold_parameter_targets WHERE mold_id = ?",
                 mold_id,
             )
             saved = {row.parameter_id: row for row in cursor.fetchall()}
@@ -167,7 +168,9 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
                 "label": meta["label"],
                 "category": categorize(meta["label"]),
                 "value": row.target_value if row else None,
+                "tolerance_mode": row.tolerance_mode if row else "percent",
                 "tolerance_percent": float(row.tolerance_percent) if row and row.tolerance_percent is not None else None,
+                "tolerance_flat": float(row.tolerance_flat) if row and row.tolerance_flat is not None else None,
             }
         )
     return {"mold_id": mold_id, "parameters": parameters}
@@ -193,18 +196,22 @@ def update_mold_parameters(
                 if item.parameter_id not in valid_tags:
                     continue
                 value = item.value.strip() if item.value else None
-                if not value and item.tolerance_percent is None:
+                tol_percent = item.tolerance_percent if item.tolerance_mode == "percent" else None
+                tol_flat = item.tolerance_flat if item.tolerance_mode == "flat" else None
+                if not value and tol_percent is None and tol_flat is None:
                     continue  # blank row, nothing to save
                 cursor.execute(
                     """
                     INSERT INTO dbo.mold_parameter_targets
-                        (mold_id, parameter_id, target_value, tolerance_percent)
-                    VALUES (?, ?, ?, ?)
+                        (mold_id, parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     mold_id,
                     item.parameter_id,
                     value,
-                    item.tolerance_percent,
+                    item.tolerance_mode,
+                    tol_percent,
+                    tol_flat,
                 )
             connection.commit()
             return {"status": "ok"}

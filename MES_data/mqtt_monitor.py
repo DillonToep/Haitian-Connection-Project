@@ -117,44 +117,54 @@ def _detect_parameter_changes(device_id, data):
     return changes
 
 def _fetch_mold_targets(cursor, device_id):
-    """{parameter_id: (target_value, tolerance_percent)} for the mold
-    currently mounted on device_id (dbo.device_mold_assignments,
-    unmounted_at IS NULL), sourced from dbo.mold_parameter_targets -- the
-    same table the '编辑高级参数' dialog on the molds page writes to.
-    Returns {} if no mold is mounted or the mold has no saved targets."""
     cursor.execute(
         """
-        SELECT t.parameter_id, t.target_value, t.tolerance_percent
+        SELECT t.parameter_id, t.target_value, t.tolerance_mode, t.tolerance_percent, t.tolerance_flat
         FROM dbo.device_mold_assignments AS a
         INNER JOIN dbo.mold_parameter_targets AS t ON t.mold_id = a.mold_id
         WHERE a.device_id = ? AND a.unmounted_at IS NULL
         """,
         device_id,
     )
-    return {row.parameter_id: (row.target_value, row.tolerance_percent) for row in cursor.fetchall()}
+    return {
+        row.parameter_id: (row.target_value, row.tolerance_mode, row.tolerance_percent, row.tolerance_flat)
+        for row in cursor.fetchall()
+    }
 
 
-def _exceeds_tolerance(new_value, target_value, tolerance_percent):
-    """True if new_value deviates from target_value by more than
-    tolerance_percent (%) of target_value. Anything that can't be compared
-    numerically (missing target/tolerance, non-numeric value/mode code)
-    never counts as a violation -- it just gets logged, not alerted."""
-    if target_value is None or tolerance_percent is None:
+def _exceeds_tolerance(new_value, target_value, tolerance_mode, tolerance_percent, tolerance_flat):
+    """True if new_value deviates from target_value by more than the
+    configured tolerance -- a percentage of target_value in 'percent'
+    mode, or a flat absolute amount in 'flat' mode. Anything that can't
+    be compared numerically never counts as a violation."""
+    if target_value is None:
         return False
     try:
         new_num = float(new_value)
         target_num = float(target_value)
+    except (TypeError, ValueError):
+        return False
+
+    if tolerance_mode == "flat":
+        if tolerance_flat is None:
+            return False
+        try:
+            tol_num = float(tolerance_flat)
+        except (TypeError, ValueError):
+            return False
+        return abs(new_num - target_num) > tol_num
+
+    # percent mode (default / back-compat)
+    if tolerance_percent is None:
+        return False
+    try:
         tol_num = float(tolerance_percent)
     except (TypeError, ValueError):
         return False
 
     if target_num == 0:
-        # Percent-of-target is undefined at target=0 -- fall back to
-        # treating tolerance_percent as an absolute window instead.
         return abs(new_num) > tol_num
-
-    deviation_pct = abs(new_num - target_num) / abs(target_num) * 100
-    return deviation_pct > tol_num
+    return abs(new_num - target_num) / abs(target_num) * 100 > tol_num
 
 
 def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
@@ -188,9 +198,8 @@ def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time
         target = mold_targets.get(parameter_id)
         is_warning = False
         if target is not None:
-            target_value, tolerance_percent = target
-            is_warning = _exceeds_tolerance(new_value, target_value, tolerance_percent)
-
+            target_value, tolerance_mode, tolerance_percent, tolerance_flat = target
+            is_warning = _exceeds_tolerance(new_value, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
         acknowledged_at = None if is_warning else datetime.utcnow()
 
         cursor.execute(

@@ -32,3 +32,10 @@ class MoldUpdateRequest(BaseModel):
 class MoldAssignmentRequest(BaseModel):
     mold_id: int = Field(gt=0)
     remark: str | None = Field(default=None, max_length=500)
+
+class MoldParameterInput(BaseModel):
+    parameter_id: str = Field(min_length=1, max_length=50)
+    value: str | None = Field(default=None, max_length=200)
+    tolerance_mode: str = Field(default="percent", pattern="^(percent|flat)$")
+    tolerance_percent: float | None = Field(default=None, ge=0, le=1000)
+    tolerance_flat: float | None = Field(default=None, ge=0)
