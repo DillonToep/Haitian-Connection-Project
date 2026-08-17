@@ -178,12 +178,22 @@ let currentPage = "dashboard";
     }
 
     // Shared "expand" handler for the mold-image previews in both the
-    // create form and edit dialog -- opens the image in its own browser
-    // window/tab instead of an in-page dialog, so the viewer gets the
-    // browser's own title bar / close button rather than a close "X"
-    // competing for space with the enlarged image.
+    // create form and edit dialog -- opens a real popup window (the
+    // width/height/popup features below are what tell the browser to use
+    // a separate chrome-less window instead of a new tab) containing just
+    // the image, sized with object-fit:contain so it keeps rescaling to
+    // fill the window as the person resizes it.
     function openImageLightbox(url) {
-        window.open(url, "_blank", "noopener,noreferrer");
+        const popup = window.open("", "_blank", "popup,width=900,height=700,resizable=yes,scrollbars=no");
+        if (!popup) return; // popup blocked by the browser
+        const doc = popup.document;
+        doc.title = "图片预览";
+        doc.body.style.cssText = "margin:0;height:100vh;background:#11151b;display:flex;align-items:center;justify-content:center;overflow:hidden;";
+        const img = doc.createElement("img");
+        img.src = url;
+        img.alt = "图片预览";
+        img.style.cssText = "width:100%;height:100%;object-fit:contain;";
+        doc.body.appendChild(img);
     }
     document.getElementById("mold-edit-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []).map(file => ({ type: "new", file }));
