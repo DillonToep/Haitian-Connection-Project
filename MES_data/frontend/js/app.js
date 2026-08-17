@@ -239,14 +239,17 @@ let currentPage = "dashboard";
         document.getElementById("mold-edit-form").querySelectorAll("input,textarea,select,button").forEach(el => el.disabled = readOnly);
 
         moldAdvancedLoaded = false;
-        document.getElementById("mold-advanced-panel").classList.add("hidden");
+        document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-advanced-groups").innerHTML = "";
         document.getElementById("mold-advanced-summary").textContent = "";
 
         document.getElementById("mold-edit-dialog").showModal();
     }
 
-    document.getElementById("mold-edit-cancel").addEventListener("click", () => document.getElementById("mold-edit-dialog").close());
+    document.getElementById("mold-edit-cancel").addEventListener("click", () => {
+        document.getElementById("mold-advanced-dialog").close();
+        document.getElementById("mold-edit-dialog").close();
+    });
 
     document.getElementById("mold-edit-form").addEventListener("submit", async event => {
         event.preventDefault();
@@ -275,6 +278,8 @@ let currentPage = "dashboard";
         try {
             await requestJson(`/api/molds/${editMoldId}`, { method: "PUT", body });
             document.getElementById("mold-edit-dialog").close();
+            document.getElementById("mold-advanced-dialog").close();
+            await loadMolds();
             await loadMolds();
         } catch (error) { alert(error.message); }
     });
@@ -332,14 +337,13 @@ let currentPage = "dashboard";
                     <input class="mold-param-value" type="text" placeholder="实际值" value="${p.value!=null?escapeHtml(p.value):""}" ${readOnly?"disabled":""}>
                     <input class="mold-param-tolerance" type="number" step="0.1" min="0" placeholder="公差 %" value="${p.tolerance_percent!=null?p.tolerance_percent:""}" ${readOnly?"disabled":""}>
                 </div>`).join("");
-            return `<details class="tech-group" open><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary><div class="parameter-grid">${rows}</div></details>`;
+            return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary><div class="parameter-grid">${rows}</div></details>`;
         }).join("");
     }
 
     document.getElementById("mold-edit-advanced-button").addEventListener("click", async () => {
-        const panel = document.getElementById("mold-advanced-panel");
-        panel.classList.toggle("hidden");
-        if (panel.classList.contains("hidden") || moldAdvancedLoaded) return;
+        document.getElementById("mold-advanced-dialog").showModal();
+        if (moldAdvancedLoaded) return;
         document.getElementById("mold-advanced-summary").textContent = "正在读取……";
         try {
             const result = await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`);
@@ -350,6 +354,7 @@ let currentPage = "dashboard";
             document.getElementById("mold-advanced-summary").textContent = `读取失败：${error.message}`;
         }
     });
+    document.getElementById("mold-advanced-close").addEventListener("click", () => document.getElementById("mold-advanced-dialog").close());
 
     document.getElementById("mold-advanced-save").addEventListener("click", async () => {
         const parameters = [...document.querySelectorAll("#mold-advanced-groups .mold-param-row")].map(row => {
