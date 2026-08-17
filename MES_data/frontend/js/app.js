@@ -674,33 +674,39 @@ let currentPage = "dashboard";
         // The freshly-rendered bars/chart just landed in the DOM (via
         // innerHTML) at their real, final size -- none of these elements
         // have ever had the collapsed inline style applied, since they're
-        // brand new nodes. For each element we pin it to its collapsed
-        // starting point AND start its animation in the same step, back to
-        // back, rather than doing "reset all elements to collapsed" and
-        // "start all animations" as two separate passes over the list.
-        // With ~90 bar segments on the daily/monthly views, a two-pass
-        // approach leaves a real window, after the reset pass finishes but
-        // before every element's animate() call has run, where the
-        // browser can paint the elements at their true uncollapsed size --
-        // that's what read as "everything shows fully, then flashes into
-        // the animation". Setting the inline style immediately before
-        // calling .animate() on the very same element closes that window,
-        // since nothing else can be painted in between the two calls.
-        segments.forEach(segment => {
-            segment.style.transform = "scaleX(0)";
-            segment.animate(
-                [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
-                { duration: 3200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
-            );
-        });
+        // brand new nodes. Pin every element to its collapsed starting
+        // point right away, synchronously, so nothing can ever paint at
+        // full size first.
+        segments.forEach(segment => { segment.style.transform = "scaleX(0)"; });
+        trends.forEach(fg => { fg.style.clipPath = "inset(0 100% 0 0)"; });
 
-        trends.forEach(fg => {
-            fg.style.clipPath = "inset(0 100% 0 0)";
-            fg.animate(
-                [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
-                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
-            );
-        });
+        // Starting the actual .animate() calls is deferred to two
+        // animation frames out. This matters because this function can
+        // run in the very same synchronous tick that the container (or
+        // an ancestor) is unhidden -- e.g. the 利用率 tab inside device
+        // detail unhides its content right before fetching/rendering it.
+        // Calling .animate() while an element has no render box yet
+        // (display:none, or the unhide hasn't been painted) doesn't
+        // animate at all -- the browser has nothing to interpolate
+        // against, so it just snaps straight to the fill:"both" end
+        // state the instant the element actually becomes visible, which
+        // is exactly what read as the animation "abruptly finishing".
+        // Waiting two frames guarantees the pinned collapsed state above
+        // has already been painted at least once before playback starts.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            segments.forEach(segment => {
+                segment.animate(
+                    [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
+                    { duration: 3200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                );
+            });
+            trends.forEach(fg => {
+                fg.animate(
+                    [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+                    { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                );
+            });
+        }));
     }
 
     // Generic uptime renderers -- take an explicit device id, target
