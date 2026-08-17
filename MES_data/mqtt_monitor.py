@@ -204,7 +204,6 @@ def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time
             acknowledged_at,
         )
 
-
 def _assign_pending_changelogs_to_spc(cursor, device_id, spc_message_id):
     """Claim every changelog row for this device that hasn't been
     associated with an SPC yet, now that one exists. Individual changelog
