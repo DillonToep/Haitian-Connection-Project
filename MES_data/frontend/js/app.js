@@ -71,6 +71,11 @@ let currentPage = "dashboard";
         "C02": "/static/img/haitianMars.png"
     };
 
+    function cycleCell(r) {
+        if (r.spc_cycle_number != null) return `模次 #${r.spc_cycle_number}`;
+        if (r.during_production === false || r.during_production === 0) return '<span class="changelog-non-production">非生产变更</span>';
+        return '<span class="muted">待关联</span>';
+    }
     function escapeHtml(value) { return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
     function showValue(value, suffix="") { return value === null || value === undefined || value === "" ? "--" : `${escapeHtml(value)}${suffix}`; }
     function formatTime(value) { return value ? String(value).replace("T"," ").replace(/\.\d+$/,"") : "--"; }
@@ -1046,7 +1051,7 @@ let currentPage = "dashboard";
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
         const table = document.getElementById("changelog-table");
         table.innerHTML = rows.length
-            ? `<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_cycle_number!=null?`模次 #${r.spc_cycle_number}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
     }
@@ -1131,9 +1136,9 @@ let currentPage = "dashboard";
         const countEl = document.getElementById("device-changelog-count");
         if (countEl) countEl.textContent = `共 ${rows.length} 条记录`;
         const resultsEl = document.getElementById("device-changelog-results");
-        if (!resultsEl) return; // tab was navigated away from mid-fetch
+        if (!resultsEl) return;
         resultsEl.innerHTML = rows.length
-            ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${r.spc_cycle_number!=null?`模次 #${r.spc_cycle_number}`:'<span class="muted">待关联</span>'}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         resultsEl.querySelectorAll(".changelog-row").forEach(row => {
             row.addEventListener("click", () => {
@@ -1224,7 +1229,6 @@ let currentPage = "dashboard";
         const readOnly=currentUser.role==="viewer";
         const table=document.getElementById("warnings-table");
         table.innerHTML=rows.length?`<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr class="warning-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" type="button">清除</button>`}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无预警</div>';
-
         table.querySelectorAll(".warning-row").forEach(row=>{
             row.addEventListener("click",event=>{
                 if(event.target.closest(".warning-clear-button")) return;

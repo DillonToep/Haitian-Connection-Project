@@ -29,7 +29,6 @@ SQL_CONNECTION_STRING = (
     "TrustServerCertificate=yes;"
 )
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
@@ -37,40 +36,15 @@ logging.basicConfig(
 
 sql_connection = None
 
-
-# ================= 工艺参数变更记录 =================
-#
-# All raw tag codes that PARAMETER_LABELS knows about are treated as
-# 工艺参数 (tech parameters) for changelog purposes -- this is the same
-# dictionary backend/routers/devices.py uses to label the 工艺参数 tab, so
-# "a tag the tech tab would show" and "a tag we track for changes" stay in
-# sync automatically.
-#
-# IMPORTANT: PARAMETER_LABELS also contains tags that belong to the
-# realtime (T1-T7, OT, STS, ASTS, OPM) and spc (CYCN, ECYCT, ET1-ET7,
-# EIPM, ...) namespaces, because it doubles as the label source for those
-# views too. Those tags legitimately change on every realtime tick (~10s)
-# or every cycle (~60s) -- that's normal telemetry, not someone editing a
-# 工艺参数/recipe setting. Change-detection is therefore only run against
-# messages whose topic is "tech" (see insert_message below), mirroring
-# vw_machine_tech's own "WHERE data_type = N'tech'" filter, so this tag
-# set is never compared against realtime/spc payloads.
 CHANGELOG_TAGS = set(PARAMETER_LABELS.keys())
 
-# Cache of the last known value per (device_id -> {parameter_id: value}).
-# It only lives in this process's memory: on a fresh start there is nothing
-# to compare the first message against yet, so the first value seen for
-# each tag after a restart is cached but not reported as a "change". This
-# avoids manufacturing a false changelog entry every time the collector
-# restarts.
 _last_values: dict[str, dict[str, str]] = {}
+_last_machine_status: dict[str, int] = {}
 
-# The gateway payload's own "topic" field (stored as mqtt_messages.data_type)
-# already flags what kind of message this is -- "tech", "spc", "realtime",
-# "wm", "opMode", "opLog". Use those values directly rather than sniffing
-# for a specific tag (e.g. CYCN) inside Data.
 TECH_MESSAGE_TOPIC = "tech"
 SPC_MESSAGE_TOPIC = "spc"
+REALTIME_MESSAGE_TOPIC = "realtime"
+ACTIVE_MACHINE_STATUS = 2
 
 
 def _stringify(value):
@@ -168,17 +142,11 @@ def _exceeds_tolerance(new_value, target_value, tolerance_mode, tolerance_percen
 
 
 def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
-    """Insert one dbo.tech_parameter_changelog row per detected change.
-    Every change is logged (for 变更记录 history), but acknowledged_at is
-    only left NULL -- i.e. only counted as a pending 预警/警报 -- when the
-    new value is outside the mounted mold's tolerance % for that
-    parameter. In-tolerance changes (or changes with no mold/target to
-    compare against) are logged pre-acknowledged so they never toast or
-    show up in 预警通知."""
     if not changes:
         return
 
     mold_targets = _fetch_mold_targets(cursor, device_id)
+    producing = _last_machine_status.get(device_id) == ACTIVE_MACHINE_STATUS
 
     sql = """
         INSERT INTO dbo.tech_parameter_changelog
@@ -189,9 +157,10 @@ def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time
             new_value,
             data_time,
             raw_message_id,
-            acknowledged_at
+            acknowledged_at,
+            during_production
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     for parameter_id, previous_value, new_value in changes:
@@ -211,23 +180,18 @@ def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time
             data_time,
             raw_message_id,
             acknowledged_at,
+            1 if producing else 0,
         )
 
 def _assign_pending_changelogs_to_spc(cursor, device_id, spc_message_id):
-    """Claim every changelog row for this device that hasn't been
-    associated with an SPC yet, now that one exists. Individual changelog
-    rows are never merged or overwritten -- this only fills in
-    spc_message_id, so the full history of changes leading up to the SPC
-    is preserved (see README/task requirements: "Do not overwrite previous
-    changelog entries")."""
     cursor.execute(
         """
         UPDATE dbo.tech_parameter_changelog
         SET spc_message_id = ?
-        WHERE device_id = ? AND spc_message_id IS NULL
+        WHERE device_id = ? AND spc_message_id IS NULL AND during_production = 1
         """,
         spc_message_id,
-        device_id
+        device_id,
     )
 
 
@@ -329,19 +293,18 @@ def insert_message(message, payload, raw_payload):
             row = cursor.execute(sql, values).fetchone()
             record_id = row[0]
 
-            # ---- 工艺参数变更记录：在同一事务内完成，不干扰原有写入流程 ----
-            # Only "tech" messages carry 工艺参数/recipe settings -- realtime
-            # and spc messages reuse some of the same tag names (T1, CYCN,
-            # ET1, ...) for fast-changing telemetry that would otherwise
-            # flood the changelog with false "changes" every few seconds.
             if device_id and topic == TECH_MESSAGE_TOPIC:
                 changes = _detect_parameter_changes(device_id, data)
                 _insert_changelog_rows(cursor, device_id, changes, record_id, data_time)
 
-            # A message explicitly flagged as "spc" is a completed
-            # cycle-summary record -- claim every not-yet-claimed changelog
-            # row for this device into it, since those changes happened
-            # during the cycle that just finished.
+            if device_id and topic == REALTIME_MESSAGE_TOPIC and isinstance(data, dict):
+                sts = data.get("STS")
+                if sts is not None:
+                    try:
+                        _last_machine_status[device_id] = int(sts)
+                    except (TypeError, ValueError):
+                        pass
+
             if device_id and topic == SPC_MESSAGE_TOPIC:
                 _assign_pending_changelogs_to_spc(cursor, device_id, record_id)
 

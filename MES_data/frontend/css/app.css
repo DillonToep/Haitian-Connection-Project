@@ -261,6 +261,7 @@
         .changelog-row { cursor: pointer; }
         .changelog-row:hover { background: #f0f3f7; }
         .changelog-new-value { color: var(--red); font-weight: 650; }
+        .changelog-non-production { color: #9098a2; font-style: italic; }
         .mold-layout { display: grid; grid-template-columns: minmax(300px,.8fr) minmax(440px,1.2fr); gap: 14px; }
         .mold-current { margin-top: 12px; padding: 16px; background: #eef8f1; }
         .mold-code { margin: 7px 0 4px; color: #2f7a4f; font-size: 24px; font-weight: 800; }
