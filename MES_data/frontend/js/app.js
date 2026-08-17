@@ -402,8 +402,8 @@ let currentPage = "dashboard";
 
     function renderDayTimeline(dayStart, dayEnd, segments) {
         const startMs = new Date(dayStart).getTime();
-        const endMs = new Date(dayEnd).getTime();
-        const totalMs = Math.max(1, endMs - startMs);
+        const fullDayMs = 24 * 60 * 60 * 1000;
+        const totalMs = fullDayMs;
         const blocks = segments.map(seg => {
             const segStart = new Date(seg.start).getTime();
             const segEnd = new Date(seg.end).getTime();
