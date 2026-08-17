@@ -65,6 +65,16 @@
                 <button id="detail-back-button" class="secondary-button" type="button">← 返回设备看板</button>
                 <div class="detail-device-title" id="detail-device-title"></div>
             </div>
+            <article class="detail-card" id="device-mold-card">
+                <div class="detail-header">
+                    <div class="detail-title">当前模具</div>
+                    <div class="detail-header-actions">
+                        <button id="device-mold-change-button" class="secondary-button" type="button">更换模具</button>
+                        <button id="device-mold-unmount-button" class="danger-button hidden" type="button">卸载模具</button>
+                    </div>
+                </div>
+                <div id="device-mold-info"></div>
+            </article>
             <div class="detail-tabs" role="tablist">
                 <button class="tab-button active" data-tab="realtime" type="button">实时参数</button>
                 <button class="tab-button" data-tab="tech" type="button">工艺参数</button>
@@ -185,6 +195,15 @@
     </div>
     <div id="day-detail-body"></div>
 </dialog>
+<dialog id="mold-assign-dialog">
+    <h3>分配模具</h3>
+    <div class="field"><label>选择模具</label><select id="mold-assign-select"></select></div>
+    <div class="field"><label>备注</label><input id="mold-assign-remark" maxlength="500"></div>
+    <div class="actions">
+        <button id="mold-assign-confirm" class="primary-button" type="button">确认分配</button>
+        <button id="mold-assign-cancel" class="secondary-button" type="button">取消</button>
+    </div>
+</dialog>
 <dialog id="mold-edit-dialog" class="mold-edit-dialog">
     <div class="day-detail-header">
         <h3>编辑模具型号</h3>
@@ -193,6 +212,7 @@
             <button id="mold-edit-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
         </div>
     </div>
+    <div class="muted" id="mold-edit-current-device"></div>
     <form id="mold-edit-form" class="form-grid">
         <div class="field"><label>项目名称</label><input id="edit-mold-name" required maxlength="200"></div>
         <div class="field"><label>项目编号</label><input id="edit-mold-code" required maxlength="100"></div>

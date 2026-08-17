@@ -463,6 +463,91 @@ async def update_mold(
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
+@router.get("/devices/{device_id}/mold")
+def get_current_mold(device_id: str, user: dict = Depends(require_user)):
+    """The device's currently active mold assignment, or null if none."""
+    del user
+    sql = """
+        SELECT TOP 1
+            a.id AS assignment_id, a.mounted_at, a.remark,
+            m.id AS mold_id, m.mold_code, m.mold_name,
+            m.product_code, m.cavities
+        FROM dbo.device_mold_assignments AS a
+        INNER JOIN dbo.molds AS m ON m.id = a.mold_id
+        WHERE a.device_id = ? AND a.unmounted_at IS NULL
+        ORDER BY a.mounted_at DESC
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql, device_id)
+            row = cursor.fetchone()
+            return row_to_dict(cursor, row) if row else None
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.post("/devices/{device_id}/mold")
+def assign_mold(
+    device_id: str,
+    data: MoldAssignmentRequest,
+    user: dict = Depends(require_user),
+):
+    """Assign (mount) a mold onto a device. Since dbo.device_mold_assignments
+    only allows one active row per device AND one active row per mold
+    (see UX_device_mold_active_device / UX_device_mold_active_mold in
+    setup_web_database.sql), this both:
+      1) unmounts whatever is currently on this device, and
+      2) unmounts this mold from wherever else it's currently active --
+         effectively "transferring" it here, rather than erroring, since
+         moving a mold between machines is a normal shop-floor operation.
+    """
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute(
+                "SELECT id, is_active FROM dbo.molds WHERE id = ?", data.mold_id
+            ).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+            if not mold.is_active:
+                raise HTTPException(status_code=400, detail="该模具已停用，无法分配")
+
+            cursor.execute(
+                """
+                UPDATE dbo.device_mold_assignments
+                SET unmounted_at = SYSDATETIME()
+                WHERE device_id = ? AND unmounted_at IS NULL
+                """,
+                device_id,
+            )
+            cursor.execute(
+                """
+                UPDATE dbo.device_mold_assignments
+                SET unmounted_at = SYSDATETIME()
+                WHERE mold_id = ? AND unmounted_at IS NULL
+                """,
+                data.mold_id,
+            )
+            cursor.execute(
+                """
+                INSERT INTO dbo.device_mold_assignments
+                    (device_id, mold_id, operator_user_id, remark)
+                VALUES (?, ?, ?, ?)
+                """,
+                device_id,
+                data.mold_id,
+                user["id"],
+                data.remark.strip() if data.remark else None,
+            )
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
 
 @router.delete("/devices/{device_id}/mold")
 def unmount_mold(device_id: str, user: dict = Depends(require_user)):

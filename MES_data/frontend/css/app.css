@@ -308,6 +308,13 @@
         }
         .mold-card-title { font-weight: 700; font-size: 14px; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
         .mold-card-meta { margin-top: 3px; font-size: 11.5px; color: #e7e9ec; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+        .mold-card-device {
+            position: absolute; top: 8px; right: 8px; z-index: 2;
+            padding: 3px 9px; border-radius: 10px;
+            background: rgba(25,181,138,.9); color: white;
+            font-size: 11px; font-weight: 700;
+        }
+        .mold-card-device.mold-card-device-empty { background: rgba(120,131,145,.85); }
         .mold-item { cursor: pointer; }
         .mold-edit-dialog {
             width: min(920px, calc(100% - 28px));
@@ -451,7 +458,8 @@
         .detail-header-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
         .warning-row { cursor: pointer; }
         .warning-row:hover { background: #f0f3f7; }
-
+        html[data-theme="dark"] .mold-card-device { background: rgba(87,202,160,.85); color: #0d1015; }
+        html[data-theme="dark"] .mold-card-device.mold-card-device-empty { background: rgba(139,149,163,.75); }
         html[data-theme="dark"] .toast { background: #2a1414; border-color: #7a2e2e; box-shadow: 0 12px 30px rgba(0,0,0,.45); }
         html[data-theme="dark"] .toast-title { color: #f3c9c9; }
         html[data-theme="dark"] .toast-detail { color: #d69a9a; }

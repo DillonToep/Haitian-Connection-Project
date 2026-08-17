@@ -227,6 +227,7 @@ let currentPage = "dashboard";
         document.getElementById("mold-edit-cavities").value = m.cavities;
         document.getElementById("edit-mold-remark").value = m.remark || "";
         document.getElementById("edit-mold-active").value = m.is_active ? "1" : "0";
+        document.getElementById("mold-edit-current-device").textContent = m.mounted_device_id ? `当前装机设备：${m.mounted_device_id}` : "当前未装机";
 
         editImageItems = (m.images || []).map(img => ({ type: "existing", id: img.id, url: img.url, is_face: img.is_face }));
         editFaceIndex = Math.max(0, editImageItems.findIndex(item => item.is_face));
@@ -250,7 +251,36 @@ let currentPage = "dashboard";
         document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-edit-dialog").close();
     });
-    
+    document.getElementById("device-mold-change-button").addEventListener("click", async () => {
+        try { await openMoldAssignDialog(); } catch (error) { alert(error.message); }
+    });
+    document.getElementById("mold-assign-cancel").addEventListener("click", () => document.getElementById("mold-assign-dialog").close());
+    document.getElementById("mold-assign-confirm").addEventListener("click", async () => {
+        const moldId = document.getElementById("mold-assign-select").value;
+        if (!moldId) return;
+        try {
+            await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/mold`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    mold_id: Number(moldId),
+                    remark: document.getElementById("mold-assign-remark").value || null,
+                }),
+            });
+            document.getElementById("mold-assign-dialog").close();
+            await loadDeviceMoldCard(detailDeviceId);
+            await loadDevices();
+        } catch (error) { alert(error.message); }
+    });
+    document.getElementById("device-mold-unmount-button").addEventListener("click", async () => {
+        if (!confirm("确认卸载当前模具？")) return;
+        try {
+            await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/mold`, { method: "DELETE" });
+            await loadDeviceMoldCard(detailDeviceId);
+            await loadDevices();
+        } catch (error) { alert(error.message); }
+    });
+
     document.getElementById("mold-edit-close-x").addEventListener("click", () => {
         document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-edit-dialog").close();
@@ -304,8 +334,12 @@ let currentPage = "dashboard";
             const face = m.face_image_url
                 ? `<img class="mold-card-face" src="${escapeHtml(m.face_image_url)}" alt="${escapeHtml(m.mold_name)}">`
                 : `<div class="mold-card-face-empty">暂无图片</div>`;
+            const deviceBadge = m.mounted_device_id
+                ? `<div class="mold-card-device">设备 ${escapeHtml(m.mounted_device_id)}</div>`
+                : `<div class="mold-card-device mold-card-device-empty">未装机</div>`;
             return `<div class="mold-item" data-mold-id="${m.id}">
                 ${face}
+                ${deviceBadge}
                 <div class="mold-card-overlay">
                     <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
                     <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div>
@@ -315,6 +349,50 @@ let currentPage = "dashboard";
         document.querySelectorAll("#mold-list .mold-item").forEach(item => item.addEventListener("click", () => {
             openMoldEdit(Number(item.dataset.moldId));
         }));
+    }
+
+    async function loadDeviceMoldCard(id) {
+        const container = document.getElementById("device-mold-info");
+        container.innerHTML = '<div class="empty">正在读取……</div>';
+        try {
+            const current = await requestJson(`/api/devices/${encodeURIComponent(id)}/mold`);
+            renderDeviceMoldCard(current);
+        } catch (error) {
+            container.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    function renderDeviceMoldCard(current) {
+        const container = document.getElementById("device-mold-info");
+        const unmountButton = document.getElementById("device-mold-unmount-button");
+        if (current) {
+            container.innerHTML = `
+                <div class="mold-current">
+                    <div class="muted">模具编号</div>
+                    <div class="mold-code">${escapeHtml(current.mold_code)}</div>
+                    <div>${escapeHtml(current.mold_name)}</div>
+                    <div class="muted">产品：${showValue(current.product_code)}　模穴：${showValue(current.cavities)}</div>
+                    <div class="muted">装机时间：${formatTime(current.mounted_at)}</div>
+                </div>`;
+            unmountButton.classList.remove("hidden");
+        } else {
+            container.innerHTML = '<div class="empty">该设备当前未分配模具</div>';
+            unmountButton.classList.add("hidden");
+        }
+    }
+
+    async function openMoldAssignDialog() {
+        const list = await requestJson("/api/molds");
+        const active = list.filter(m => m.is_active);
+        const select = document.getElementById("mold-assign-select");
+        select.innerHTML = active.map(m => {
+            const elsewhere = m.mounted_device_id && m.mounted_device_id !== detailDeviceId
+                ? `（当前在设备 ${escapeHtml(m.mounted_device_id)}，将自动转移）`
+                : "";
+            return `<option value="${m.id}">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}${elsewhere}</option>`;
+        }).join("");
+        document.getElementById("mold-assign-remark").value = "";
+        document.getElementById("mold-assign-dialog").showModal();
     }
 
     document.getElementById("mold-form").addEventListener("submit", async event => {
@@ -451,6 +529,8 @@ let currentPage = "dashboard";
         const readOnly=currentUser.role==="viewer";
         document.getElementById("mold-form").querySelectorAll("input,textarea,button").forEach(el=>el.disabled=readOnly);
         document.getElementById("clear-all-warnings").disabled=readOnly;
+        document.getElementById("device-mold-change-button").disabled = readOnly;
+        document.getElementById("device-mold-unmount-button").disabled = readOnly;
     }
     async function loadDevices() {
         devices=await requestJson("/api/devices");
@@ -1183,6 +1263,7 @@ let currentPage = "dashboard";
         // reapply it explicitly here.
         document.querySelectorAll("#detail-tab-uptime .detail-util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.detailUtilTab==="overview"));
         await switchPage("device-detail");
+        loadDeviceMoldCard(deviceId);
     }
 
     // Switching detail tabs: the newly-selected tab's data is fetched and
