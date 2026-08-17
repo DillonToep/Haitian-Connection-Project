@@ -1168,11 +1168,6 @@ let currentPage = "dashboard";
         },8000);
     }
 
-    // Polls pending warnings independently of the current page/tab, so a
-    // toast can appear (and the sidebar badge update) no matter what the
-    // user is looking at. Runs on its own interval -- see setInterval call
-    // near initialize() below -- separate from scheduleAutoRefresh, which
-    // only ticks while on the dashboard/device-detail pages.
     async function pollWarnings() {
         try {
             const rows=await requestJson("/api/warnings");
@@ -1184,11 +1179,17 @@ let currentPage = "dashboard";
             if(!warningsInitialized){
                 rows.forEach(r=>seenWarningIds.add(r.id));
                 warningsInitialized=true;
+                if(currentPage==="warnings") await loadWarnings();
                 return;
             }
-            const newOnes=rows.filter(r=>!seenWarningIds.has(r.id)).sort((a,b)=>a.id-b.id);
+            const currentIds = new Set(rows.map(r=>r.id));
+            const newOnes = rows.filter(r=>!seenWarningIds.has(r.id)).sort((a,b)=>a.id-b.id);
+            const removedIds = [...seenWarningIds].filter(id=>!currentIds.has(id));
+
             newOnes.forEach(r=>{ seenWarningIds.add(r.id); showToast(r); });
-            if(currentPage==="warnings" && newOnes.length) await loadWarnings();
+            removedIds.forEach(id=>seenWarningIds.delete(id));
+
+            if(currentPage==="warnings" && (newOnes.length || removedIds.length)) await loadWarnings();
         } catch(error) { /* transient network errors shouldn't spam toasts */ }
     }
 
