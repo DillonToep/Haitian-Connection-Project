@@ -177,15 +177,14 @@ let currentPage = "dashboard";
         });
     }
 
-    // Shared lightbox for the mold-image "expand" button in both the
-    // create form and edit dialog -- works off a plain <img src> URL, so
-    // it doesn't care whether that URL is a local blob: preview or an
-    // already-uploaded /static path.
+    // Shared "expand" handler for the mold-image previews in both the
+    // create form and edit dialog -- opens the image in its own browser
+    // window/tab instead of an in-page dialog, so the viewer gets the
+    // browser's own title bar / close button rather than a close "X"
+    // competing for space with the enlarged image.
     function openImageLightbox(url) {
-        document.getElementById("image-lightbox-img").src = url;
-        document.getElementById("image-lightbox-dialog").showModal();
+        window.open(url, "_blank", "noopener,noreferrer");
     }
-    document.getElementById("image-lightbox-close").addEventListener("click", () => document.getElementById("image-lightbox-dialog").close());
     document.getElementById("mold-edit-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []).map(file => ({ type: "new", file }));
         editImageItems = [...editImageItems, ...incoming].slice(0, 4);
