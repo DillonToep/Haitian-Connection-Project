@@ -294,9 +294,20 @@ let currentPage = "dashboard";
     });
 
     async function loadMolds() {
-        molds=await requestJson("/api/molds");
-        document.getElementById("mold-list").innerHTML=molds.length?molds.map(m=>`<div class="mold-item" data-mold-id="${m.id}"><strong>${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</strong><div class="muted">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div></div>`).join(""):'<div class="empty">尚未建立模具档案</div>';
-        document.querySelectorAll("#mold-list .mold-item").forEach(item=>item.addEventListener("click",()=>{
+        molds = await requestJson("/api/molds");
+        document.getElementById("mold-list").innerHTML = molds.length ? molds.map(m => {
+            const face = m.face_image_url
+                ? `<img class="mold-card-face" src="${escapeHtml(m.face_image_url)}" alt="${escapeHtml(m.mold_name)}">`
+                : `<div class="mold-card-face-empty">暂无图片</div>`;
+            return `<div class="mold-item" data-mold-id="${m.id}">
+                ${face}
+                <div class="mold-card-overlay">
+                    <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
+                    <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div>
+                </div>
+            </div>`;
+        }).join("") : '<div class="empty">尚未建立模具档案</div>';
+        document.querySelectorAll("#mold-list .mold-item").forEach(item => item.addEventListener("click", () => {
             openMoldEdit(Number(item.dataset.moldId));
         }));
     }
@@ -1316,7 +1327,6 @@ let currentPage = "dashboard";
     });
     document.querySelectorAll(".util-tab-button").forEach(button => button.addEventListener("click", () => switchUtilTab(button.dataset.utilTab)));
     document.querySelectorAll(".detail-util-tab-button").forEach(button => button.addEventListener("click", () => switchDetailUtilTab(button.dataset.detailUtilTab)));
-    document.getElementById("mold-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/molds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mold_code:f.get("mold_code"),mold_name:f.get("mold_name"),product_code:f.get("product_code")||null,cavities:Number(f.get("cavities")),remark:f.get("remark")||null})});event.target.reset();event.target.cavities.value=1;await loadMolds();}catch(error){alert(error.message);}});
     const passwordDialog=document.getElementById("password-dialog");
     document.getElementById("password-button").addEventListener("click",()=>passwordDialog.showModal());
     document.getElementById("password-cancel").addEventListener("click",()=>passwordDialog.close());

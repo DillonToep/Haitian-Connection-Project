@@ -233,11 +233,11 @@ def update_mold_parameters(
 @router.post("/molds", status_code=201)
 async def create_mold(
     user: dict = Depends(require_user),
-    mold_code: str = Form(..., max_length=100),          # Project ID
-    mold_name: str = Form(..., max_length=200),           # Project Name
+    mold_code: str = Form(..., max_length=100),
+    mold_name: str = Form(..., max_length=200),
     cavities: int = Form(..., ge=1, le=10_000),
     remark: str | None = Form(None, max_length=500),
-    cavity_temperatures: str | None = Form(None),          # JSON: {"IN1": 25.0, ...}
+    cavity_temperatures: str | None = Form(None),
     face_index: int = Form(0),
     images: list[UploadFile] = File(default=[]),
 ):
@@ -254,7 +254,7 @@ async def create_mold(
         raise HTTPException(status_code=400, detail="封面图片选择无效")
 
     expected_labels = _cavity_rows_for(cavities)
-    temps = _parse_temperatures(cavity_temperatures, expected_labels)
+    temps = _parse_cavity_values(cavity_temperatures, expected_labels)
 
     sql_insert_mold = """
         INSERT INTO dbo.molds
@@ -275,24 +275,24 @@ async def create_mold(
                 user["id"],
             ).fetchone()[0]
 
-        for sort_order, label in enumerate(expected_labels):
-            cursor.execute(
-                """
-                INSERT INTO dbo.mold_cavity_temperatures
-                    (mold_id, cavity_label, temperature_c, tolerance_pct, sort_order)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                mold_id,
-                label,
-                temps[label]["temperature_c"],
-                temps[label]["tolerance_pct"],
-                sort_order,
-            )
+            for sort_order, label in enumerate(expected_labels):
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_cavity_temperatures
+                        (mold_id, cavity_label, temperature_c, tolerance_pct, sort_order)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    mold_id,
+                    label,
+                    temps[label]["temperature_c"],
+                    temps[label]["tolerance_pct"],
+                    sort_order,
+                )
 
-            # ---- image files ----
+            # ---- image files (runs once, not once-per-cavity) ----
             mold_dir = MOLD_UPLOAD_DIR / str(mold_id)
             mold_dir.mkdir(parents=True, exist_ok=True)
-            for sort_order, image in enumerate(images):
+            for image_index, image in enumerate(images):
                 extension = (image.filename or "").rsplit(".", 1)[-1].lower() if "." in (image.filename or "") else "jpg"
                 safe_name = f"{uuid.uuid4().hex}.{extension}"
                 dest = mold_dir / safe_name
@@ -307,8 +307,8 @@ async def create_mold(
                     """,
                     mold_id,
                     web_path,
-                    1 if sort_order == face_index else 0,
-                    sort_order,
+                    1 if image_index == face_index else 0,
+                    image_index,
                 )
 
             connection.commit()
@@ -399,12 +399,13 @@ async def update_mold(
                 cursor.execute(
                     """
                     INSERT INTO dbo.mold_cavity_temperatures
-                        (mold_id, cavity_label, temperature_c, sort_order)
-                    VALUES (?, ?, ?, ?)
+                        (mold_id, cavity_label, temperature_c, tolerance_pct, sort_order)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     mold_id,
                     label,
-                    temps[label],
+                    temps[label]["temperature_c"],
+                    temps[label]["tolerance_pct"],
                     sort_order,
                 )
 
