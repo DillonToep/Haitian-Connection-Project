@@ -104,21 +104,6 @@ def _attach_images_and_temps(cursor, records: list[dict]) -> list[dict]:
             }
         )
 
-    cursor.execute(
-        f"""
-        SELECT mold_id, cavity_label, temperature_c
-        FROM dbo.mold_cavity_temperatures
-        WHERE mold_id IN ({placeholders})
-        ORDER BY mold_id, sort_order
-        """,
-        ids,
-    )
-    temps_by_mold: dict[int, list[dict]] = {}
-    for row in cursor.fetchall():
-        temps_by_mold.setdefault(row.mold_id, []).append(
-            {"cavity_label": row.cavity_label, "temperature_c": row.temperature_c}
-        )
-
     for record in records:
         images = images_by_mold.get(record["id"], [])
         record["images"] = images
@@ -375,7 +360,7 @@ async def update_mold(
                 raise HTTPException(status_code=400, detail=f"最多上传 {MAX_IMAGES} 张图片")
 
             expected_labels = _cavity_rows_for(cavities)
-            temps = _parse_temperatures(cavity_temperatures, expected_labels)
+            temps = _parse_cavity_values(cavity_temperatures, expected_labels)
 
             # ---- text fields ----
             cursor.execute(
