@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import paho.mqtt.client as mqtt
 import pyodbc
@@ -116,6 +116,93 @@ def _detect_parameter_changes(device_id, data):
 
     return changes
 
+def _fetch_mold_targets(cursor, device_id):
+    """{parameter_id: (target_value, tolerance_percent)} for the mold
+    currently mounted on device_id (dbo.device_mold_assignments,
+    unmounted_at IS NULL), sourced from dbo.mold_parameter_targets -- the
+    same table the '编辑高级参数' dialog on the molds page writes to.
+    Returns {} if no mold is mounted or the mold has no saved targets."""
+    cursor.execute(
+        """
+        SELECT t.parameter_id, t.target_value, t.tolerance_percent
+        FROM dbo.device_mold_assignments AS a
+        INNER JOIN dbo.mold_parameter_targets AS t ON t.mold_id = a.mold_id
+        WHERE a.device_id = ? AND a.unmounted_at IS NULL
+        """,
+        device_id,
+    )
+    return {row.parameter_id: (row.target_value, row.tolerance_percent) for row in cursor.fetchall()}
+
+
+def _exceeds_tolerance(new_value, target_value, tolerance_percent):
+    """True if new_value deviates from target_value by more than
+    tolerance_percent (%) of target_value. Anything that can't be compared
+    numerically (missing target/tolerance, non-numeric value/mode code)
+    never counts as a violation -- it just gets logged, not alerted."""
+    if target_value is None or tolerance_percent is None:
+        return False
+    try:
+        new_num = float(new_value)
+        target_num = float(target_value)
+        tol_num = float(tolerance_percent)
+    except (TypeError, ValueError):
+        return False
+
+    if target_num == 0:
+        # Percent-of-target is undefined at target=0 -- fall back to
+        # treating tolerance_percent as an absolute window instead.
+        return abs(new_num) > tol_num
+
+    deviation_pct = abs(new_num - target_num) / abs(target_num) * 100
+    return deviation_pct > tol_num
+
+
+def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
+    """Insert one dbo.tech_parameter_changelog row per detected change.
+    Every change is logged (for 变更记录 history), but acknowledged_at is
+    only left NULL -- i.e. only counted as a pending 预警/警报 -- when the
+    new value is outside the mounted mold's tolerance % for that
+    parameter. In-tolerance changes (or changes with no mold/target to
+    compare against) are logged pre-acknowledged so they never toast or
+    show up in 预警通知."""
+    if not changes:
+        return
+
+    mold_targets = _fetch_mold_targets(cursor, device_id)
+
+    sql = """
+        INSERT INTO dbo.tech_parameter_changelog
+        (
+            device_id,
+            parameter_id,
+            previous_value,
+            new_value,
+            data_time,
+            raw_message_id,
+            acknowledged_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """
+
+    for parameter_id, previous_value, new_value in changes:
+        target = mold_targets.get(parameter_id)
+        is_warning = False
+        if target is not None:
+            target_value, tolerance_percent = target
+            is_warning = _exceeds_tolerance(new_value, target_value, tolerance_percent)
+
+        acknowledged_at = None if is_warning else datetime.utcnow()
+
+        cursor.execute(
+            sql,
+            device_id,
+            parameter_id,
+            previous_value,
+            new_value,
+            data_time,
+            raw_message_id,
+            acknowledged_at,
+        )
 
 def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
     """Insert one dbo.tech_parameter_changelog row per detected change,
