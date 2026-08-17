@@ -250,6 +250,11 @@ let currentPage = "dashboard";
         document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-edit-dialog").close();
     });
+    
+    document.getElementById("mold-edit-close-x").addEventListener("click", () => {
+        document.getElementById("mold-advanced-dialog").close();
+        document.getElementById("mold-edit-dialog").close();
+    });
 
     document.getElementById("mold-edit-form").addEventListener("submit", async event => {
         event.preventDefault();

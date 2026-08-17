@@ -233,6 +233,29 @@
         .day-detail-legend { display: flex; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--muted); }
         .day-detail-segments { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; }
         .day-detail-segment-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); font-size: 12.5px; }
+        .dialog-close-x {
+            width: 30px; height: 30px; padding: 0; border: 1px solid #ccd4dd; border-radius: 4px;
+            background: white; color: #4c5663; font-size: 13px; line-height: 1;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .dialog-close-x:hover { border-color: var(--blue); color: var(--blue); }
+        html[data-theme="dark"] .dialog-close-x { border-color: #313a46; color: #d3d8de; background: #1a1f27; }
+        html[data-theme="dark"] .dialog-close-x:hover { border-color: #57caa0; color: #57caa0; }
+
+        dialog[open] {
+            animation: dialog-pop-in .18s ease;
+        }
+        dialog[open]::backdrop {
+            animation: dialog-backdrop-in .18s ease;
+        }
+        @keyframes dialog-pop-in {
+            from { opacity: 0; transform: translateY(-6px) scale(.98); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes dialog-backdrop-in {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
 
         .changelog-banner-new { color: var(--red); }
         .changelog-row { cursor: pointer; }

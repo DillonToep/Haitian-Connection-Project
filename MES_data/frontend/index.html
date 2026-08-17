@@ -188,7 +188,10 @@
 <dialog id="mold-edit-dialog" class="mold-edit-dialog">
     <div class="day-detail-header">
         <h3>编辑模具型号</h3>
-        <button id="mold-edit-advanced-button" class="secondary-button" type="button">编辑高级参数</button>
+        <div class="detail-header-actions">
+            <button id="mold-edit-advanced-button" class="secondary-button" type="button">编辑高级参数</button>
+            <button id="mold-edit-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
+        </div>
     </div>
     <form id="mold-edit-form" class="form-grid">
         <div class="field"><label>项目名称</label><input id="edit-mold-name" required maxlength="200"></div>
