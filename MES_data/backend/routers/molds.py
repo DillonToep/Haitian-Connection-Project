@@ -12,7 +12,6 @@ from ..security import require_editor, require_user
 from ..parameter_labels import PARAMETER_LABELS, categorize
 from ..schemas import (
     MoldAssignmentRequest,
-    MoldCreateRequest,
     MoldParametersUpdateRequest,
     MoldUpdateRequest,
 )

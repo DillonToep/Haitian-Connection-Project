@@ -34,7 +34,6 @@ let currentPage = "dashboard";
         "位置参数": " mm",
         "时间参数": " s"
     };
-    let editingMoldId = null;
     let moldAdvancedLoaded = false;
 
     const spcFields = {
@@ -239,6 +238,11 @@ let currentPage = "dashboard";
         const readOnly = currentUser.role === "viewer";
         document.getElementById("mold-edit-form").querySelectorAll("input,textarea,select,button").forEach(el => el.disabled = readOnly);
 
+        moldAdvancedLoaded = false;
+        document.getElementById("mold-advanced-panel").classList.add("hidden");
+        document.getElementById("mold-advanced-groups").innerHTML = "";
+        document.getElementById("mold-advanced-summary").textContent = "";
+
         document.getElementById("mold-edit-dialog").showModal();
     }
 
@@ -294,8 +298,7 @@ let currentPage = "dashboard";
         document.getElementById("unmount-button").disabled=currentUser.role==="viewer"||!device?.mold_id;
         document.getElementById("mold-list").innerHTML=molds.length?molds.map(m=>`<div class="mold-item" data-mold-id="${m.id}"><strong>${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</strong><div class="muted">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div><div class="muted">${m.mounted_device_id?`已安装：${escapeHtml(m.mounted_device_id)}`:"当前空闲"}</div></div>`).join(""):'<div class="empty">尚未建立模具档案</div>';
         document.querySelectorAll("#mold-list .mold-item").forEach(item=>item.addEventListener("click",()=>{
-            const mold=molds.find(m=>m.id===Number(item.dataset.moldId));
-            if(mold) openMoldEditDialog(mold);
+            openMoldEdit(Number(item.dataset.moldId));
         }));
         const history=await requestJson(`/api/devices/${encodeURIComponent(id)}/mold-history`);
         document.getElementById("mold-history").innerHTML=history.length?`<table><thead><tr><th>模具</th><th>装模时间</th><th>卸模时间</th><th>操作人</th></tr></thead><tbody>${history.map(h=>`<tr><td>${escapeHtml(h.mold_code)}</td><td>${formatTime(h.mounted_at)}</td><td>${formatTime(h.unmounted_at)}</td><td>${showValue(h.operator_username)}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无装模履历</div>';
@@ -324,25 +327,6 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-    function openMoldEditDialog(mold) {
-        editingMoldId = mold.id;
-        moldAdvancedLoaded = false;
-        const form = document.getElementById("mold-edit-form");
-        form.mold_code.value = mold.mold_code || "";
-        form.mold_name.value = mold.mold_name || "";
-        form.product_code.value = mold.product_code || "";
-        form.cavities.value = mold.cavities || 1;
-        form.remark.value = mold.remark || "";
-        form.is_active.checked = mold.is_active !== false;
-        document.getElementById("mold-edit-title").textContent = `编辑模具 · ${mold.mold_code}`;
-        document.getElementById("mold-advanced-panel").classList.add("hidden");
-        document.getElementById("mold-advanced-groups").innerHTML = "";
-        document.getElementById("mold-advanced-summary").textContent = "";
-        const readOnly = currentUser.role === "viewer";
-        form.querySelectorAll("input,textarea,button").forEach(el => el.disabled = readOnly);
-        document.getElementById("mold-edit-dialog").showModal();
-    }
-
     function renderMoldAdvancedGroups(parameters) {
         const groups = new Map();
         parameters.forEach(p => { if (!groups.has(p.category)) groups.set(p.category, []); groups.get(p.category).push(p); });
@@ -366,7 +350,7 @@ let currentPage = "dashboard";
         if (panel.classList.contains("hidden") || moldAdvancedLoaded) return;
         document.getElementById("mold-advanced-summary").textContent = "正在读取……";
         try {
-            const result = await requestJson(`/api/molds/${encodeURIComponent(editingMoldId)}/parameters`);
+            const result = await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`);
             renderMoldAdvancedGroups(result.parameters);
             document.getElementById("mold-advanced-summary").textContent = "";
             moldAdvancedLoaded = true;
@@ -382,31 +366,12 @@ let currentPage = "dashboard";
             return { parameter_id: row.dataset.parameter, value: value || null, tolerance_percent: tolerance === "" ? null : Number(tolerance) };
         });
         try {
-            await requestJson(`/api/molds/${encodeURIComponent(editingMoldId)}/parameters`, {
+            await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {
                 method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
             });
             alert("高级参数已保存");
         } catch (error) { alert(error.message); }
     });
-
-    document.getElementById("mold-edit-form").addEventListener("submit", async event => {
-        event.preventDefault();
-        const f = new FormData(event.target);
-        try {
-            await requestJson(`/api/molds/${encodeURIComponent(editingMoldId)}`, {
-                method: "PUT", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    mold_code: f.get("mold_code"), mold_name: f.get("mold_name"),
-                    product_code: f.get("product_code") || null, cavities: Number(f.get("cavities")),
-                    remark: f.get("remark") || null, is_active: event.target.is_active.checked,
-                }),
-            });
-            await loadMolds();
-            alert("模具信息已保存");
-        } catch (error) { alert(error.message); }
-    });
-
-    document.getElementById("mold-edit-close").addEventListener("click", () => document.getElementById("mold-edit-dialog").close());
 
 
 
