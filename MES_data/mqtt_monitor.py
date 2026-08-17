@@ -204,37 +204,6 @@ def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time
             acknowledged_at,
         )
 
-def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
-    """Insert one dbo.tech_parameter_changelog row per detected change,
-    within the caller's existing transaction (committed together with the
-    raw message insert)."""
-    if not changes:
-        return
-
-    sql = """
-        INSERT INTO dbo.tech_parameter_changelog
-        (
-            device_id,
-            parameter_id,
-            previous_value,
-            new_value,
-            data_time,
-            raw_message_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-    """
-
-    for parameter_id, previous_value, new_value in changes:
-        cursor.execute(
-            sql,
-            device_id,
-            parameter_id,
-            previous_value,
-            new_value,
-            data_time,
-            raw_message_id
-        )
-
 
 def _assign_pending_changelogs_to_spc(cursor, device_id, spc_message_id):
     """Claim every changelog row for this device that hasn't been
