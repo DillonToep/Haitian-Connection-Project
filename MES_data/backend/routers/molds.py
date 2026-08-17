@@ -23,26 +23,39 @@ def _cavity_rows_for(cavities: int) -> list[str]:
     return [str(i) for i in range(1, cavities + 1)]
 
 
-def _parse_temperatures(raw: str | None, expected_labels: list[str]) -> dict[str, float | None]:
-    """raw is a JSON string like {"IN1": 25.5, "OUT1": null, ...}. Unknown
-    or missing labels default to NULL; anything not in expected_labels is
-    ignored (defends against a stale/mismatched cavity count in the form)."""
+def _parse_cavity_values(raw: str | None, expected_labels: list[str]) -> dict[str, dict[str, float | None]]:
+    """raw is a JSON string like
+    {"1": {"temperature_c": 25.5, "tolerance_pct": 5}, "2": {...}}.
+    Unknown/missing labels default to NULL; anything not in
+    expected_labels is ignored (defends against a stale/mismatched
+    cavity count in the form)."""
     parsed = {}
     if raw:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="cavity_temperatures 格式不正确") from None
+
+    def _as_float(value, label):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"数值无效：{label}") from None
+
     result = {}
     for label in expected_labels:
-        value = parsed.get(label)
-        if value in (None, ""):
-            result[label] = None
-        else:
-            try:
-                result[label] = float(value)
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail=f"温度值无效：{label}") from None
+        entry = parsed.get(label)
+        if entry is None:
+            entry = {}
+        elif not isinstance(entry, dict):
+            # Back-compat: old shape was label -> temperature number only.
+            entry = {"temperature_c": entry}
+        result[label] = {
+            "temperature_c": _as_float(entry.get("temperature_c"), label),
+            "tolerance_pct": _as_float(entry.get("tolerance_pct"), label),
+        }
     return result
 
 
@@ -65,6 +78,25 @@ def _attach_images_and_temps(cursor, records: list[dict]) -> list[dict]:
     for row in cursor.fetchall():
         images_by_mold.setdefault(row.mold_id, []).append(
             {"id": row.id, "url": row.file_path, "is_face": bool(row.is_face)}
+        )
+
+    cursor.execute(
+        f"""
+        SELECT mold_id, cavity_label, temperature_c, tolerance_pct
+        FROM dbo.mold_cavity_temperatures
+        WHERE mold_id IN ({placeholders})
+        ORDER BY mold_id, sort_order
+        """,
+        ids,
+    )
+    temps_by_mold: dict[int, list[dict]] = {}
+    for row in cursor.fetchall():
+        temps_by_mold.setdefault(row.mold_id, []).append(
+            {
+                "cavity_label": row.cavity_label,
+                "temperature_c": row.temperature_c,
+                "tolerance_pct": row.tolerance_pct,
+            }
         )
 
     cursor.execute(
@@ -160,19 +192,19 @@ async def create_mold(
                 user["id"],
             ).fetchone()[0]
 
-            # ---- cavity temperature rows ----
-            for sort_order, label in enumerate(expected_labels):
-                cursor.execute(
-                    """
-                    INSERT INTO dbo.mold_cavity_temperatures
-                        (mold_id, cavity_label, temperature_c, sort_order)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    mold_id,
-                    label,
-                    temps[label],
-                    sort_order,
-                )
+        for sort_order, label in enumerate(expected_labels):
+            cursor.execute(
+                """
+                INSERT INTO dbo.mold_cavity_temperatures
+                    (mold_id, cavity_label, temperature_c, tolerance_pct, sort_order)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                mold_id,
+                label,
+                temps[label]["temperature_c"],
+                temps[label]["tolerance_pct"],
+                sort_order,
+            )
 
             # ---- image files ----
             mold_dir = MOLD_UPLOAD_DIR / str(mold_id)
