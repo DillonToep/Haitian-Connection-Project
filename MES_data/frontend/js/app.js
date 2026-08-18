@@ -433,13 +433,15 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-    function renderMoldAdvancedGroups(parameters) {
+    // Shared by the per-mold 编辑高级参数 dialog and the global 默认参数设置
+    // dialog -- both edit the same shape of parameter rows (实际值 / 公差
+    // 模式 / 公差), just against different API endpoints and containers.
+    function renderParameterGroupsInto(containerId, parameters, readOnly) {
         const groups = new Map();
         parameters.forEach(p => { if (!groups.has(p.category)) groups.set(p.category, []); groups.get(p.category).push(p); });
         const categoryOrder = ["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数"];
         const ordered = [...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
-        const readOnly = currentUser.role === "viewer";
-        document.getElementById("mold-advanced-groups").innerHTML = ordered.map(category => {
+        document.getElementById(containerId).innerHTML = ordered.map(category => {
             const rows = groups.get(category).map(p => {
                 const mode = p.tolerance_mode || "percent";
                 const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
@@ -459,12 +461,32 @@ let currentPage = "dashboard";
             return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary><div class="parameter-grid">${rows}</div></details>`;
         }).join("");
 
-        document.querySelectorAll("#mold-advanced-groups .mold-param-tolerance-mode").forEach(select => {
+        document.querySelectorAll(`#${containerId} .mold-param-tolerance-mode`).forEach(select => {
             select.addEventListener("change", e => {
                 const input = e.target.closest(".mold-param-row").querySelector(".mold-param-tolerance");
                 input.placeholder = e.target.value === "flat" ? "公差" : "公差 %";
             });
         });
+    }
+
+    function collectParameterRows(containerId) {
+        return [...document.querySelectorAll(`#${containerId} .mold-param-row`)].map(row => {
+            const value = row.querySelector(".mold-param-value").value.trim();
+            const mode = row.querySelector(".mold-param-tolerance-mode").value;
+            const toleranceRaw = row.querySelector(".mold-param-tolerance").value.trim();
+            const toleranceNum = toleranceRaw === "" ? null : Number(toleranceRaw);
+            return {
+                parameter_id: row.dataset.parameter,
+                value: value || null,
+                tolerance_mode: mode,
+                tolerance_percent: mode === "percent" ? toleranceNum : null,
+                tolerance_flat: mode === "flat" ? toleranceNum : null,
+            };
+        });
+    }
+
+    function renderMoldAdvancedGroups(parameters) {
+        renderParameterGroupsInto("mold-advanced-groups", parameters, currentUser.role === "viewer");
     }
 
     document.getElementById("mold-edit-advanced-button").addEventListener("click", async () => {
@@ -483,24 +505,41 @@ let currentPage = "dashboard";
     document.getElementById("mold-advanced-close").addEventListener("click", () => document.getElementById("mold-advanced-dialog").close());
 
     document.getElementById("mold-advanced-save").addEventListener("click", async () => {
-        const parameters = [...document.querySelectorAll("#mold-advanced-groups .mold-param-row")].map(row => {
-            const value = row.querySelector(".mold-param-value").value.trim();
-            const mode = row.querySelector(".mold-param-tolerance-mode").value;
-            const toleranceRaw = row.querySelector(".mold-param-tolerance").value.trim();
-            const toleranceNum = toleranceRaw === "" ? null : Number(toleranceRaw);
-            return {
-                parameter_id: row.dataset.parameter,
-                value: value || null,
-                tolerance_mode: mode,
-                tolerance_percent: mode === "percent" ? toleranceNum : null,
-                tolerance_flat: mode === "flat" ? toleranceNum : null,
-            };
-        });
+        const parameters = collectParameterRows("mold-advanced-groups");
         try {
             await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {
                 method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
             });
             alert("高级参数已保存");
+        } catch (error) { alert(error.message); }
+    });
+
+    // 默认参数设置: a single global template (not tied to any mold) that
+    // pre-fills 高级工艺参数 for every mold created from now on -- see
+    // GET/PUT /api/molds/parameter-defaults. Existing molds are untouched.
+    let moldDefaultsLoaded = false;
+    document.getElementById("mold-defaults-button").addEventListener("click", async () => {
+        document.getElementById("mold-defaults-dialog").showModal();
+        if (moldDefaultsLoaded) return;
+        document.getElementById("mold-defaults-summary").textContent = "正在读取……";
+        try {
+            const result = await requestJson("/api/molds/parameter-defaults");
+            renderParameterGroupsInto("mold-defaults-groups", result.parameters, currentUser.role === "viewer");
+            document.getElementById("mold-defaults-summary").textContent = "";
+            moldDefaultsLoaded = true;
+        } catch (error) {
+            document.getElementById("mold-defaults-summary").textContent = `读取失败：${error.message}`;
+        }
+    });
+    document.getElementById("mold-defaults-close").addEventListener("click", () => document.getElementById("mold-defaults-dialog").close());
+
+    document.getElementById("mold-defaults-save").addEventListener("click", async () => {
+        const parameters = collectParameterRows("mold-defaults-groups");
+        try {
+            await requestJson("/api/molds/parameter-defaults", {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
+            });
+            alert("默认参数已保存，之后新建的模具将自动套用这些数值");
         } catch (error) { alert(error.message); }
     });
 
@@ -571,6 +610,7 @@ let currentPage = "dashboard";
         document.getElementById("clear-all-warnings").disabled=readOnly;
         document.getElementById("device-mold-change-button").disabled = readOnly;
         document.getElementById("device-mold-unmount-button").disabled = readOnly;
+        document.getElementById("mold-defaults-save").disabled = readOnly;
     }
     async function loadDevices() {
         devices=await requestJson("/api/devices");

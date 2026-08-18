@@ -132,7 +132,12 @@
                 </div>
                 <div>
                     <article class="detail-card">
-                        <div class="detail-title">模具档案</div>
+                        <div class="detail-header">
+                            <div class="detail-title">模具档案</div>
+                            <div class="detail-header-actions">
+                                <button id="mold-defaults-button" class="secondary-button" type="button">默认参数设置</button>
+                            </div>
+                        </div>
                         <div id="mold-list" class="mold-list"></div>
                     </article>
                 </div>
@@ -256,6 +261,16 @@
         <div class="muted" id="mold-advanced-summary"></div>
         <div id="mold-advanced-groups"></div>
         <div class="actions"><button id="mold-advanced-save" class="primary-button" type="button">保存高级参数</button></div>
+    </dialog>
+    <dialog id="mold-defaults-dialog" class="mold-edit-dialog">
+        <div class="day-detail-header">
+            <h3>默认高级参数（新建模具自动套用）</h3>
+            <button id="mold-defaults-close" class="secondary-button" type="button">关闭</button>
+        </div>
+        <p class="muted">这里设置的实际值 / 公差，会在此后新建的模具项目中自动填入作为初始高级参数；已存在的模具不受影响。</p>
+        <div class="muted" id="mold-defaults-summary"></div>
+        <div id="mold-defaults-groups"></div>
+        <div class="actions"><button id="mold-defaults-save" class="primary-button" type="button">保存默认值</button></div>
     </dialog>
     <div id="toast-container" class="toast-container"></div>
     <script src="/static/js/app.js"></script>

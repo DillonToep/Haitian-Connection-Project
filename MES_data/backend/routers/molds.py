@@ -137,6 +137,83 @@ def get_molds(user: dict = Depends(require_user)):
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
+@router.get("/molds/parameter-defaults")
+def get_mold_parameter_defaults(user: dict = Depends(require_user)):
+    """The global 高级工艺参数 template used to seed every *new* mold going
+    forward (see create_mold below). Registered before
+    /molds/{mold_id}/parameters so the literal 'parameter-defaults' path
+    segment isn't swallowed by that route's int-typed mold_id."""
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
+                "FROM dbo.mold_parameter_defaults"
+            )
+            saved = {row.parameter_id: row for row in cursor.fetchall()}
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    parameters = []
+    for tag, meta in PARAMETER_LABELS.items():
+        if not meta["use"]:
+            continue
+        row = saved.get(tag)
+        parameters.append(
+            {
+                "parameter_id": tag,
+                "label": meta["label"],
+                "category": categorize(meta["label"]),
+                "value": row.target_value if row else None,
+                "tolerance_mode": row.tolerance_mode if row else "percent",
+                "tolerance_percent": float(row.tolerance_percent) if row and row.tolerance_percent is not None else None,
+                "tolerance_flat": float(row.tolerance_flat) if row and row.tolerance_flat is not None else None,
+            }
+        )
+    return {"parameters": parameters}
+
+
+@router.put("/molds/parameter-defaults")
+def update_mold_parameter_defaults(
+    data: MoldParametersUpdateRequest,
+    user: dict = Depends(require_user),
+):
+    require_editor(user)
+    valid_tags = set(PARAMETER_LABELS.keys())
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute("DELETE FROM dbo.mold_parameter_defaults")
+            for item in data.parameters:
+                if item.parameter_id not in valid_tags:
+                    continue
+                value = item.value.strip() if item.value else None
+                tol_percent = item.tolerance_percent if item.tolerance_mode == "percent" else None
+                tol_flat = item.tolerance_flat if item.tolerance_mode == "flat" else None
+                if not value and tol_percent is None and tol_flat is None:
+                    continue  # blank row, nothing worth saving as a default
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_parameter_defaults
+                        (parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    item.parameter_id,
+                    value,
+                    item.tolerance_mode,
+                    tol_percent,
+                    tol_flat,
+                    user["id"],
+                )
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
 @router.get("/molds/{mold_id}/parameters")
 def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
     del user
@@ -279,6 +356,28 @@ async def create_mold(
                     temps[label]["temperature_c"],
                     temps[label]["tolerance_pct"],
                     sort_order,
+                )
+
+            # ---- seed 高级工艺参数 from the global defaults template, if
+            # any have been configured (模具管理 -> 默认参数设置). Only
+            # affects this brand-new mold; existing molds are untouched. ----
+            cursor.execute(
+                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
+                "FROM dbo.mold_parameter_defaults"
+            )
+            for default_row in cursor.fetchall():
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_parameter_targets
+                        (mold_id, parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    mold_id,
+                    default_row.parameter_id,
+                    default_row.target_value,
+                    default_row.tolerance_mode,
+                    default_row.tolerance_percent,
+                    default_row.tolerance_flat,
                 )
 
             # ---- image files (runs once, not once-per-cavity) ----
