@@ -433,10 +433,7 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-    // Shared by the per-mold 编辑高级参数 dialog and the global 默认参数设置
-    // dialog -- both edit the same shape of parameter rows (实际值 / 公差
-    // 模式 / 公差), just against different API endpoints and containers.
-    function renderParameterGroupsInto(containerId, parameters, readOnly) {
+    function renderParameterGroupsInto(containerId, parameters, readOnly, enableBatchFill = false) {
         const groups = new Map();
         parameters.forEach(p => { if (!groups.has(p.category)) groups.set(p.category, []); groups.get(p.category).push(p); });
         const categoryOrder = ["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数"];
@@ -458,7 +455,20 @@ let currentPage = "dashboard";
                         value="${toleranceValue!=null?toleranceValue:""}" ${readOnly?"disabled":""}>
                 </div>`;
             }).join("");
-            return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary><div class="parameter-grid">${rows}</div></details>`;
+
+            const batchFillHtml = (enableBatchFill && !readOnly) ? `
+                <div class="mold-param-batch-fill">
+                    <input class="batch-fill-value" type="text" placeholder="统一设置实际值（留空则不改）">
+                    <select class="batch-fill-tolerance-mode">
+                        <option value="">公差模式不变</option>
+                        <option value="percent">百分比 %</option>
+                        <option value="flat">固定值</option>
+                    </select>
+                    <input class="batch-fill-tolerance" type="number" step="0.1" min="0" placeholder="统一设置公差">
+                    <button type="button" class="secondary-button batch-fill-apply">应用到本组</button>
+                </div>` : "";
+
+            return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary>${batchFillHtml}<div class="parameter-grid">${rows}</div></details>`;
         }).join("");
 
         document.querySelectorAll(`#${containerId} .mold-param-tolerance-mode`).forEach(select => {
@@ -467,6 +477,27 @@ let currentPage = "dashboard";
                 input.placeholder = e.target.value === "flat" ? "公差" : "公差 %";
             });
         });
+
+        if (enableBatchFill) {
+            document.querySelectorAll(`#${containerId} .batch-fill-apply`).forEach(button => {
+                button.addEventListener("click", () => {
+                    const details = button.closest(".tech-group");
+                    const value = details.querySelector(".batch-fill-value").value.trim();
+                    const mode = details.querySelector(".batch-fill-tolerance-mode").value;
+                    const tolerance = details.querySelector(".batch-fill-tolerance").value.trim();
+                    if (!value && !mode && !tolerance) return;
+                    details.querySelectorAll(".mold-param-row").forEach(row => {
+                        if (value !== "") row.querySelector(".mold-param-value").value = value;
+                        if (mode !== "") {
+                            const modeSelect = row.querySelector(".mold-param-tolerance-mode");
+                            modeSelect.value = mode;
+                            row.querySelector(".mold-param-tolerance").placeholder = mode === "flat" ? "公差" : "公差 %";
+                        }
+                        if (tolerance !== "") row.querySelector(".mold-param-tolerance").value = tolerance;
+                    });
+                });
+            });
+        }
     }
 
     function collectParameterRows(containerId) {
@@ -514,25 +545,22 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-    // 默认参数设置: a single global template (not tied to any mold) that
-    // pre-fills 高级工艺参数 for every mold created from now on -- see
-    // GET/PUT /api/molds/parameter-defaults. Existing molds are untouched.
-    let moldDefaultsLoaded = false;
+
     document.getElementById("mold-defaults-button").addEventListener("click", async () => {
         document.getElementById("mold-defaults-dialog").showModal();
         if (moldDefaultsLoaded) return;
         document.getElementById("mold-defaults-summary").textContent = "正在读取……";
         try {
             const result = await requestJson("/api/molds/parameter-defaults");
-            renderParameterGroupsInto("mold-defaults-groups", result.parameters, currentUser.role === "viewer");
+            renderParameterGroupsInto("mold-defaults-groups", result.parameters, currentUser.role === "viewer", true);
             document.getElementById("mold-defaults-summary").textContent = "";
             moldDefaultsLoaded = true;
         } catch (error) {
             document.getElementById("mold-defaults-summary").textContent = `读取失败：${error.message}`;
         }
     });
-    document.getElementById("mold-defaults-close").addEventListener("click", () => document.getElementById("mold-defaults-dialog").close());
 
+    document.getElementById("mold-defaults-close").addEventListener("click", () => document.getElementById("mold-defaults-dialog").close());
     document.getElementById("mold-defaults-save").addEventListener("click", async () => {
         const parameters = collectParameterRows("mold-defaults-groups");
         try {

@@ -333,6 +333,13 @@
         .mold-param-row { display: grid; grid-template-columns: 1fr 120px 110px 110px; gap: 10px; align-items: center; padding: 7px 10px; margin-bottom: 8px; border: 1px solid #e9edf2; background: #f8fafc; }
         .mold-param-label { color: var(--muted); }
         .mold-param-value, .mold-param-tolerance { height: 30px; padding: 0 8px; }
+        .mold-param-batch-fill {
+            display: grid; grid-template-columns: 1fr 120px 110px auto; gap: 10px; align-items: center;
+            padding: 7px 10px; margin-bottom: 8px; border: 1px dashed var(--blue); border-radius: 3px;
+            background: var(--blue-soft);
+        }
+        .mold-param-batch-fill input, .mold-param-batch-fill select { height: 30px; padding: 0 8px; }
+        html[data-theme="dark"] .mold-param-batch-fill { border-color: #57caa0; background: #142b20; }
 
 
         .image-lightbox-dialog { position: relative; width: min(90vw, 900px); padding: 0; border: 0; border-radius: 8px; background: transparent; }
