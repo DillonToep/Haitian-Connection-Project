@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_connection, row_to_dict
 from ..parameter_labels import (
     PARAMETER_LABELS,
-    categorize,
+    categorize_tag,
     ALARM_STATUS_LABELS,
     MACHINE_STATUS_LABELS,
     OPERATION_MODE_LABELS,
@@ -232,7 +232,7 @@ def get_device_tech(device_id: str, user: dict = Depends(require_user)):
                     {
                         "parameter_id": tag_id,
                         "label": meta["label"],
-                        "category": categorize(meta["label"]),
+                        "category": categorize_tag(tag_id, meta["label"]),
                         "value": record["parameter_value"]
                         if record["parameter_value"] is not None
                         else record["parameter_value_text"],

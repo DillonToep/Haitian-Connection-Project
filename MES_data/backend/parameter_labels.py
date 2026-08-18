@@ -296,6 +296,40 @@ def get_label(parameter_id: str) -> dict | None:
     return PARAMETER_LABELS.get(parameter_id)
 
 
+# ---------------------------------------------------------------------------
+# Tags that should never be offered as a 高级工艺参数 target/tolerance row
+# (mold-specific targets or the global defaults template). These aren't
+# continuous measurements: STS/ASTS are categorical status codes (STS
+# legitimately alternates 1/2 during normal operation; ASTS is an alarm id,
+# not a severity scale) and CYCN is a monotonically increasing shot counter.
+# A numeric tolerance check against any of them (see _exceeds_tolerance in
+# mqtt_monitor.py) is either meaningless or guaranteed to misfire.
+# ---------------------------------------------------------------------------
+EXCLUDED_FROM_TARGETS: set[str] = {"STS", "ASTS", "CYCN"}
+
+
+# Per-tag category overrides for parameters whose Chinese label doesn't
+# contain any of the _CATEGORY_KEYWORDS substrings and would otherwise
+# fall into the 其他参数 catch-all despite being ordinary numeric
+# position/speed/pressure/time values.
+CATEGORY_OVERRIDES: dict[str, str] = {
+    "EISS": "位置参数",   # 射出起点 -- injection start position
+    "EIVM": "速度参数",   # 最大射速 -- max injection speed
+    "EIPM": "压力参数",   # 最大射压 -- max injection pressure
+    "CTBFPL": "时间参数", # 储前冷却 -- pre-storage cooling duration
+}
+
+
+def categorize_tag(tag: str, label: str) -> str:
+    """Like categorize(), but checks CATEGORY_OVERRIDES by raw tag code
+    first -- for parameters whose label text doesn't contain a keyword
+    categorize() can match on."""
+    override = CATEGORY_OVERRIDES.get(tag)
+    if override:
+        return override
+    return categorize(label)
+
+
 _CATEGORY_KEYWORDS = [
     ("温度", "温度参数"),
     ("压力", "压力参数"),

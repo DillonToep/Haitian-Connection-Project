@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from ..config import MOLD_UPLOAD_DIR
 from ..database import get_connection, row_to_dict
 from ..security import require_editor, require_user
-from ..parameter_labels import PARAMETER_LABELS, categorize
+from ..parameter_labels import PARAMETER_LABELS, EXCLUDED_FROM_TARGETS, categorize_tag
 from ..schemas import (
     MoldAssignmentRequest,
     MoldParametersUpdateRequest,
@@ -157,14 +157,14 @@ def get_mold_parameter_defaults(user: dict = Depends(require_user)):
 
     parameters = []
     for tag, meta in PARAMETER_LABELS.items():
-        if not meta["use"]:
+        if not meta["use"] or tag in EXCLUDED_FROM_TARGETS:
             continue
         row = saved.get(tag)
         parameters.append(
             {
                 "parameter_id": tag,
                 "label": meta["label"],
-                "category": categorize(meta["label"]),
+                "category": categorize_tag(tag, meta["label"]),
                 "value": row.target_value if row else None,
                 "tolerance_mode": row.tolerance_mode if row else "percent",
                 "tolerance_percent": float(row.tolerance_percent) if row and row.tolerance_percent is not None else None,
@@ -180,7 +180,7 @@ def update_mold_parameter_defaults(
     user: dict = Depends(require_user),
 ):
     require_editor(user)
-    valid_tags = set(PARAMETER_LABELS.keys())
+    valid_tags = set(PARAMETER_LABELS.keys()) - EXCLUDED_FROM_TARGETS
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
@@ -236,14 +236,14 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
 
     parameters = []
     for tag, meta in PARAMETER_LABELS.items():
-        if not meta["use"]:
+        if not meta["use"] or tag in EXCLUDED_FROM_TARGETS:
             continue
         row = saved.get(tag)
         parameters.append(
             {
                 "parameter_id": tag,
                 "label": meta["label"],
-                "category": categorize(meta["label"]),
+                "category": categorize_tag(tag, meta["label"]),
                 "value": row.target_value if row else None,
                 "tolerance_mode": row.tolerance_mode if row else "percent",
                 "tolerance_percent": float(row.tolerance_percent) if row and row.tolerance_percent is not None else None,
@@ -260,7 +260,7 @@ def update_mold_parameters(
     user: dict = Depends(require_user),
 ):
     require_editor(user)
-    valid_tags = set(PARAMETER_LABELS.keys())
+    valid_tags = set(PARAMETER_LABELS.keys()) - EXCLUDED_FROM_TARGETS
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
