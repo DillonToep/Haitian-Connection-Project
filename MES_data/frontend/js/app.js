@@ -95,12 +95,8 @@ let currentPage = "dashboard";
         tbody.querySelectorAll("tr").forEach(row => {
             const label = row.dataset.label;
             const tempInput = row.querySelector(".cavity-temp-input");
-            const tolInput = row.querySelector(".cavity-tolerance-input");
             if (label) {
-                existing[label] = {
-                    temp: tempInput && tempInput.value !== "" ? tempInput.value : "",
-                    tol: tolInput && tolInput.value !== "" ? tolInput.value : "",
-                };
+                existing[label] = { temp: tempInput && tempInput.value !== "" ? tempInput.value : "" };
             }
         });
         const rows = [];
@@ -109,7 +105,6 @@ let currentPage = "dashboard";
             <tr data-label="${label}">
                 <td>${label}</td>
                 <td><input type="number" step="0.1" class="cavity-temp-input" value="${existing[label]?.temp ?? ""}"></td>
-                <td><input type="number" step="0.1" class="cavity-tolerance-input" value="${existing[label]?.tol ?? ""}"></td>
             </tr>`).join("");
     }
 
@@ -117,16 +112,23 @@ let currentPage = "dashboard";
     rebuildCavityTable();
     document.getElementById("mold-edit-cavities").addEventListener("input", () => rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table"));
 
+    document.getElementById("mold-cavity-add-row").addEventListener("click", () => {
+        const input = document.getElementById("mold-cavities");
+        input.value = Math.max(1, Number(input.value) || 0) + 1;
+        rebuildCavityTable();
+    });
+    document.getElementById("mold-edit-cavity-add-row").addEventListener("click", () => {
+        const input = document.getElementById("mold-edit-cavities");
+        input.value = Math.max(1, Number(input.value) || 0) + 1;
+        rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table");
+    });
+
     function collectCavityTemperatures(tableId = "mold-cavity-table") {
         const result = {};
         document.querySelectorAll(`#${tableId} tbody tr`).forEach(row => {
             const label = row.dataset.label;
             const tempValue = row.querySelector(".cavity-temp-input").value;
-            const tolValue = row.querySelector(".cavity-tolerance-input").value;
-            result[label] = {
-                temperature_c: tempValue === "" ? null : Number(tempValue),
-                tolerance_pct: tolValue === "" ? null : Number(tolValue),
-            };
+            result[label] = { temperature_c: tempValue === "" ? null : Number(tempValue), tolerance_pct: null };
         });
         return result;
     }
@@ -136,10 +138,8 @@ let currentPage = "dashboard";
         (temps || []).forEach(t => { map[t.cavity_label] = t; });
         document.querySelectorAll(`#${tableId} tbody tr`).forEach(row => {
             const tempInput = row.querySelector(".cavity-temp-input");
-            const tolInput = row.querySelector(".cavity-tolerance-input");
             const entry = map[row.dataset.label];
             tempInput.value = (entry && entry.temperature_c != null) ? entry.temperature_c : "";
-            tolInput.value = (entry && entry.tolerance_pct != null) ? entry.tolerance_pct : "";
         });
     }
 
