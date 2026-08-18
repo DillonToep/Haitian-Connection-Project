@@ -331,6 +331,8 @@
         .mold-image-expand:hover { background: rgba(0,0,0,.75); }
         .mold-item:hover { background: #f0f3f7; }
         .mold-param-row { display: grid; grid-template-columns: 1fr 120px 110px 110px; gap: 10px; align-items: center; padding: 7px 10px; margin-bottom: 8px; border: 1px solid #e9edf2; background: #f8fafc; }
+        .mold-param-row.no-value { grid-template-columns: 1fr 130px 120px; }
+        .mold-param-batch-fill.no-value { grid-template-columns: 140px 120px auto auto; }
         .mold-param-label { color: var(--muted); }
         .mold-param-value, .mold-param-tolerance { height: 30px; padding: 0 8px; }
         .mold-param-batch-fill {
@@ -438,6 +440,7 @@
         html[data-theme="dark"] .uptime-bucket-row:hover { background: #0d1015; }
         html[data-theme="dark"] .mold-item:hover { background: #20262f; }
         html[data-theme="dark"] .mold-param-row { border-color: #262c35; background: #20262f; }
+        
 
         .toast-container {
             position: fixed; top: 62px; right: 18px; z-index: 100;

@@ -434,7 +434,7 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-    function renderParameterGroupsInto(containerId, parameters, readOnly, enableBatchFill = false) {
+    function renderParameterGroupsInto(containerId, parameters, readOnly, enableBatchFill = false, includeValue = true) {
         const groups = new Map();
         parameters.forEach(p => { if (!groups.has(p.category)) groups.set(p.category, []); groups.get(p.category).push(p); });
         const categoryOrder = ["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数"];
@@ -443,10 +443,13 @@ let currentPage = "dashboard";
             const rows = groups.get(category).map(p => {
                 const mode = p.tolerance_mode || "percent";
                 const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
+                const valueField = includeValue
+                    ? `<input class="mold-param-value" type="text" placeholder="实际值" value="${p.value!=null?escapeHtml(p.value):""}" ${readOnly?"disabled":""}>`
+                    : "";
                 return `
-                <div class="mold-param-row" data-parameter="${escapeHtml(p.parameter_id)}">
+                <div class="mold-param-row${includeValue?"":" no-value"}" data-parameter="${escapeHtml(p.parameter_id)}">
                     <span class="mold-param-label">${escapeHtml(p.label)}</span>
-                    <input class="mold-param-value" type="text" placeholder="实际值" value="${p.value!=null?escapeHtml(p.value):""}" ${readOnly?"disabled":""}>
+                    ${valueField}
                     <select class="mold-param-tolerance-mode" ${readOnly?"disabled":""}>
                         <option value="percent"${mode==="percent"?" selected":""}>百分比 %</option>
                         <option value="flat"${mode==="flat"?" selected":""}>固定值</option>
@@ -458,8 +461,8 @@ let currentPage = "dashboard";
             }).join("");
 
             const batchFillHtml = (enableBatchFill && !readOnly) ? `
-                <div class="mold-param-batch-fill">
-                    <input class="batch-fill-value" type="text" placeholder="统一设置实际值（留空则不改）">
+                <div class="mold-param-batch-fill${includeValue?"":" no-value"}">
+                    ${includeValue ? `<input class="batch-fill-value" type="text" placeholder="统一设置实际值（留空则不改）">` : ""}
                     <select class="batch-fill-tolerance-mode">
                         <option value="">公差模式不变</option>
                         <option value="percent">百分比 %</option>
@@ -467,6 +470,7 @@ let currentPage = "dashboard";
                     </select>
                     <input class="batch-fill-tolerance" type="number" step="0.1" min="0" placeholder="统一设置公差">
                     <button type="button" class="secondary-button batch-fill-apply">应用到本组</button>
+                    <button type="button" class="secondary-button batch-fill-clear">恢复本组为空</button>
                 </div>` : "";
 
             return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary>${batchFillHtml}<div class="parameter-grid">${rows}</div></details>`;
@@ -483,12 +487,14 @@ let currentPage = "dashboard";
             document.querySelectorAll(`#${containerId} .batch-fill-apply`).forEach(button => {
                 button.addEventListener("click", () => {
                     const details = button.closest(".tech-group");
-                    const value = details.querySelector(".batch-fill-value").value.trim();
+                    const valueInput = details.querySelector(".batch-fill-value");
+                    const value = valueInput ? valueInput.value.trim() : "";
                     const mode = details.querySelector(".batch-fill-tolerance-mode").value;
                     const tolerance = details.querySelector(".batch-fill-tolerance").value.trim();
                     if (!value && !mode && !tolerance) return;
                     details.querySelectorAll(".mold-param-row").forEach(row => {
-                        if (value !== "") row.querySelector(".mold-param-value").value = value;
+                        const rowValueInput = row.querySelector(".mold-param-value");
+                        if (value !== "" && rowValueInput) rowValueInput.value = value;
                         if (mode !== "") {
                             const modeSelect = row.querySelector(".mold-param-tolerance-mode");
                             modeSelect.value = mode;
@@ -498,12 +504,23 @@ let currentPage = "dashboard";
                     });
                 });
             });
+            document.querySelectorAll(`#${containerId} .batch-fill-clear`).forEach(button => {
+                button.addEventListener("click", () => {
+                    const details = button.closest(".tech-group");
+                    details.querySelectorAll(".mold-param-row").forEach(row => {
+                        const rowValueInput = row.querySelector(".mold-param-value");
+                        if (rowValueInput) rowValueInput.value = "";
+                        row.querySelector(".mold-param-tolerance").value = "";
+                    });
+                });
+            });
         }
     }
 
     function collectParameterRows(containerId) {
         return [...document.querySelectorAll(`#${containerId} .mold-param-row`)].map(row => {
-            const value = row.querySelector(".mold-param-value").value.trim();
+            const valueInput = row.querySelector(".mold-param-value");
+            const value = valueInput ? valueInput.value.trim() : "";
             const mode = row.querySelector(".mold-param-tolerance-mode").value;
             const toleranceRaw = row.querySelector(".mold-param-tolerance").value.trim();
             const toleranceNum = toleranceRaw === "" ? null : Number(toleranceRaw);
@@ -546,14 +563,13 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-
     document.getElementById("mold-defaults-button").addEventListener("click", async () => {
         document.getElementById("mold-defaults-dialog").showModal();
         if (moldDefaultsLoaded) return;
         document.getElementById("mold-defaults-summary").textContent = "正在读取……";
         try {
             const result = await requestJson("/api/molds/parameter-defaults");
-            renderParameterGroupsInto("mold-defaults-groups", result.parameters, currentUser.role === "viewer", true);
+            renderParameterGroupsInto("mold-defaults-groups", result.parameters, currentUser.role === "viewer", true, false);
             document.getElementById("mold-defaults-summary").textContent = "";
             moldDefaultsLoaded = true;
         } catch (error) {
