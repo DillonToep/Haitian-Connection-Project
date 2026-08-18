@@ -109,6 +109,20 @@
                             <div class="field full"><label>备注</label><textarea name="remark" maxlength="500"></textarea></div>
 
                             <div class="field full">
+                                <label class="cleaning-checkbox-label" style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text);">
+                                    <input type="checkbox" id="mold-requires-cleaning" style="width:auto;margin:0;"> 该项目生产时需要定期清洗机台
+                                </label>
+                            </div>
+                            <div class="field" id="mold-cleaning-interval-field">
+                                <label>清洗检查间隔（小时）</label>
+                                <input id="mold-cleaning-interval" type="number" min="0" step="0.5" placeholder="例如 8">
+                            </div>
+                            <div class="field" id="mold-cleaning-duration-field">
+                                <label>预计清洗时长（分钟）</label>
+                                <input id="mold-cleaning-duration" type="number" min="0" step="1" placeholder="例如 30">
+                            </div>
+
+                            <div class="field full">
                                 <label>项目图片 (1-4 张，选择一张作为封面)</label>
                                 <input id="mold-images-input" type="file" accept="image/*" multiple>
                                 <div id="mold-image-previews" class="mold-image-previews"></div>
@@ -228,6 +242,20 @@
         <div class="field"><label>模穴数</label><input id="mold-edit-cavities" type="number" min="1" required></div>
         <div class="field"><label>状态</label><select id="edit-mold-active"><option value="1">启用</option><option value="0">停用</option></select></div>
         <div class="field full"><label>备注</label><textarea id="edit-mold-remark" maxlength="500"></textarea></div>
+        
+        <div class="field full">
+            <label class="cleaning-checkbox-label" style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text);">
+                <input type="checkbox" id="mold-edit-requires-cleaning" style="width:auto;margin:0;"> 该项目生产时需要定期清洗机台
+            </label>
+        </div>
+        <div class="field" id="mold-edit-cleaning-interval-field">
+            <label>清洗检查间隔（小时）</label>
+            <input id="mold-edit-cleaning-interval" type="number" min="0" step="0.5" placeholder="例如 8">
+        </div>
+        <div class="field" id="mold-edit-cleaning-duration-field">
+            <label>预计清洗时长（分钟）</label>
+            <input id="mold-edit-cleaning-duration" type="number" min="0" step="1" placeholder="例如 30">
+        </div>
 
         <div class="field full">
             <label>项目图片 (1-4 张，选择一张作为封面)</label>

@@ -64,6 +64,38 @@ def _parse_cavity_values(raw: str | None, expected_labels: list[str]) -> dict[st
     return result
 
 
+def _parse_cleaning_fields(
+    requires_cleaning_raw: str,
+    interval_raw: str | None,
+    duration_raw: str | None,
+) -> tuple[bool, float | None, int | None]:
+    """Interpret the 需要清洗 checkbox + its two follow-up fields from a
+    multipart form submission (all arrive as strings). When the checkbox
+    is off, the interval/duration are discarded (forced to NULL) even if
+    stray values were left in the inputs. When it's on, both values are
+    required and must be positive."""
+    requires_cleaning = requires_cleaning_raw == "1"
+    if not requires_cleaning:
+        return False, None, None
+
+    try:
+        interval = float(interval_raw) if interval_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="清洗检查间隔格式不正确") from None
+
+    try:
+        duration = int(duration_raw) if duration_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="预计清洗时长格式不正确") from None
+
+    if interval is None or interval <= 0:
+        raise HTTPException(status_code=400, detail="请填写有效的清洗检查间隔（小时）")
+    if duration is None or duration <= 0:
+        raise HTTPException(status_code=400, detail="请填写有效的预计清洗时长（分钟）")
+
+    return True, interval, duration
+
+
 def _attach_images_and_temps(cursor, records: list[dict]) -> list[dict]:
     if not records:
         return records
@@ -121,6 +153,7 @@ def get_molds(user: dict = Depends(require_user)):
         SELECT
             m.id, m.mold_code, m.mold_name, m.product_code,
             m.cavities, m.remark, m.is_active,
+            m.requires_cleaning, m.cleaning_interval_hours, m.cleaning_duration_minutes,
             a.device_id AS mounted_device_id, a.mounted_at
         FROM dbo.molds AS m
         LEFT JOIN dbo.device_mold_assignments AS a
@@ -308,6 +341,9 @@ async def create_mold(
     remark: str | None = Form(None, max_length=500),
     cavity_temperatures: str | None = Form(None),
     face_index: int = Form(0),
+    requires_cleaning: str = Form("0"),
+    cleaning_interval_hours: str | None = Form(None),
+    cleaning_duration_minutes: str | None = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
     require_editor(user)
@@ -324,12 +360,16 @@ async def create_mold(
 
     expected_labels = _cavity_rows_for(cavities)
     temps = _parse_cavity_values(cavity_temperatures, expected_labels)
+    cleaning_flag, cleaning_interval, cleaning_duration = _parse_cleaning_fields(
+        requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes
+    )
 
     sql_insert_mold = """
         INSERT INTO dbo.molds
-            (mold_code, mold_name, cavities, remark, created_by)
+            (mold_code, mold_name, cavities, remark, created_by,
+             requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     try:
@@ -342,6 +382,9 @@ async def create_mold(
                 cavities,
                 remark.strip() if remark else None,
                 user["id"],
+                cleaning_flag,
+                cleaning_interval,
+                cleaning_duration,
             ).fetchone()[0]
 
             for sort_order, label in enumerate(expected_labels):
@@ -420,6 +463,9 @@ async def update_mold(
     remark: str | None = Form(None, max_length=500),
     is_active: str = Form("1"),
     cavity_temperatures: str | None = Form(None),
+    requires_cleaning: str = Form("0"),
+    cleaning_interval_hours: str | None = Form(None),
+    cleaning_duration_minutes: str | None = Form(None),
     keep_image_ids: str | None = Form(None),   # JSON array of existing image ids to keep
     face_image_id: int | None = Form(None),    # id of a kept existing image to use as cover
     face_new_index: int | None = Form(None),   # index within the new `images` list to use as cover
@@ -430,6 +476,10 @@ async def update_mold(
     for image in images:
         if image.content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(status_code=400, detail=f"不支持的图片类型：{image.content_type}")
+
+    cleaning_flag, cleaning_interval, cleaning_duration = _parse_cleaning_fields(
+        requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes
+    )
 
     try:
         with closing(get_connection()) as connection:
@@ -473,7 +523,8 @@ async def update_mold(
                 """
                 UPDATE dbo.molds
                 SET mold_code = ?, mold_name = ?, cavities = ?, remark = ?,
-                    is_active = ?, updated_at = SYSDATETIME()
+                    is_active = ?, requires_cleaning = ?, cleaning_interval_hours = ?,
+                    cleaning_duration_minutes = ?, updated_at = SYSDATETIME()
                 WHERE id = ?
                 """,
                 mold_code.strip(),
@@ -481,6 +532,9 @@ async def update_mold(
                 cavities,
                 remark.strip() if remark else None,
                 1 if is_active == "1" else 0,
+                cleaning_flag,
+                cleaning_interval,
+                cleaning_duration,
                 mold_id,
             )
 
@@ -577,7 +631,8 @@ def get_current_mold(device_id: str, user: dict = Depends(require_user)):
         SELECT TOP 1
             a.id AS assignment_id, a.mounted_at, a.remark,
             m.id AS mold_id, m.mold_code, m.mold_name,
-            m.product_code, m.cavities
+            m.product_code, m.cavities,
+            m.requires_cleaning, m.cleaning_interval_hours, m.cleaning_duration_minutes
         FROM dbo.device_mold_assignments AS a
         INNER JOIN dbo.molds AS m ON m.id = a.mold_id
         WHERE a.device_id = ? AND a.unmounted_at IS NULL

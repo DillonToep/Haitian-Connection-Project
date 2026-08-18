@@ -108,6 +108,20 @@ let currentPage = "dashboard";
             </tr>`).join("");
     }
 
+    function updateCleaningFieldsVisibility(checkboxId, intervalFieldId, durationFieldId) {
+        const checked = document.getElementById(checkboxId).checked;
+        document.getElementById(intervalFieldId).classList.toggle("hidden", !checked);
+        document.getElementById(durationFieldId).classList.toggle("hidden", !checked);
+    }
+    document.getElementById("mold-requires-cleaning").addEventListener("change", () =>
+        updateCleaningFieldsVisibility("mold-requires-cleaning", "mold-cleaning-interval-field", "mold-cleaning-duration-field")
+    );
+    updateCleaningFieldsVisibility("mold-requires-cleaning", "mold-cleaning-interval-field", "mold-cleaning-duration-field");
+
+    document.getElementById("mold-edit-requires-cleaning").addEventListener("change", () =>
+        updateCleaningFieldsVisibility("mold-edit-requires-cleaning", "mold-edit-cleaning-interval-field", "mold-edit-cleaning-duration-field")
+    );
+
     document.getElementById("mold-cavities").addEventListener("input", () => rebuildCavityTable());
     rebuildCavityTable();
     document.getElementById("mold-edit-cavities").addEventListener("input", () => rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table"));
@@ -242,6 +256,10 @@ let currentPage = "dashboard";
         document.getElementById("mold-edit-cavities").value = m.cavities;
         document.getElementById("edit-mold-remark").value = m.remark || "";
         document.getElementById("edit-mold-active").value = m.is_active ? "1" : "0";
+        document.getElementById("mold-edit-requires-cleaning").checked = !!m.requires_cleaning;
+        document.getElementById("mold-edit-cleaning-interval").value = m.cleaning_interval_hours ?? "";
+        document.getElementById("mold-edit-cleaning-duration").value = m.cleaning_duration_minutes ?? "";
+        updateCleaningFieldsVisibility("mold-edit-requires-cleaning", "mold-edit-cleaning-interval-field", "mold-edit-cleaning-duration-field");
         document.getElementById("mold-edit-current-device").textContent = m.mounted_device_id ? `当前装机设备：${m.mounted_device_id}` : "当前未装机";
 
         editImageItems = (m.images || []).map(img => ({ type: "existing", id: img.id, url: img.url, is_face: img.is_face }));
@@ -323,6 +341,9 @@ let currentPage = "dashboard";
             const newOnly = editImageItems.filter(i => i.type === "new");
             body.set("face_new_index", String(newOnly.indexOf(faceItem)));
         }
+        body.set("requires_cleaning", document.getElementById("mold-edit-requires-cleaning").checked ? "1" : "0");
+        body.set("cleaning_interval_hours", document.getElementById("mold-edit-cleaning-interval").value || "");
+        body.set("cleaning_duration_minutes", document.getElementById("mold-edit-cleaning-duration").value || "");
         editImageItems.filter(i => i.type === "new").forEach(i => body.append("images", i.file));
 
         try {
@@ -357,7 +378,7 @@ let currentPage = "dashboard";
                 ${deviceBadge}
                 <div class="mold-card-overlay">
                     <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
-                    <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}</div>
+                    <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　🧼 每 ${showValue(m.cleaning_interval_hours)}h` : ""}</div>
                 </div>
             </div>`;
         }).join("") : '<div class="empty">尚未建立模具档案</div>';
@@ -387,7 +408,8 @@ let currentPage = "dashboard";
                     <div class="mold-code">${escapeHtml(current.mold_code)}</div>
                     <div>${escapeHtml(current.mold_name)}</div>
                     <div class="muted">产品：${showValue(current.product_code)}　模穴：${showValue(current.cavities)}</div>
-                    <div class="muted">装机时间：${formatTime(current.mounted_at)}</div>
+                    <div class="muted">装机时间：${formatTime(current.mounted_at)}</div>${current.requires_cleaning ? `<div class="muted">清洗周期：每 ${showValue(current.cleaning_interval_hours)} 小时 · 约 ${showValue(current.cleaning_duration_minutes)} 分钟</div>` : ""}
+                    
                 </div>`;
             unmountButton.classList.remove("hidden");
         } else {
@@ -421,10 +443,17 @@ let currentPage = "dashboard";
         body.set("remark", f.get("remark") || "");
         body.set("cavity_temperatures", JSON.stringify(collectCavityTemperatures()));
         body.set("face_index", String(moldFaceIndex));
+        body.set("requires_cleaning", document.getElementById("mold-requires-cleaning").checked ? "1" : "0");
+        body.set("cleaning_interval_hours", document.getElementById("mold-cleaning-interval").value || "");
+        body.set("cleaning_duration_minutes", document.getElementById("mold-cleaning-duration").value || "");
         moldImageFiles.forEach(file => body.append("images", file));
         try {
             await requestJson("/api/molds", { method: "POST", body });
             event.target.reset();
+            document.getElementById("mold-requires-cleaning").checked = false;
+            document.getElementById("mold-cleaning-interval").value = "";
+            document.getElementById("mold-cleaning-duration").value = "";
+            updateCleaningFieldsVisibility("mold-requires-cleaning", "mold-cleaning-interval-field", "mold-cleaning-duration-field");
             moldImageFiles = [];
             moldFaceIndex = 0;
             renderMoldImagePreviews();
