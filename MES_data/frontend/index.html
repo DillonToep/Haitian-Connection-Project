@@ -120,7 +120,10 @@
                                     <thead><tr><th>模穴数 #</th><th>模穴温度 (C°)</th></tr></thead>
                                     <tbody></tbody>
                                 </table>
-                                <button type="button" id="mold-cavity-add-row" class="secondary-button" style="margin-top:8px;">+ 添加一行</button>
+                                <div style="display:flex; gap:8px; margin-top:8px;">
+                                    <button type="button" id="mold-cavity-add-row" class="primary-button">+ 添加一行</button>
+                                    <button type="button" id="mold-cavity-remove-row" class="danger-button">− 删除一行</button>
+                                </div>
                             </div>
 
                             <div class="field full"><button class="primary-button" type="submit">保存模具档案</button></div>
@@ -233,7 +236,10 @@
                 <thead><tr><th>编号</th><th>温度 (C°)</th></tr></thead>
                 <tbody></tbody>
             </table>
-            <button type="button" id="mold-edit-cavity-add-row" class="secondary-button" style="margin-top:8px;">+ 添加一行</button>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button type="button" id="mold-edit-cavity-add-row" class="primary-button">+ 添加一行</button>
+                <button type="button" id="mold-edit-cavity-remove-row" class="danger-button">− 删除一行</button>
+            </div>
         </div>
 
         <div class="field full actions">

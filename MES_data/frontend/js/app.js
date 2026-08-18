@@ -117,9 +117,19 @@ let currentPage = "dashboard";
         input.value = Math.max(1, Number(input.value) || 0) + 1;
         rebuildCavityTable();
     });
+    document.getElementById("mold-cavity-remove-row").addEventListener("click", () => {
+        const input = document.getElementById("mold-cavities");
+        input.value = Math.max(1, (Number(input.value) || 1) - 1);
+        rebuildCavityTable();
+    });
     document.getElementById("mold-edit-cavity-add-row").addEventListener("click", () => {
         const input = document.getElementById("mold-edit-cavities");
         input.value = Math.max(1, Number(input.value) || 0) + 1;
+        rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table");
+    });
+    document.getElementById("mold-edit-cavity-remove-row").addEventListener("click", () => {
+        const input = document.getElementById("mold-edit-cavities");
+        input.value = Math.max(1, (Number(input.value) || 1) - 1);
         rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table");
     });
 
