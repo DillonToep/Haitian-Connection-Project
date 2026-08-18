@@ -239,9 +239,10 @@ let currentPage = "dashboard";
         img.style.cssText = "width:100%;height:100%;object-fit:contain;";
         doc.body.appendChild(img);
     }
+    
     document.getElementById("mold-edit-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []).map(file => ({ type: "new", file }));
-        editImageItems = [...editImageItems, ...incoming].slice(0, 4);
+        editImageItems = [...editImageItems, ...incoming];
         if (editFaceIndex >= editImageItems.length) editFaceIndex = 0;
         renderEditImagePreviews();
         e.target.value = "";
@@ -358,7 +359,7 @@ let currentPage = "dashboard";
 
     document.getElementById("mold-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []);
-        moldImageFiles = [...moldImageFiles, ...incoming].slice(0, 4);
+        moldImageFiles = [...moldImageFiles, ...incoming];
         if (moldFaceIndex >= moldImageFiles.length) moldFaceIndex = 0;
         renderMoldImagePreviews();
         e.target.value = "";
@@ -378,7 +379,7 @@ let currentPage = "dashboard";
                 ${deviceBadge}
                 <div class="mold-card-overlay">
                     <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
-                    <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}${m.requires_cleaning ? `清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}</div>
+                    <div class="mold-card-meta">模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}</div>
                 </div>
             </div>`;
         }).join("") : '<div class="empty">尚未建立模具档案</div>';
@@ -404,12 +405,10 @@ let currentPage = "dashboard";
         if (current) {
             container.innerHTML = `
                 <div class="mold-current">
-                    <div class="muted">模具编号</div>
+                    <div class="muted">产品编号</div>
                     <div class="mold-code">${escapeHtml(current.mold_code)}</div>
                     <div>${escapeHtml(current.mold_name)}</div>
-                    <div class="muted">产品：${showValue(current.product_code)}　模穴：${showValue(current.cavities)}</div>
-                    <div class="muted">装机时间：${formatTime(current.mounted_at)}</div>${current.requires_cleaning ? `<div class="muted">清洗周期：每 ${showValue(current.cleaning_interval_hours)} 小时 · 约 ${showValue(current.cleaning_duration_minutes)} 分钟</div>` : ""}
-                    
+                    <div class="muted">模穴：${showValue(current.cavities)}</div>${current.requires_cleaning ? `<div class="muted">清洗周期：每 ${showValue(current.cleaning_interval_hours)} 小时 · 约 ${showValue(current.cleaning_duration_minutes)} 分钟</div>` : ""}
                 </div>`;
             unmountButton.classList.remove("hidden");
         } else {
@@ -700,16 +699,14 @@ let currentPage = "dashboard";
     async function loadDashboard() {
         dashboardMachines=await requestJson("/api/dashboard");
         updateFilterSelect("filter-device",dashboardMachines.map(m=>m.device_id),"全部设备编号");
-        updateFilterSelect("filter-mold",dashboardMachines.map(m=>m.mold_code),"全部模具编号");
-        updateFilterSelect("filter-product",dashboardMachines.map(m=>m.product_code),"全部产品编号");
+        updateFilterSelect("filter-product",dashboardMachines.map(m=>m.mold_code),"全部产品编号");
         renderDashboard();
     }
     function filteredMachines() {
         const device=document.getElementById("filter-device").value;
-        const mold=document.getElementById("filter-mold").value;
         const product=document.getElementById("filter-product").value;
         const statuses=new Set([...document.querySelectorAll(".status-filter:checked")].map(input=>input.value));
-        return dashboardMachines.filter(m=>(!device||m.device_id===device)&&(!mold||m.mold_code===mold)&&(!product||m.product_code===product)&&statuses.has(statusOf(m)));
+        return dashboardMachines.filter(m=>(!device||m.device_id===device)&&(!product||m.mold_code===product)&&statuses.has(statusOf(m)));
     }
     function renderDashboard() {
         const totals={production:0,waiting:0,offline:0};
@@ -725,8 +722,7 @@ let currentPage = "dashboard";
             const status=statusOf(machine),meta=statusMeta(status);
             return `<article class="device-card" data-device="${escapeHtml(machine.device_id)}"><div class="machine-visual"><div class="device-name">${escapeHtml(machine.device_id)}</div>${machineVisual(machine.device_id)}</div><div class="device-info">
                 <div class="info-row"><span class="info-label">设备编号</span><span>${showValue(machine.device_id)}</span></div>
-                <div class="info-row"><span class="info-label">产品编号</span><span>${showValue(machine.product_code)}</span></div>
-                <div class="info-row"><span class="info-label">模具编号</span><strong>${showValue(machine.mold_code)}</strong></div>
+                <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
                 <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.received_at)}</span></span></div>
                 <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>

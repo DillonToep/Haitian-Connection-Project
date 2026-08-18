@@ -20,7 +20,6 @@ from ..schemas import (
 router = APIRouter(prefix="/api", tags=["molds"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-MAX_IMAGES = 4
 
 
 def _cavity_rows_for(cavities: int) -> list[str]:
@@ -350,8 +349,6 @@ async def create_mold(
 
     if len(images) < 1:
         raise HTTPException(status_code=400, detail="至少需要上传一张项目图片")
-    if len(images) > MAX_IMAGES:
-        raise HTTPException(status_code=400, detail=f"最多上传 {MAX_IMAGES} 张图片")
     for image in images:
         if image.content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(status_code=400, detail=f"不支持的图片类型：{image.content_type}")
@@ -508,12 +505,10 @@ async def update_mold(
 
             kept_images = [img for img in existing_images if img["id"] in keep_ids]
             removed_images = [img for img in existing_images if img["id"] not in keep_ids]
-
+            
             total_images = len(kept_images) + len(images)
             if total_images < 1:
                 raise HTTPException(status_code=400, detail="至少需要保留一张项目图片")
-            if total_images > MAX_IMAGES:
-                raise HTTPException(status_code=400, detail=f"最多上传 {MAX_IMAGES} 张图片")
 
             expected_labels = _cavity_rows_for(cavities)
             temps = _parse_cavity_values(cavity_temperatures, expected_labels)

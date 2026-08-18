@@ -52,7 +52,7 @@
 
             <div class="panel filter-panel">
                 <div class="panel-title">筛选</div>
-                <div class="filter-body"><select id="filter-device"><option value="">全部设备编号</option></select><select id="filter-mold"><option value="">全部模具编号</option></select><select id="filter-product"><option value="">全部产品编号</option></select></div>
+                <div class="filter-body"><select id="filter-device"><option value="">全部设备编号</option></select><select id="filter-product"><option value="">全部产品编号</option></select></div>
                 <div class="filter-footer"><button id="search-button" class="primary-button">搜索</button></div>
             </div>
 
@@ -115,15 +115,15 @@
                             </div>
                             <div class="field" id="mold-cleaning-interval-field">
                                 <label>清洗检查间隔（小时）</label>
-                                <input id="mold-cleaning-interval" type="number" min="0" step="0.5" placeholder="例如 8">
+                                <input id="mold-cleaning-interval" type="number" min="0" step="0.5">
                             </div>
                             <div class="field" id="mold-cleaning-duration-field">
                                 <label>预计清洗时长（分钟）</label>
-                                <input id="mold-cleaning-duration" type="number" min="0" step="1" placeholder="例如 30">
+                                <input id="mold-cleaning-duration" type="number" min="0" step="1">
                             </div>
 
                             <div class="field full">
-                                <label>项目图片 (1-4 张，选择一张作为封面)</label>
+                                <label>项目图片（至少 1 张，选择一张作为封面）</label>
                                 <input id="mold-images-input" type="file" accept="image/*" multiple>
                                 <div id="mold-image-previews" class="mold-image-previews"></div>
                             </div>
@@ -250,15 +250,15 @@
         </div>
         <div class="field" id="mold-edit-cleaning-interval-field">
             <label>清洗检查间隔（小时）</label>
-            <input id="mold-edit-cleaning-interval" type="number" min="0" step="0.5" placeholder="例如 8">
+            <input id="mold-edit-cleaning-interval" type="number" min="0" step="0.5">
         </div>
         <div class="field" id="mold-edit-cleaning-duration-field">
             <label>预计清洗时长（分钟）</label>
-            <input id="mold-edit-cleaning-duration" type="number" min="0" step="1" placeholder="例如 30">
+            <input id="mold-edit-cleaning-duration" type="number" min="0" step="1">
         </div>
 
         <div class="field full">
-            <label>项目图片 (1-4 张，选择一张作为封面)</label>
+            <label>项目图片（至少 1 张，选择一张作为封面）</label>
             <input id="mold-edit-images-input" type="file" accept="image/*" multiple>
             <div id="mold-edit-image-previews" class="mold-image-previews"></div>
         </div>
