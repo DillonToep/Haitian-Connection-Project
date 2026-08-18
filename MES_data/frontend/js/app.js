@@ -656,6 +656,7 @@ let currentPage = "dashboard";
         if(!Number.isFinite(age)||age>120000) return "offline";
         return Number(machine.machine_status)===2 ? "production" : "waiting";
     }
+    
     function statusMeta(status) { return status==="production"?["生产","production"]:status==="waiting"?["待机","waiting"]:["离线","offline"]; }
 
     function daySegmentMeta(status) {
