@@ -35,6 +35,7 @@ let currentPage = "dashboard";
         "时间参数": " s"
     };
     let moldAdvancedLoaded = false;
+    let moldDefaultsLoaded = false; 
 
     const spcFields = {
         cycle_number:["模数",""],
