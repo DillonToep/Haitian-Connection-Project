@@ -378,7 +378,7 @@ let currentPage = "dashboard";
                 ${deviceBadge}
                 <div class="mold-card-overlay">
                     <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
-                    <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　🧼 每 ${showValue(m.cleaning_interval_hours)}h` : ""}</div>
+                    <div class="mold-card-meta">产品：${showValue(m.product_code)}　模穴：${showValue(m.cavities)}${m.requires_cleaning ? `清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}</div>
                 </div>
             </div>`;
         }).join("") : '<div class="empty">尚未建立模具档案</div>';
@@ -1293,21 +1293,40 @@ let currentPage = "dashboard";
     // changelog rows already behave -- warnings are just "changelog entries
     // you haven't dismissed yet", not a separate record type.
 
+    // A "parameter" warning is an unacknowledged dbo.tech_parameter_changelog
+    // row; a "cleaning" warning is an unacknowledged dbo.cleaning_alerts row
+    // (a device that's run continuously past its mold's cleaning threshold
+    // -- see _raise_cleaning_alert_if_needed in mqtt_monitor.py). GET
+    // /api/warnings merges both into one list tagged with `warning_type`,
+    // sorted newest-first, so they share this one badge/toast/table.
+    function warningKey(w) { return `${w.warning_type}-${w.id}`; }
+
     function showToast(warning) {
         const container=document.getElementById("toast-container");
         if(!container) return;
         const toast=document.createElement("div");
         toast.className="toast";
-        toast.innerHTML=`
-            <div class="toast-icon">⚠</div>
-            <div class="toast-body">
-                <div class="toast-title">参数变更：设备 ${escapeHtml(warning.device_id)}</div>
-                <div class="toast-detail">${escapeHtml(warning.label)}　${showValue(warning.previous_value)} → ${showValue(warning.new_value)}</div>
-            </div>
-            <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        if(warning.warning_type==="cleaning"){
+            const hours=(warning.threshold_minutes/60).toFixed(1);
+            toast.innerHTML=`
+                <div class="toast-icon">🧼</div>
+                <div class="toast-body">
+                    <div class="toast-title">清洗提醒：设备 ${escapeHtml(warning.device_id)}</div>
+                    <div class="toast-detail">${escapeHtml(warning.mold_code||"")} 已连续生产约 ${formatDurationMinutes(warning.elapsed_minutes)}，超过清洗周期（${hours} 小时）</div>
+                </div>
+                <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        } else {
+            toast.innerHTML=`
+                <div class="toast-icon">⚠</div>
+                <div class="toast-body">
+                    <div class="toast-title">参数变更：设备 ${escapeHtml(warning.device_id)}</div>
+                    <div class="toast-detail">${escapeHtml(warning.label)}　${showValue(warning.previous_value)} → ${showValue(warning.new_value)}</div>
+                </div>
+                <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        }
         toast.addEventListener("click",event=>{
             if(event.target.closest(".toast-close")) return;
-            switchPage("changelog");
+            switchPage("warnings");
             toast.remove();
         });
         toast.querySelector(".toast-close").addEventListener("click",event=>{
@@ -1330,20 +1349,35 @@ let currentPage = "dashboard";
                 else badge.classList.add("hidden");
             }
             if(!warningsInitialized){
-                rows.forEach(r=>seenWarningIds.add(r.id));
+                rows.forEach(r=>seenWarningIds.add(warningKey(r)));
                 warningsInitialized=true;
                 if(currentPage==="warnings") await loadWarnings();
                 return;
             }
-            const currentIds = new Set(rows.map(r=>r.id));
-            const newOnes = rows.filter(r=>!seenWarningIds.has(r.id)).sort((a,b)=>a.id-b.id);
-            const removedIds = [...seenWarningIds].filter(id=>!currentIds.has(id));
+            const currentKeys = new Set(rows.map(warningKey));
+            const newOnes = rows.filter(r=>!seenWarningIds.has(warningKey(r)));
+            const removedKeys = [...seenWarningIds].filter(key=>!currentKeys.has(key));
 
-            newOnes.forEach(r=>{ seenWarningIds.add(r.id); showToast(r); });
-            removedIds.forEach(id=>seenWarningIds.delete(id));
+            newOnes.forEach(r=>{ seenWarningIds.add(warningKey(r)); showToast(r); });
+            removedKeys.forEach(key=>seenWarningIds.delete(key));
 
-            if(currentPage==="warnings" && (newOnes.length || removedIds.length)) await loadWarnings();
+            if(currentPage==="warnings" && (newOnes.length || removedKeys.length)) await loadWarnings();
         } catch(error) { /* transient network errors shouldn't spam toasts */ }
+    }
+
+    function renderWarningRow(r, readOnly) {
+        if(r.warning_type==="cleaning"){
+            const hours=(r.threshold_minutes/60).toFixed(1);
+            return `<tr class="warning-row" data-id="${r.id}" data-warning-type="cleaning" data-device="${escapeHtml(r.device_id)}">
+                <td>${formatTime(r.detected_at)}</td>
+                <td>${escapeHtml(r.device_id)}</td>
+                <td>🧼 ${escapeHtml(r.mold_code||"")} 超过清洗周期</td>
+                <td>已运行 ${formatDurationMinutes(r.elapsed_minutes)}</td>
+                <td class="changelog-new-value">周期 ${hours} 小时</td>
+                <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="cleaning" type="button">清除</button>`}</td>
+            </tr>`;
+        }
+        return `<tr class="warning-row" data-id="${r.id}" data-warning-type="parameter"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="parameter" type="button">清除</button>`}</td></tr>`;
     }
 
     async function loadWarnings() {
@@ -1351,19 +1385,23 @@ let currentPage = "dashboard";
         document.getElementById("warnings-summary").textContent=`共 ${rows.length} 条待处理`;
         const readOnly=currentUser.role==="viewer";
         const table=document.getElementById("warnings-table");
-        table.innerHTML=rows.length?`<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr class="warning-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" type="button">清除</button>`}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">暂无预警</div>';
+        table.innerHTML=rows.length?`<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th></th></tr></thead><tbody>${rows.map(r=>renderWarningRow(r,readOnly)).join("")}</tbody></table>`:'<div class="empty">暂无预警</div>';
         table.querySelectorAll(".warning-row").forEach(row=>{
             row.addEventListener("click",event=>{
                 if(event.target.closest(".warning-clear-button")) return;
-                openChangelogDetail(row.dataset.id);
+                if(row.dataset.warningType==="cleaning") openDeviceDetail(row.dataset.device,{tab:"uptime"});
+                else openChangelogDetail(row.dataset.id);
             });
         });
         table.querySelectorAll(".warning-clear-button").forEach(button=>{
             button.addEventListener("click",async event=>{
                 event.stopPropagation();
                 try {
-                    await requestJson(`/api/warnings/${encodeURIComponent(button.dataset.id)}/clear`,{method:"POST"});
-                    seenWarningIds.delete(Number(button.dataset.id));
+                    const endpoint = button.dataset.warningType==="cleaning"
+                        ? `/api/warnings/cleaning/${encodeURIComponent(button.dataset.id)}/clear`
+                        : `/api/warnings/${encodeURIComponent(button.dataset.id)}/clear`;
+                    await requestJson(endpoint,{method:"POST"});
+                    seenWarningIds.delete(`${button.dataset.warningType}-${button.dataset.id}`);
                     await loadWarnings();
                     await pollWarnings();
                 } catch(error){ alert(error.message); }
