@@ -651,8 +651,8 @@ let currentPage = "dashboard";
     }
 
     function statusOf(machine) {
-        if(!machine.received_at) return "offline";
-        const age=Date.now()-new Date(machine.received_at).getTime();
+        if(!machine.data_time) return "offline";
+        const age=Date.now()-new Date(machine.data_time).getTime();
         if(!Number.isFinite(age)||age>120000) return "offline";
         return Number(machine.machine_status)===2 ? "production" : "waiting";
     }
@@ -733,7 +733,7 @@ let currentPage = "dashboard";
                 <div class="info-row"><span class="info-label">设备编号</span><span>${showValue(machine.device_id)}</span></div>
                 <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
-                <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.received_at)}</span></span></div>
+                <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}<span class="age">${ageText(machine.data_time)}</span></span></div>
                 <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
             </div></article>`;
         }).join(""):'<div class="empty panel">没有符合条件的设备</div>';
