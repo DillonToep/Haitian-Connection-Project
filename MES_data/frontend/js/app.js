@@ -239,7 +239,7 @@ let currentPage = "dashboard";
         img.style.cssText = "width:100%;height:100%;object-fit:contain;";
         doc.body.appendChild(img);
     }
-    
+
     document.getElementById("mold-edit-images-input").addEventListener("change", e => {
         const incoming = Array.from(e.target.files || []).map(file => ({ type: "new", file }));
         editImageItems = [...editImageItems, ...incoming];
@@ -284,6 +284,15 @@ let currentPage = "dashboard";
     document.getElementById("mold-edit-cancel").addEventListener("click", () => {
         document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-edit-dialog").close();
+    });
+    document.getElementById("mold-edit-delete-button").addEventListener("click", async () => {
+        if (!confirm("确认永久删除该模具？该模具的装卸记录和高级参数也会一并删除，此操作不可恢复。")) return;
+        try {
+            await requestJson(`/api/molds/${editMoldId}`, { method: "DELETE" });
+            document.getElementById("mold-advanced-dialog").close();
+            document.getElementById("mold-edit-dialog").close();
+            await loadMolds();
+        } catch (error) { alert(error.message); }
     });
     document.getElementById("device-mold-change-button").addEventListener("click", async () => {
         try { await openMoldAssignDialog(); } catch (error) { alert(error.message); }

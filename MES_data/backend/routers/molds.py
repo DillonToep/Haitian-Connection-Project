@@ -1,5 +1,6 @@
 from contextlib import closing
 import json
+import shutil
 import uuid
 
 import pyodbc
@@ -505,7 +506,7 @@ async def update_mold(
 
             kept_images = [img for img in existing_images if img["id"] in keep_ids]
             removed_images = [img for img in existing_images if img["id"] not in keep_ids]
-            
+
             total_images = len(kept_images) + len(images)
             if total_images < 1:
                 raise HTTPException(status_code=400, detail="至少需要保留一张项目图片")
@@ -617,6 +618,42 @@ async def update_mold(
         raise HTTPException(status_code=409, detail="项目编号已经存在") from error
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+
+@router.delete("/molds/{mold_id}")
+def delete_mold(mold_id: int, user: dict = Depends(require_user)):
+    """Permanently remove a mold record -- including its mount history,
+    saved 高级工艺参数 targets, and image files on disk. Blocked while the
+    mold is currently mounted on a device; unmount it first (DELETE
+    /api/devices/{device_id}/mold) so an active assignment is never
+    silently deleted out from under a running device."""
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            row = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+
+            mounted = cursor.execute(
+                "SELECT 1 FROM dbo.device_mold_assignments WHERE mold_id = ? AND unmounted_at IS NULL",
+                mold_id,
+            ).fetchone()
+            if mounted:
+                raise HTTPException(status_code=400, detail="该模具当前已装机，请先卸载后再删除")
+            cursor.execute("DELETE FROM dbo.device_mold_assignments WHERE mold_id = ?", mold_id)
+            cursor.execute("DELETE FROM dbo.mold_parameter_targets WHERE mold_id = ?", mold_id)
+            cursor.execute("DELETE FROM dbo.molds WHERE id = ?", mold_id)
+            connection.commit()
+
+            shutil.rmtree(MOLD_UPLOAD_DIR / str(mold_id), ignore_errors=True)
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+
 
 @router.get("/devices/{device_id}/mold")
 def get_current_mold(device_id: str, user: dict = Depends(require_user)):
