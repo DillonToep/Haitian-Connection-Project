@@ -74,11 +74,10 @@
         .summary-dot { width: 8px; height: 8px; border-radius: 50%; }
         .summary-card strong { margin-left: 3px; font-size: 17px; }
         .summary-card input { width: 15px; height: 15px; margin-left: auto; accent-color: var(--blue); }
-        .filter-panel { margin-bottom: 12px; }
-        .panel-title { padding: 10px 15px; border-bottom: 1px solid var(--line); font-weight: 650; }
+        .dashboard-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+        .dashboard-filters select { width: 200px; }
         .filter-body { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 15px 36px; }
         .filter-body select { width: 240px; }
-        .filter-footer { display: flex; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid #eef1f4; }
         .primary-button, .secondary-button, .danger-button {
             min-height: 34px; padding: 7px 15px; border-radius: 3px;
         }
@@ -247,6 +246,13 @@
         .dialog-close-x:hover { border-color: var(--blue); color: var(--blue); }
         html[data-theme="dark"] .dialog-close-x { border-color: #313a46; color: #d3d8de; background: #1a1f27; }
         html[data-theme="dark"] .dialog-close-x:hover { border-color: #57caa0; color: #57caa0; }
+        .trend-tooltip {
+            position: fixed; z-index: 200; pointer-events: none;
+            padding: 6px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 650;
+            background: #202631; color: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.25);
+            white-space: nowrap;
+        }
+        html[data-theme="dark"] .trend-tooltip { background: #eef1f4; color: #11151b; }
 
         dialog[open] {
             animation: dialog-pop-in .18s ease;

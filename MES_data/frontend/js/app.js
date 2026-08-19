@@ -651,6 +651,36 @@ let currentPage = "dashboard";
     let utilizationFleetBuckets = [];
     let renderedTrendSeriesKeys = new Set();
 
+    // ---- Shared hover tooltip for every uptime/utilization trend chart ----
+    let trendTooltipEl = null;
+    function ensureTrendTooltip() {
+        if (trendTooltipEl) return trendTooltipEl;
+        trendTooltipEl = document.createElement("div");
+        trendTooltipEl.className = "trend-tooltip hidden";
+        document.body.appendChild(trendTooltipEl);
+        return trendTooltipEl;
+    }
+    function showTrendTooltip(dot, clientX, clientY) {
+        const tooltip = ensureTrendTooltip();
+        tooltip.textContent = dot.dataset.tooltip || "";
+        tooltip.classList.remove("hidden");
+        const offset = 14;
+        let left = clientX + offset;
+        if (left > window.innerWidth - 180) left = clientX - offset - 160;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${clientY - 10}px`;
+    }
+    function hideTrendTooltip() {
+        if (trendTooltipEl) trendTooltipEl.classList.add("hidden");
+    }
+    document.addEventListener("mousemove", event => {
+        const dot = event.target.closest(".trend-dot-hit");
+        if (dot) showTrendTooltip(dot, event.clientX, event.clientY);
+        else hideTrendTooltip();
+    });
+    document.addEventListener("mouseout", event => { if (!event.relatedTarget) hideTrendTooltip(); });
+
+
     function renderTrendGrid(buckets) {
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
@@ -685,7 +715,10 @@ let currentPage = "dashboard";
             return {x,y,b};
         });
         const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-        const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+        const dots = points.map((p)=>
+            `<circle class="trend-dot-hit" data-tooltip="${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%" cx="${p.x}" cy="${p.y}" r="9" fill="transparent"/>` +
+            `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a" style="pointer-events:none"/>`
+        ).join("");
         return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
     }
 
@@ -787,6 +820,9 @@ let currentPage = "dashboard";
         const container = document.getElementById("uptime-compare-devices");
         if (!container) return;
         const overviewChecked = utilizationChartMode === "all";
+        const allDevicesChecked = utilizationChartMode === "devices"
+            && devices.length > 0
+            && devices.every(d => compareSelectedDevices.has(d.device_id));
         const deviceCheckboxes = devices.map(d => `
             <label class="uptime-compare-device-label">
                 <input type="checkbox" class="compare-device-checkbox" value="${escapeHtml(d.device_id)}" ${(!overviewChecked && compareSelectedDevices.has(d.device_id))?"checked":""}>
@@ -797,6 +833,10 @@ let currentPage = "dashboard";
                 <input type="checkbox" id="compare-overview-checkbox" ${overviewChecked?"checked":""}>
                 总览（全部设备）
             </label>
+            <label class="uptime-compare-device-label uptime-compare-overview-label">
+                <input type="checkbox" id="compare-all-devices-checkbox" ${allDevicesChecked?"checked":""}>
+                全部设备（分设备显示）
+            </label>
             ${deviceCheckboxes || '<div class="muted">暂无设备</div>'}`;
 
         document.getElementById("compare-overview-checkbox").addEventListener("change", async e => {
@@ -806,9 +846,20 @@ let currentPage = "dashboard";
                 renderCompareDeviceCheckboxes();
                 await refreshUtilizationChart(true);
             } else if (compareSelectedDevices.size === 0) {
-                // Nothing else selected -- keep at least one mode active.
                 e.target.checked = true;
             }
+        });
+
+        document.getElementById("compare-all-devices-checkbox").addEventListener("change", async e => {
+            if (e.target.checked) {
+                utilizationChartMode = "devices";
+                compareSelectedDevices = new Set(devices.map(d => d.device_id));
+            } else {
+                compareSelectedDevices.clear();
+                utilizationChartMode = "all";
+            }
+            renderCompareDeviceCheckboxes();
+            await refreshUtilizationChart(true);
         });
 
         container.querySelectorAll(".compare-device-checkbox").forEach(cb => {
@@ -853,7 +904,7 @@ let currentPage = "dashboard";
         if (freshEntry) {
             renderedTrendSeriesKeys.clear();
             container.innerHTML = `
-                ${summaryHtml}(
+                ${summaryHtml}
                 <article class="detail-card">
                     <div class="detail-header"><div class="detail-title">稼动率趋势（近30日）</div></div>
                     <div class="muted" style="margin-bottom:10px;">默认展示全部设备的综合稼动率；勾选下方设备可切换为单台或多台设备的趋势对比</div>
@@ -1794,8 +1845,9 @@ let currentPage = "dashboard";
     // switchDetailUtilTab, not this top-level switchDetailTab.
     document.querySelectorAll("#device-detail-page > .detail-tabs > .tab-button").forEach(button=>button.addEventListener("click",()=>switchDetailTab(button.dataset.tab)));
     document.getElementById("device-select").addEventListener("change",refreshPage);
-    document.getElementById("search-button").addEventListener("click",()=>{dashboardPage=1;renderDashboard();});
     document.querySelectorAll(".status-filter").forEach(input=>input.addEventListener("change",()=>{dashboardPage=1;renderDashboard();}));
+    document.getElementById("filter-device").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
+    document.getElementById("filter-product").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
     document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
     document.getElementById("clear-all-warnings").addEventListener("click",async()=>{
         if(!confirm("确认清除全部预警？"))return;
