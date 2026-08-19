@@ -36,6 +36,8 @@ let currentPage = "dashboard";
     };
     let moldAdvancedLoaded = false;
     let moldDefaultsLoaded = false; 
+    let compareSelectedDevices = new Set();
+    const COMPARE_COLORS = ["#19b58a","#5cab81","#eea12d","#5b8def","#c2555c","#8a6fdb","#2fb3c4","#c98a3c"];
 
     const spcFields = {
         cycle_number:["模数",""],
@@ -624,7 +626,127 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
+    async function fetchUptimeSummary(granularity, periods) {
+        return requestJson(`/api/uptime-summary?granularity=${granularity}&periods=${periods}`);
+    }
 
+    async function renderUtilizationOverviewAll(containerId, renderedOnce) {
+        const container = document.getElementById(containerId);
+        const freshEntry = !renderedOnce.overview;
+        const [dayData, weekData, monthData] = await Promise.all([
+            fetchUptimeSummary("day", 30),
+            fetchUptimeSummary("week", 1),
+            fetchUptimeSummary("month", 1),
+        ]);
+        const today = dayData.buckets[dayData.buckets.length-1];
+        const thisWeek = weekData.buckets[weekData.buckets.length-1];
+        const thisMonth = monthData.buckets[monthData.buckets.length-1];
+        const deviceCount = dayData.device_count || 0;
+
+        container.innerHTML = `
+            <div class="uptime-summary-grid">
+                <div class="uptime-summary-card"><div class="muted">今日综合稼动率（${deviceCount} 台设备）</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本周综合稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本月综合稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+            </div>
+            <article class="detail-card">
+                <div class="detail-header"><div class="detail-title">全部设备综合稼动率趋势（近30日）</div>
+                    <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
+                </div>
+                ${renderUptimeTrendChart(dayData.buckets)}
+            </article>
+            <article class="detail-card">
+                <div class="detail-title">多设备对比</div>
+                <div class="muted" style="margin-bottom:6px;">勾选要比较的设备（近30日稼动率趋势）</div>
+                <div class="uptime-compare-devices" id="uptime-compare-devices"></div>
+                <div id="uptime-compare-chart"><div class="empty">请至少选择一台设备</div></div>
+            </article>`;
+
+        renderCompareDeviceCheckboxes();
+        await refreshCompareChart();
+
+        if (freshEntry) playUtilEntranceAnimation(container);
+        renderedOnce.overview = true;
+    }
+
+    function renderCompareDeviceCheckboxes() {
+        const container = document.getElementById("uptime-compare-devices");
+        if (!container) return;
+        container.innerHTML = devices.map(d => `
+            <label class="uptime-compare-device-label">
+                <input type="checkbox" class="compare-device-checkbox" value="${escapeHtml(d.device_id)}" ${compareSelectedDevices.has(d.device_id)?"checked":""}>
+                ${escapeHtml(d.device_id)}
+            </label>`).join("") || '<div class="muted">暂无设备</div>';
+        container.querySelectorAll(".compare-device-checkbox").forEach(cb => {
+            cb.addEventListener("change", async () => {
+                if (cb.checked) compareSelectedDevices.add(cb.value);
+                else compareSelectedDevices.delete(cb.value);
+                await refreshCompareChart();
+            });
+        });
+    }
+
+    async function refreshCompareChart() {
+        const chartContainer = document.getElementById("uptime-compare-chart");
+        if (!chartContainer) return;
+        const selected = [...compareSelectedDevices];
+        if (!selected.length) {
+            chartContainer.innerHTML = '<div class="empty">请至少选择一台设备</div>';
+            return;
+        }
+        chartContainer.innerHTML = '<div class="empty">正在读取……</div>';
+        try {
+            const results = await Promise.all(selected.map(id =>
+                requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`)
+            ));
+            const series = selected.map((id, i) => ({
+                id, label: id, color: COMPARE_COLORS[i % COMPARE_COLORS.length], buckets: results[i].buckets,
+            }));
+            chartContainer.innerHTML = renderMultiSeriesTrendChart(series);
+        } catch (error) {
+            chartContainer.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    function renderMultiSeriesTrendChart(series) {
+        const anyBuckets = series.find(s => s.buckets && s.buckets.length);
+        if (!anyBuckets) return '<div class="empty">暂无数据</div>';
+        const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
+        const innerW=width-padL-padR, innerH=height-padT-padB;
+        const bucketCount = anyBuckets.buckets.length;
+        const stepX = bucketCount>1 ? innerW/(bucketCount-1) : 0;
+
+        const gridLines=[0,25,50,75,100].map(v=>{
+            const y=padT+innerH-(v/100)*innerH;
+            return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
+        }).join("");
+        const labelEvery=Math.max(1,Math.ceil(bucketCount/8));
+        const xLabels = anyBuckets.buckets.map((b,i)=> i%labelEvery===0 ? `<text x="${padL+stepX*i}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(b.label)}</text>` : "").join("");
+
+        const seriesSvg = series.map(s => {
+            const points = s.buckets.map((b,i) => {
+                const x = padL + stepX*i;
+                const y = padT + innerH - (b.uptime_pct/100)*innerH;
+                return {x,y,b};
+            });
+            const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+            const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+            return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
+        }).join("");
+
+        const legend = series.map(s => `<span><i class="dot" style="background:${s.color}"></i>${escapeHtml(s.label)}</span>`).join("");
+
+        return `<div class="uptime-trend-wrap">
+                <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+                    ${gridLines}
+                    ${xLabels}
+                </svg>
+                <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+                    ${seriesSvg}
+                </svg>
+            </div>
+            <div class="uptime-compare-legend">${legend}</div>`;
+    }
 
 
     async function requestJson(url,options={}) {
@@ -1141,10 +1263,10 @@ let currentPage = "dashboard";
     async function loadUtilizationMonthly(id) { await renderUptimeMonthly(id, "util-tab-monthly", utilRenderedOnce); }
 
     async function loadUtilization(tab) {
+        if(tab==="overview") { await renderUtilizationOverviewAll("util-tab-overview", utilRenderedOnce); return; }
         const id = selectedDeviceId();
         if(!id) { document.getElementById(`util-tab-${tab}`).innerHTML = '<div class="empty panel">请先选择设备</div>'; return; }
-        if(tab==="overview") await loadUtilizationOverview(id);
-        else if(tab==="daily") await loadUtilizationDaily(id);
+        if(tab==="daily") await loadUtilizationDaily(id);
         else if(tab==="monthly") await loadUtilizationMonthly(id);
     }
 

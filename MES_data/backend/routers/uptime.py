@@ -191,15 +191,17 @@ def get_uptime_day(
     }
 
 
-def _fill_missing_days(day_totals: dict, range_start: date, range_end: date, now: datetime):
+def _fill_missing_days(day_totals: dict, range_start: date, range_end: date, now: datetime, device_count: int = 1):
     """Safety net: make sure every day in range sums to its full expected
-    duration (rounding, or a day with zero rows some other way)."""
+    duration (rounding, or a day with zero rows some other way). When
+    device_count > 1 (combined-fleet totals), the expected duration for
+    each day is multiplied accordingly."""
     day = range_start
     while day <= range_end:
         bucket = day_totals.setdefault(day, {"active": 0.0, "standby": 0.0, "off": 0.0})
         day_start = datetime.combine(day, datetime.min.time())
         day_end = min(day_start + timedelta(days=1), now)
-        expected_total = max(0.0, (day_end - day_start).total_seconds())
+        expected_total = max(0.0, (day_end - day_start).total_seconds()) * device_count
         actual_total = bucket["active"] + bucket["standby"] + bucket["off"]
         if actual_total < expected_total - 1:
             bucket["off"] += expected_total - actual_total
@@ -244,6 +246,68 @@ def _roll_up(day_totals: dict, granularity: str, range_start: date, range_end: d
         )
     return result
 
+@router.get("/uptime-summary")
+def get_uptime_summary(
+    granularity: str = Query("day", pattern="^(day|week|month)$"),
+    periods: int | None = Query(None, ge=1),
+    user: dict = Depends(require_user),
+):
+    """Fleet-wide uptime: same active/standby/off accounting as
+    GET /api/uptime/{device_id}, summed across every known device so the
+    standalone 利用率报表 overview can show one combined percentage/trend
+    instead of requiring a single device to be selected."""
+    del user
+    periods = min(periods or DEFAULT_PERIODS[granularity], MAX_PERIODS[granularity])
+
+    now = datetime.now().replace(microsecond=0)
+    today = now.date()
+    range_start_date = _range_start(granularity, periods, today)
+    range_start_dt = datetime.combine(range_start_date, datetime.min.time())
+
+    sql_devices = """
+        SELECT DISTINCT device_id
+        FROM dbo.mqtt_messages
+        WHERE device_id IS NOT NULL AND device_id <> N''
+    """
+    sql_rows = """
+        SELECT device_id, data_time, machine_status
+        FROM dbo.vw_machine_realtime
+        WHERE data_time >= ? AND data_time <= ?
+        ORDER BY device_id, data_time
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql_devices)
+            device_ids = [row.device_id for row in cursor.fetchall()]
+            cursor.execute(sql_rows, range_start_dt, now)
+            rows = cursor.fetchall()
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    rows_by_device: dict[str, list] = {}
+    for row in rows:
+        rows_by_device.setdefault(row.device_id, []).append(row)
+
+    combined_day_totals: dict[date, dict] = {}
+    for device_id in device_ids:
+        device_rows = rows_by_device.get(device_id, [])
+        device_day_totals = _compute_day_totals(
+            ((r.data_time, r.machine_status) for r in device_rows),
+            range_start_dt,
+            now,
+        )
+        for day, totals in device_day_totals.items():
+            bucket = combined_day_totals.setdefault(day, {"active": 0.0, "standby": 0.0, "off": 0.0})
+            bucket["active"] += totals["active"]
+            bucket["standby"] += totals["standby"]
+            bucket["off"] += totals["off"]
+
+    device_count = len(device_ids)
+    _fill_missing_days(combined_day_totals, range_start_date, today, now, device_count)
+    buckets = _roll_up(combined_day_totals, granularity, range_start_date, today, periods)
+
+    return {"granularity": granularity, "device_count": device_count, "buckets": buckets}
 
 @router.get("/uptime/{device_id}")
 def get_uptime(
