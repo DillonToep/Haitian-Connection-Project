@@ -1964,36 +1964,28 @@ let currentPage = "dashboard";
     document.getElementById("password-cancel").addEventListener("click",()=>passwordDialog.close());
     document.getElementById("password-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:f.get("current_password"),new_password:f.get("new_password")})});event.target.reset();passwordDialog.close();alert("密码修改成功");}catch(error){alert(error.message);}});
 
-    let refreshInFlight = null;
-    let refreshQueued = false;
-    async function refreshPage() {
-        if (refreshInFlight) {
-            refreshQueued = true;
-            return refreshInFlight;
+    let refreshChain = Promise.resolve();
+
+    async function runRefreshOnce() {
+        const status = document.getElementById("connection-status");
+        try {
+            if (currentPage === "dashboard") await loadDashboard();
+            if (currentPage === "device-detail") await loadActiveDetailTab();
+            if (currentPage === "molds") await loadMolds();
+            if (currentPage === "changelog") await loadChangelog();
+            if (currentPage === "warnings") await loadWarnings();
+            if (currentPage === "utilization") await loadUtilization();
+            status.className = "connection";
+            status.textContent = `更新于 ${new Date().toLocaleTimeString()}`;
+        } catch (error) {
+            status.className = "connection error";
+            status.textContent = `读取失败：${error.message}`;
         }
-        refreshInFlight = (async () => {
-            const status = document.getElementById("connection-status");
-            try {
-                if (currentPage === "dashboard") await loadDashboard();
-                if (currentPage === "device-detail") await loadActiveDetailTab();
-                if (currentPage === "molds") await loadMolds();
-                if (currentPage === "changelog") await loadChangelog();
-                if (currentPage === "warnings") await loadWarnings();
-                if (currentPage === "utilization") await loadUtilization();
-                status.className = "connection";
-                status.textContent = `更新于 ${new Date().toLocaleTimeString()}`;
-            } catch (error) {
-                status.className = "connection error";
-                status.textContent = `读取失败：${error.message}`;
-            } finally {
-                refreshInFlight = null;
-                if (refreshQueued) {
-                    refreshQueued = false;
-                    refreshPage();
-                }
-            }
-        })();
-        return refreshInFlight;
+    }
+
+    function refreshPage() {
+        refreshChain = refreshChain.then(runRefreshOnce, runRefreshOnce);
+        return refreshChain;
     }
 
     let autoRefreshTimer = null;
