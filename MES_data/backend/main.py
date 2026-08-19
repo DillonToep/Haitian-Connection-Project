@@ -43,3 +43,21 @@ app.include_router(changelog.router)
 app.include_router(warnings.router)
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 app.include_router(uptime.router)
+
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
+
+
+@app.get("/login")
+def login_page():
+    return FileResponse(FRONTEND_DIR / "login.html")
+
+
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str, request: Request):
+    user = find_session_user(request)
+    if user is None:
+        return RedirectResponse("/login")
+    return FileResponse(FRONTEND_DIR / "index.html")
