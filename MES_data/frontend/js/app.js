@@ -1825,7 +1825,8 @@ let currentPage = "dashboard";
         detailUtilRenderedOnce.monthly = false;
         document.querySelectorAll("#detail-tab-uptime .detail-uptime-panel").forEach(panel=>panel.classList.toggle("hidden",panel.id!=="detail-util-tab-overview"));
         document.querySelectorAll(".tab-button").forEach(button=>button.classList.toggle("active",button.dataset.tab===activeDetailTab));
-        document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
+        document.querySelectorAll("#device-detail-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${activeDetailTab}`));
+
         // The generic .tab-button toggle above also touches the nested
         // 利用率 sub-tab buttons (they share the "tab-button" class for
         // styling) and clears their "active" state since their
@@ -1858,7 +1859,7 @@ let currentPage = "dashboard";
             status.textContent=`读取失败：${error.message}`;
             return;
         }
-        document.querySelectorAll(".tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
+        document.querySelectorAll("#device-detail-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!==`detail-tab-${tab}`));
         document.querySelectorAll("#detail-tab-uptime .detail-util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.detailUtilTab===activeDetailUtilTab));
         document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[tab]}`;
         scheduleAutoRefresh();
