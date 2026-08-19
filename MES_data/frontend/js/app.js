@@ -666,7 +666,16 @@ let currentPage = "dashboard";
 
     function seriesKey(s) { return s.label; }
 
-    function renderTrendSeriesSvg(s, animate) {
+    // Split into "inner" (the actual path + dots) and "outer" (the <svg>
+    // wrapper that carries the entrance clip-path animation) so a data
+    // refresh on an already-drawn line can update its inner markup without
+    // ever touching the outer <svg> element -- touching that element (e.g.
+    // replacing it wholesale) would cancel/replace any WAAPI animation
+    // still running on its clip-path, which is what caused a line's
+    // entrance animation to visually "jump to the end" whenever a
+    // different device was toggled in the comparison checkboxes while it
+    // was still mid-animation.
+    function renderTrendSeriesInner(s) {
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
         const stepX = s.buckets.length>1 ? innerW/(s.buckets.length-1) : 0;
@@ -677,8 +686,13 @@ let currentPage = "dashboard";
         });
         const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
         const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+        return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
+    }
+
+    function renderTrendSeriesSvg(s, animate) {
+        const width=920, height=300;
         const startClip = animate ? "inset(0 100% 0 0)" : "inset(0 0% 0 0)";
-        return `<svg class="uptime-trend-svg uptime-trend-fg" data-series-key="${escapeHtml(seriesKey(s))}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="clip-path:${startClip}"><path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}</svg>`;
+        return `<svg class="uptime-trend-svg uptime-trend-fg" data-series-key="${escapeHtml(seriesKey(s))}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="clip-path:${startClip}">${renderTrendSeriesInner(s)}</svg>`;
     }
 
     function renderTrendLegend(series) {
@@ -728,13 +742,29 @@ let currentPage = "dashboard";
 
         // Redraw every selected line with fresh data, but only animate the
         // ones that haven't been shown before -- already-selected lines get
-        // their data refreshed in place, staying visually static.
+        // their data refreshed in place, staying visually static, and
+        // critically their outer <svg> element is left completely alone.
+        // Removing/re-inserting that element (the old behavior) tore out
+        // whatever WAAPI entrance animation was still running on its
+        // clip-path and replaced it with a fresh, already-finished element,
+        // which is what made an in-progress line snap straight to its end
+        // state whenever the device selection changed mid-animation. Each
+        // line's entrance animation now plays out fully independently of
+        // every other line and of later selection changes.
         series.forEach(s => {
             const key = seriesKey(s);
             const existing = fgSlot.querySelector(`.uptime-trend-fg[data-series-key="${CSS.escape(key)}"]`);
+            const isNew = !renderedTrendSeriesKeys.has(key);
+
+            if (existing && !isNew) {
+                // Already on screen (and possibly still mid-animation) --
+                // just refresh the drawn path/dots in place.
+                existing.innerHTML = renderTrendSeriesInner(s);
+                return;
+            }
+
             if (existing) existing.remove();
 
-            const isNew = !renderedTrendSeriesKeys.has(key);
             const shouldAnimate = animate && isNew && !reduceMotion;
             fgSlot.insertAdjacentHTML("beforeend", renderTrendSeriesSvg(s, shouldAnimate));
 
@@ -1281,7 +1311,6 @@ let currentPage = "dashboard";
             });
         }));
     }
-
 
     async function renderUptimeOverview(id, containerId, renderedOnce) {
         const container = document.getElementById(containerId);
