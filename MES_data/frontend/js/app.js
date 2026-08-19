@@ -781,7 +781,7 @@ let currentPage = "dashboard";
             document.getElementById("day-detail-body").innerHTML=`
                 ${renderDayTimeline(data.day_start,data.day_end,data.segments)}
                 <div class="day-detail-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
-                ${renderDaySegmentList(data.segments)}`;
+                ${renderDaySegmentList(data.segments.slice().reverse())}`;
         } catch(error) {
             document.getElementById("day-detail-body").innerHTML=`<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
         }
