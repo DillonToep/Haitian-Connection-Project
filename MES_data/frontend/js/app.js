@@ -1875,6 +1875,10 @@ let currentPage = "dashboard";
         } else {
             document.getElementById("page-title").textContent=pageTitles[page];
         }
+        if(page==="utilization") {
+            utilRenderedOnce.overview = false;
+            collapseUtilAnimatables(document.getElementById("util-tab-overview"));
+        }
         document.querySelectorAll(".nav-item[data-page]").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
         document.querySelectorAll("main > section").forEach(section=>section.classList.add("hidden"));
         const sectionId = page==="device-detail" ? "device-detail-page" : `${page}-page`;
