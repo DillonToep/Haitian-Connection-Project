@@ -647,8 +647,9 @@ let currentPage = "dashboard";
     //   - a foreground <svg> (the line paths + dots) that gets replaced
     //     and re-animated in (grow left-to-right) every time the
     //     selection changes.
-    let utilizationChartMode = "all"; // "all" | "devices"
+    let utilizationChartMode = "all";
     let utilizationFleetBuckets = [];
+    let renderedTrendSeriesKeys = new Set();
 
     function renderTrendGrid(buckets) {
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
@@ -663,23 +664,21 @@ let currentPage = "dashboard";
         return `<svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">${gridLines}${xLabels}</svg>`;
     }
 
-    function renderTrendForeground(series) {
+    function seriesKey(s) { return s.label; }
+
+    function renderTrendSeriesSvg(s, animate) {
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
-        const bucketCount = series[0] ? series[0].buckets.length : 0;
-        const stepX = bucketCount>1 ? innerW/(bucketCount-1) : 0;
-        const dotRadius = series.length > 1 ? 2.5 : 3;
-        const seriesSvg = series.map(s => {
-            const points = s.buckets.map((b,i) => {
-                const x = padL + stepX*i;
-                const y = padT + innerH - (b.uptime_pct/100)*innerH;
-                return {x,y,b};
-            });
-            const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-            const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${dotRadius}" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
-            return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
-        }).join("");
-        return `<svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">${seriesSvg}</svg>`;
+        const stepX = s.buckets.length>1 ? innerW/(s.buckets.length-1) : 0;
+        const points = s.buckets.map((b,i) => {
+            const x = padL + stepX*i;
+            const y = padT + innerH - (b.uptime_pct/100)*innerH;
+            return {x,y,b};
+        });
+        const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+        const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+        const startClip = animate ? "inset(0 100% 0 0)" : "inset(0 0% 0 0)";
+        return `<svg class="uptime-trend-svg uptime-trend-fg" data-series-key="${escapeHtml(seriesKey(s))}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" style="clip-path:${startClip}"><path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}</svg>`;
     }
 
     function renderTrendLegend(series) {
@@ -687,9 +686,6 @@ let currentPage = "dashboard";
         return series.map(s => `<span><i class="dot" style="background:${s.color}"></i>${escapeHtml(s.label)}</span>`).join("");
     }
 
-    // Rebuilds only the foreground line(s) + legend for the current
-    // selection, and (when animate is true) grows the new line(s) in from
-    // the left -- the background grid <svg> is never touched here.
     async function refreshUtilizationChart(animate) {
         const fgSlot = document.getElementById("util-trend-fg-slot");
         const legendEl = document.getElementById("util-trend-legend");
@@ -707,6 +703,7 @@ let currentPage = "dashboard";
                 }));
             } catch (error) {
                 fgSlot.innerHTML = "";
+                renderedTrendSeriesKeys.clear();
                 if (legendEl) legendEl.innerHTML = "";
                 const wrap = document.getElementById("util-trend-wrap");
                 if (wrap) wrap.insertAdjacentHTML("afterend", `<div class="empty" data-trend-error="1">读取失败：${escapeHtml(error.message)}</div>`);
@@ -717,20 +714,43 @@ let currentPage = "dashboard";
         }
 
         document.querySelectorAll('[data-trend-error="1"]').forEach(el => el.remove());
-        fgSlot.innerHTML = renderTrendForeground(series);
-        if (legendEl) legendEl.innerHTML = renderTrendLegend(series);
 
-        if (!animate) return;
-        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-        const fg = fgSlot.querySelector(".uptime-trend-fg");
-        if (!fg) return;
-        fg.style.clipPath = "inset(0 100% 0 0)";
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            fg.animate(
-                [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
-                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
-            );
-        }));
+        const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const currentKeys = new Set(series.map(seriesKey));
+
+        // Drop lines that are no longer selected.
+        fgSlot.querySelectorAll(".uptime-trend-fg").forEach(el => {
+            if (!currentKeys.has(el.dataset.seriesKey)) el.remove();
+        });
+        [...renderedTrendSeriesKeys].forEach(key => {
+            if (!currentKeys.has(key)) renderedTrendSeriesKeys.delete(key);
+        });
+
+        // Redraw every selected line with fresh data, but only animate the
+        // ones that haven't been shown before -- already-selected lines get
+        // their data refreshed in place, staying visually static.
+        series.forEach(s => {
+            const key = seriesKey(s);
+            const existing = fgSlot.querySelector(`.uptime-trend-fg[data-series-key="${CSS.escape(key)}"]`);
+            if (existing) existing.remove();
+
+            const isNew = !renderedTrendSeriesKeys.has(key);
+            const shouldAnimate = animate && isNew && !reduceMotion;
+            fgSlot.insertAdjacentHTML("beforeend", renderTrendSeriesSvg(s, shouldAnimate));
+
+            if (shouldAnimate) {
+                const el = fgSlot.querySelector(`.uptime-trend-fg[data-series-key="${CSS.escape(key)}"]`);
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    el.animate(
+                        [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+                        { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+                    );
+                }));
+            }
+            renderedTrendSeriesKeys.add(key);
+        });
+
+        if (legendEl) legendEl.innerHTML = renderTrendLegend(series);
     }
 
     function renderCompareDeviceCheckboxes() {
@@ -798,6 +818,7 @@ let currentPage = "dashboard";
             </div>`;
 
         if (freshEntry) {
+            renderedTrendSeriesKeys.clear()
             container.innerHTML = `
                 ${summaryHtml}
                 <article class="detail-card">
