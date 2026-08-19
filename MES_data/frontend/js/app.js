@@ -818,7 +818,7 @@ let currentPage = "dashboard";
             </div>`;
 
         if (freshEntry) {
-            renderedTrendSeriesKeys.clear()
+            renderedTrendSeriesKeys.clear();
             container.innerHTML = `
                 ${summaryHtml}
                 <article class="detail-card">
@@ -832,6 +832,7 @@ let currentPage = "dashboard";
                     <div class="uptime-compare-devices" id="uptime-compare-devices" style="margin-top:14px;"></div>
                 </article>`;
             renderCompareDeviceCheckboxes();
+            playUtilEntranceAnimation(container);
         } else {
             const summaryGrid = container.querySelector(".uptime-summary-grid");
             if (summaryGrid) summaryGrid.outerHTML = summaryHtml;
