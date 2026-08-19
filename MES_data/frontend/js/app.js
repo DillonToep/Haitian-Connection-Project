@@ -37,7 +37,7 @@ let currentPage = "dashboard";
     let moldAdvancedLoaded = false;
     let moldDefaultsLoaded = false; 
     let compareSelectedDevices = new Set();
-    const COMPARE_COLORS = ["#19b58a","#5cab81","#eea12d","#5b8def","#c2555c","#8a6fdb","#2fb3c4","#c98a3c"];
+    const COMPARE_COLORS = ["#6BAB90","#5b8def","#FFE2D1","#E1F0C4","#5E4C5A","#c2555c","#8a6fdb","#c98a3c"];
 
     const spcFields = {
         cycle_number:["模数",""],
