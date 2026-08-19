@@ -650,6 +650,7 @@ let currentPage = "dashboard";
     let utilizationChartMode = "all";
     let utilizationFleetBuckets = [];
     let renderedTrendSeriesKeys = new Set();
+    let trendActiveSeries = [];
 
     // ---- Shared hover tooltip for every uptime/utilization trend chart ----
     let trendTooltipEl = null;
@@ -680,6 +681,59 @@ let currentPage = "dashboard";
     });
     document.addEventListener("mouseout", event => { if (!event.relatedTarget) hideTrendTooltip(); });
 
+    function svgPointFromEvent(svg, evt) {
+        if (!svg) return null;
+        const pt = svg.createSVGPoint();
+        pt.x = evt.clientX;
+        pt.y = evt.clientY;
+        const ctm = svg.getScreenCTM();
+        if (!ctm) return null;
+        return pt.matrixTransform(ctm.inverse());
+    }
+
+    function showMultiTrendTooltip(items, dateLabel, clientX, clientY) {
+        const tooltip = ensureTrendTooltip();
+        const rows = items
+            .slice()
+            .sort((a, b) => b.pct - a.pct)
+            .map(item => `<div style="display:flex;justify-content:space-between;gap:16px;"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${item.color};margin-right:6px;"></i>${escapeHtml(item.label)}</span><span style="font-weight:700;">${item.pct}%</span></div>`)
+            .join("");
+        tooltip.innerHTML = `<div style="margin-bottom:4px;font-weight:700;opacity:.75;">${escapeHtml(dateLabel)}</div>${rows}`;
+        tooltip.classList.remove("hidden");
+        const offset = 14;
+        let left = clientX + offset;
+        if (left > window.innerWidth - 220) left = clientX - offset - 200;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${clientY - 10}px`;
+    }
+
+    function attachTrendWrapHover(wrapId) {
+        const wrap = document.getElementById(wrapId);
+        if (!wrap || wrap.dataset.hoverBound) return;
+        wrap.dataset.hoverBound = "1";
+        wrap.addEventListener("mousemove", event => {
+            event.stopPropagation(); // don't let the generic .trend-dot-hit handler hide this
+            if (!trendActiveSeries.length) { hideTrendTooltip(); return; }
+            const bgSvg = wrap.querySelector(".uptime-trend-bg");
+            const point = svgPointFromEvent(bgSvg, event);
+            if (!point) { hideTrendTooltip(); return; }
+            const width = 920, padL = 40, padR = 14;
+            const innerW = width - padL - padR;
+            const maxLen = Math.max(...trendActiveSeries.map(s => s.buckets.length));
+            if (maxLen < 1) { hideTrendTooltip(); return; }
+            const stepX = maxLen > 1 ? innerW / (maxLen - 1) : 0;
+            let index = stepX > 0 ? Math.round((point.x - padL) / stepX) : 0;
+            index = Math.max(0, Math.min(maxLen - 1, index));
+
+            const items = trendActiveSeries
+                .filter(s => s.buckets[index])
+                .map(s => ({ label: s.label, pct: s.buckets[index].uptime_pct, color: s.color }));
+            if (!items.length) { hideTrendTooltip(); return; }
+            const dateLabel = (trendActiveSeries[0].buckets[index] || {}).label || "";
+            showMultiTrendTooltip(items, dateLabel, event.clientX, event.clientY);
+        });
+        wrap.addEventListener("mouseleave", () => hideTrendTooltip());
+    }
 
     function renderTrendGrid(buckets) {
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
@@ -696,15 +750,6 @@ let currentPage = "dashboard";
 
     function seriesKey(s) { return s.label; }
 
-    // Split into "inner" (the actual path + dots) and "outer" (the <svg>
-    // wrapper that carries the entrance clip-path animation) so a data
-    // refresh on an already-drawn line can update its inner markup without
-    // ever touching the outer <svg> element -- touching that element (e.g.
-    // replacing it wholesale) would cancel/replace any WAAPI animation
-    // still running on its clip-path, which is what caused a line's
-    // entrance animation to visually "jump to the end" whenever a
-    // different device was toggled in the comparison checkboxes while it
-    // was still mid-animation.
     function renderTrendSeriesInner(s) {
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
@@ -716,8 +761,7 @@ let currentPage = "dashboard";
         });
         const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
         const dots = points.map((p)=>
-            `<circle class="trend-dot-hit" data-tooltip="${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%" cx="${p.x}" cy="${p.y}" r="9" fill="transparent"/>` +
-            `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a" style="pointer-events:none"/>`
+            `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="${s.color}" style="pointer-events:none"/>`
         ).join("");
         return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
     }
@@ -761,6 +805,7 @@ let currentPage = "dashboard";
         }
 
         document.querySelectorAll('[data-trend-error="1"]').forEach(el => el.remove());
+        trendActiveSeries = series;
 
         const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const currentKeys = new Set(series.map(seriesKey));
@@ -917,6 +962,7 @@ let currentPage = "dashboard";
                 </article>`;
             renderCompareDeviceCheckboxes();
             playUtilEntranceAnimation(container);
+            attachTrendWrapHover("util-trend-wrap");
         } else {
             const summaryGrid = container.querySelector(".uptime-summary-grid");
             if (summaryGrid) summaryGrid.outerHTML = summaryHtml;
