@@ -17,6 +17,7 @@ SQL_SERVER = os.getenv("SQL_SERVER", r"localhost\SQLDEVELOP")
 SQL_DATABASE = os.getenv("SQL_DATABASE", "MES_MQTT")
 SQL_USERNAME = os.getenv("SQL_USERNAME", "")
 SQL_PASSWORD = os.getenv("SQL_PASSWORD", "")
+SQL_POOL_SIZE = int(os.getenv("SQL_POOL_SIZE", "8"))
 
 
 def build_connection_string() -> str:
