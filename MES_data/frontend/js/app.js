@@ -627,7 +627,7 @@ let currentPage = "dashboard";
     });
 
     async function fetchUptimeSummary(granularity, periods) {
-        return requestJson(`/api/uptime-summary?granularity=${granularity}&periods=${periods}`);
+        return requestJson(`/api/uptime-summary?granularity=${granularity}&periods=${periods}`, {}, 45000);
     }
 
     // ---- 利用率 · 总览 chart -----------------------------------------
@@ -923,14 +923,29 @@ let currentPage = "dashboard";
         });
     }
 
-        async function renderUtilizationOverviewAll(containerId, renderedOnce) {
+    async function renderUtilizationOverviewAll(containerId, renderedOnce) {
             const container = document.getElementById(containerId);
             const freshEntry = !renderedOnce.overview;
-            const [dayData, weekData, monthData] = await Promise.all([
-                fetchUptimeSummary("day", 30),
-                fetchUptimeSummary("week", 2),
-                fetchUptimeSummary("month", 2),
-            ]);
+
+            let dayData, weekData, monthData;
+            try {
+                [dayData, weekData, monthData] = await Promise.all([
+                    fetchUptimeSummary("day", 30),
+                    fetchUptimeSummary("week", 2),
+                    fetchUptimeSummary("month", 2),
+                ]);
+            } catch (error) {
+                renderedOnce.overview = false;
+                container.innerHTML = `<div class="empty">
+                    读取失败：${escapeHtml(error.message)}
+                    <div style="margin-top:10px;"><button id="util-overview-retry" class="secondary-button" type="button">重试</button></div>
+                </div>`;
+                document.getElementById("util-overview-retry")?.addEventListener("click", () => {
+                    renderUtilizationOverviewAll(containerId, renderedOnce);
+                });
+                throw error;
+            }
+
             const today = dayData.buckets[dayData.buckets.length-1];
             const yesterday = dayData.buckets[dayData.buckets.length-2];
             const thisWeek = weekData.buckets[weekData.buckets.length-1];
