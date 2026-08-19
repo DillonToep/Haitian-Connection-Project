@@ -876,14 +876,23 @@ let currentPage = "dashboard";
         renderedOnce.overview = true;
     }
 
-    async function requestJson(url,options={}) {
-        const response=await fetch(url,{cache:"no-store",...options});
-        if(response.status===401){window.location.replace("/login");throw new Error("登录已失效");}
-        const body=await response.json().catch(()=>({}));
-        if(!response.ok) throw new Error(body.detail||`HTTP ${response.status}`);
+    async function requestJson(url, options = {}, timeoutMs = 15000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        let response;
+        try {
+            response = await fetch(url, { cache: "no-store", signal: controller.signal, ...options });
+        } catch (error) {
+            if (error.name === "AbortError") throw new Error("请求超时，请检查网络连接");
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+        if (response.status === 401) { window.location.replace("/login"); throw new Error("登录已失效"); }
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
         return body;
     }
-
     async function loadChangelogFieldTree() {
         if (changelogFieldTree) return changelogFieldTree;
         changelogFieldTree = await requestJson("/api/changelog/filters");
@@ -1835,28 +1844,36 @@ let currentPage = "dashboard";
     document.getElementById("password-cancel").addEventListener("click",()=>passwordDialog.close());
     document.getElementById("password-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:f.get("current_password"),new_password:f.get("new_password")})});event.target.reset();passwordDialog.close();alert("密码修改成功");}catch(error){alert(error.message);}});
 
-    let isRefreshingPage = false;
-    let pendingRefresh = false;
+    let refreshInFlight = null;
+    let refreshQueued = false;
     async function refreshPage() {
-        if (isRefreshingPage) { pendingRefresh = true; return; }
-        isRefreshingPage = true;
-        const status=document.getElementById("connection-status");
-        try {
-            if(currentPage==="dashboard")await loadDashboard();
-            if(currentPage==="device-detail")await loadActiveDetailTab();
-            if(currentPage==="molds")await loadMolds();
-            if(currentPage==="changelog")await loadChangelog();
-            if(currentPage==="warnings")await loadWarnings();
-            if(currentPage==="utilization") await loadUtilization();
-            status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
-        } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
-        finally {
-            isRefreshingPage = false;
-            if (pendingRefresh) {
-                pendingRefresh = false;
-                refreshPage();
-            }
+        if (refreshInFlight) {
+            refreshQueued = true;
+            return refreshInFlight;
         }
+        refreshInFlight = (async () => {
+            const status = document.getElementById("connection-status");
+            try {
+                if (currentPage === "dashboard") await loadDashboard();
+                if (currentPage === "device-detail") await loadActiveDetailTab();
+                if (currentPage === "molds") await loadMolds();
+                if (currentPage === "changelog") await loadChangelog();
+                if (currentPage === "warnings") await loadWarnings();
+                if (currentPage === "utilization") await loadUtilization();
+                status.className = "connection";
+                status.textContent = `更新于 ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                status.className = "connection error";
+                status.textContent = `读取失败：${error.message}`;
+            } finally {
+                refreshInFlight = null;
+                if (refreshQueued) {
+                    refreshQueued = false;
+                    refreshPage();
+                }
+            }
+        })();
+        return refreshInFlight;
     }
 
     let autoRefreshTimer = null;
