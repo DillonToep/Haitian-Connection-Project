@@ -1866,17 +1866,18 @@ let currentPage = "dashboard";
 
     async function switchPage(page) {
         currentPage=page;
-        if(page==="device-detail") {
-            document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
-            document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
-            try { await loadActiveDetailTab(); } catch(error) { /* handled by refreshPage below */ }
-        } else if(page==="utilization") {
-            activeUtilTab="overview";
-            utilRenderedOnce.overview = false;
-            collapseUtilAnimatables(document.getElementById("util-tab-overview"));
-            document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
-        } else {
-            document.getElementById("page-title").textContent=pageTitles[page];
+        try {
+            if(page==="device-detail") { ... }
+            else if(page==="utilization") {
+                activeUtilTab="overview";
+                utilRenderedOnce.overview = false;
+                collapseUtilAnimatables(document.getElementById("util-tab-overview"));
+                document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
+            } else {
+                document.getElementById("page-title").textContent=pageTitles[page];
+            }
+        } catch (error) {
+            console.error("switchPage setup failed:", error);
         }
         document.querySelectorAll(".nav-item[data-page]").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
         document.querySelectorAll("main > section").forEach(section=>section.classList.add("hidden"));
