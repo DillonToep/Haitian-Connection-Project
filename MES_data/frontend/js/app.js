@@ -19,7 +19,7 @@ let currentPage = "dashboard";
     let changelogFieldTree = null;
     let activeDetailUtilTab = "overview";
     const detailUtilRenderedOnce = { overview: false, daily: false, monthly: false };
-    const utilTabTitles = { overview: "总览", daily: "日统计", monthly: "月统计"};
+    const utilTabTitles = { overview: "总览" };
     const pageTitles = { dashboard: "设备看板", molds: "模具管理", utilization: "利用率报表", changelog: "参数变更记录", warnings: "预警通知" };
     const detailTabTitles = { realtime: "实时参数", tech: "工艺参数", spc: "SPC 数据", changelog: "变更记录", uptime: "利用率" };
     let seenWarningIds = new Set();
@@ -1328,18 +1328,8 @@ let currentPage = "dashboard";
         renderedOnce.monthly = true;
     }
 
-    // Thin wrappers: the standalone 利用率报表 page always targets the
-    // device chosen in #device-select and tracks its own animation state.
-    async function loadUtilizationOverview(id) { await renderUptimeOverview(id, "util-tab-overview", utilRenderedOnce); }
-    async function loadUtilizationDaily(id) { await renderUptimeDaily(id, "util-tab-daily", utilRenderedOnce); }
-    async function loadUtilizationMonthly(id) { await renderUptimeMonthly(id, "util-tab-monthly", utilRenderedOnce); }
-
-    async function loadUtilization(tab) {
-        if(tab==="overview") { await renderUtilizationOverviewAll("util-tab-overview", utilRenderedOnce); return; }
-        const id = selectedDeviceId();
-        if(!id) { document.getElementById(`util-tab-${tab}`).innerHTML = '<div class="empty panel">请先选择设备</div>'; return; }
-        if(tab==="daily") await loadUtilizationDaily(id);
-        else if(tab==="monthly") await loadUtilizationMonthly(id);
+    async function loadUtilization() {
+        await renderUtilizationOverviewAll("util-tab-overview", utilRenderedOnce);
     }
 
     // Device-detail 利用率 tab: same renderers, but always scoped to
@@ -1685,30 +1675,8 @@ let currentPage = "dashboard";
         scheduleAutoRefresh();
     }
 
-    function switchUtilTab(tab) {
-        activeUtilTab = tab;
-        // Replays the grow-in animation every time this tab is re-entered
-        // (see loadUtilizationOverview/Daily/Monthly, which call
-        // playUtilEntranceAnimation() via element.animate() right after
-        // rendering when utilRenderedOnce[tab] is false). The previous
-        // render is deliberately left in place -- not cleared -- so the
-        // bars/chart stay static and visible right up until the fresh data
-        // arrives and replaces them. But that stale content must not be
-        // visible in its old, fully-drawn state during the async fetch
-        // that's about to happen -- collapse it now, synchronously, before
-        // this container is unhidden below (see collapseUtilAnimatables).
-        utilRenderedOnce[tab] = false;
-        collapseUtilAnimatables(document.getElementById(`util-tab-${tab}`));
-        document.querySelectorAll(".util-tab-button").forEach(button => button.classList.toggle("active", button.dataset.utilTab === tab));
-        document.querySelectorAll("#utilization-page .tab-content").forEach(content => content.classList.toggle("hidden", content.id !== `util-tab-${tab}`));
-        document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles[tab]}`;
-        refreshPage();
-        scheduleAutoRefresh();
-    }
-
     async function switchPage(page) {
         currentPage=page;
-        document.getElementById("device-select").classList.toggle("hidden", page!=="utilization");
         if(page==="device-detail") {
             document.getElementById("page-title").textContent=`设备 ${detailDeviceId} · ${detailTabTitles[activeDetailTab]}`;
             document.getElementById("detail-device-title").textContent=`设备 ${detailDeviceId}`;
@@ -1717,8 +1685,6 @@ let currentPage = "dashboard";
             activeUtilTab="overview";
             utilRenderedOnce.overview = false;
             collapseUtilAnimatables(document.getElementById("util-tab-overview"));
-            document.querySelectorAll(".util-tab-button").forEach(button=>button.classList.toggle("active",button.dataset.utilTab==="overview"));
-            document.querySelectorAll("#utilization-page .tab-content").forEach(content=>content.classList.toggle("hidden",content.id!=="util-tab-overview"));
             document.getElementById("page-title").textContent = `利用率报表 · ${utilTabTitles.overview}`;
         } else {
             document.getElementById("page-title").textContent=pageTitles[page];
@@ -1802,7 +1768,6 @@ let currentPage = "dashboard";
         subSelect.disabled = true;
         await loadChangelog();
     });
-    document.querySelectorAll(".util-tab-button").forEach(button => button.addEventListener("click", () => switchUtilTab(button.dataset.utilTab)));
     document.querySelectorAll(".detail-util-tab-button").forEach(button => button.addEventListener("click", () => switchDetailUtilTab(button.dataset.detailUtilTab)));
     const passwordDialog=document.getElementById("password-dialog");
     document.getElementById("password-button").addEventListener("click",()=>passwordDialog.showModal());
@@ -1821,7 +1786,7 @@ let currentPage = "dashboard";
             if(currentPage==="molds")await loadMolds();
             if(currentPage==="changelog")await loadChangelog();
             if(currentPage==="warnings")await loadWarnings();
-            if(currentPage==="utilization") await loadUtilization(activeUtilTab);
+            if(currentPage==="utilization") await loadUtilization();
             status.className="connection";status.textContent=`更新于 ${new Date().toLocaleTimeString()}`;
         } catch(error){status.className="connection error";status.textContent=`读取失败：${error.message}`;}
         finally {
