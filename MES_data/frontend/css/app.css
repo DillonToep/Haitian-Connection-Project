@@ -186,13 +186,6 @@
         .uptime-summary-card { padding: 16px; border: 1px solid var(--line); background: var(--panel); }
         .uptime-summary-value { margin: 6px 0 10px; font-size: 26px; font-weight: 800; color: var(--green); }
         .uptime-bar { position: relative; height: 14px; overflow: hidden; border-radius: 7px; background: var(--gray); }
-        /* Segments are stacked absolutely (not laid out side by side) with
-           cumulative widths -- see renderUptimeBar in app.js -- so active
-           sits on top of standby, which sits on top of off/background.
-           Each is only visible in the region beyond where the segment
-           above it ends. This lets all three grow from the true left edge
-           (x=0) at the same time (see playUtilEntranceAnimation) while
-           still settling into the correct visual split at rest. */
         .uptime-bar-segment { position: absolute; top: 0; left: 0; height: 100%; transform-origin: left center; }
         .uptime-bar-segment.active { background: var(--green); z-index: 3; }
         .uptime-bar-segment.standby { background: var(--orange); z-index: 2; }
@@ -214,10 +207,11 @@
         .uptime-compare-devices { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 14px; }
         .uptime-compare-device-label { display:flex; align-items:center; gap:6px; padding:5px 10px; border:1px solid var(--line); border-radius:14px; font-size:12.5px; cursor:pointer; background:#f8fafc; }
         .uptime-compare-device-label input { width:13px; height:13px; margin:0; accent-color: var(--blue); }
-        /* The "总览（全部设备）" pseudo-device checkbox sits first in the
-           row and is styled a bit heavier than the individual device
-           chips so it visually reads as the default/aggregate choice
-           rather than just one more machine to compare. */
+        .uptime-summary-value { margin: 6px 0 10px; font-size: 26px; font-weight: 800; color: var(--green); display: flex; align-items: baseline; gap: 10px; }
+        .uptime-delta { font-size: 13px; font-weight: 700; white-space: nowrap; }
+        .uptime-delta-up { color: var(--green); }
+        .uptime-delta-down { color: var(--red); }
+        .uptime-delta-flat { color: var(--muted); }
         .uptime-compare-overview-label { border-color: var(--blue); background: var(--blue-soft); font-weight: 650; color: #1f6b45; }
         .uptime-compare-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:12px; color: var(--muted); }
         .uptime-compare-legend .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }

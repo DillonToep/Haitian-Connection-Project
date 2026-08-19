@@ -796,31 +796,34 @@ let currentPage = "dashboard";
         });
     }
 
-    async function renderUtilizationOverviewAll(containerId, renderedOnce) {
-        const container = document.getElementById(containerId);
-        const freshEntry = !renderedOnce.overview;
-        const [dayData, weekData, monthData] = await Promise.all([
-            fetchUptimeSummary("day", 30),
-            fetchUptimeSummary("week", 1),
-            fetchUptimeSummary("month", 1),
-        ]);
-        const today = dayData.buckets[dayData.buckets.length-1];
-        const thisWeek = weekData.buckets[weekData.buckets.length-1];
-        const thisMonth = monthData.buckets[monthData.buckets.length-1];
-        const deviceCount = dayData.device_count || 0;
-        utilizationFleetBuckets = dayData.buckets;
+        async function renderUtilizationOverviewAll(containerId, renderedOnce) {
+            const container = document.getElementById(containerId);
+            const freshEntry = !renderedOnce.overview;
+            const [dayData, weekData, monthData] = await Promise.all([
+                fetchUptimeSummary("day", 30),
+                fetchUptimeSummary("week", 2),
+                fetchUptimeSummary("month", 2),
+            ]);
+            const today = dayData.buckets[dayData.buckets.length-1];
+            const yesterday = dayData.buckets[dayData.buckets.length-2];
+            const thisWeek = weekData.buckets[weekData.buckets.length-1];
+            const lastWeek = weekData.buckets[weekData.buckets.length-2];
+            const thisMonth = monthData.buckets[monthData.buckets.length-1];
+            const lastMonth = monthData.buckets[monthData.buckets.length-2];
+            const deviceCount = dayData.device_count || 0;
+            utilizationFleetBuckets = dayData.buckets;
 
-        const summaryHtml = `
-            <div class="uptime-summary-grid">
-                <div class="uptime-summary-card"><div class="muted">今日综合稼动率（${deviceCount} 台设备）</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本周综合稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本月综合稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
-            </div>`;
+            const summaryHtml = `
+                <div class="uptime-summary-grid">
+                    <div class="uptime-summary-card"><div class="muted">今日综合稼动率（${deviceCount} 台设备）</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today, yesterday)}</div>${today?renderUptimeBar(today):""}</div>
+                    <div class="uptime-summary-card"><div class="muted">本周综合稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}% ${renderUptimeDelta(thisWeek, lastWeek)}</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+                    <div class="uptime-summary-card"><div class="muted">本月综合稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}% ${renderUptimeDelta(thisMonth, lastMonth)}</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+                </div>`;
 
         if (freshEntry) {
             renderedTrendSeriesKeys.clear();
             container.innerHTML = `
-                ${summaryHtml}
+                ${summaryHtml}(
                 <article class="detail-card">
                     <div class="detail-header"><div class="detail-title">稼动率趋势（近30日）</div></div>
                     <div class="muted" style="margin-bottom:10px;">默认展示全部设备的综合稼动率；勾选下方设备可切换为单台或多台设备的趋势对比</div>
@@ -1162,6 +1165,15 @@ let currentPage = "dashboard";
         </div>`;
     }
 
+
+    function renderUptimeDelta(current, previous) {
+        if (!current || !previous) return "";
+        const delta = Math.round((current.uptime_pct - previous.uptime_pct) * 10) / 10;
+        if (delta === 0) return `<span class="uptime-delta uptime-delta-flat" title="较上一周期持平">± 0%</span>`;
+        const up = delta > 0;
+        return `<span class="uptime-delta ${up ? "uptime-delta-up" : "uptime-delta-down"}" title="较上一周期${up ? "上升" : "下降"}">${up ? "▲" : "▼"} ${up ? "+" : ""}${delta.toFixed(1)}%</span>`;
+    }
+
     function renderUptimeTrendChart(buckets) {
         if(!buckets.length) return '<div class="empty">暂无数据</div>';
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
@@ -1270,28 +1282,26 @@ let currentPage = "dashboard";
         }));
     }
 
-    // Generic uptime renderers -- take an explicit device id, target
-    // container id, and a { overview, daily, monthly } "rendered once"
-    // tracker, so the same rendering logic can power both the standalone
-    // 利用率报表 page (device chosen via #device-select) and the per-device
-    // 利用率 tab nested inside the device detail view (device is always
-    // whichever machine's detail page is open).
+
     async function renderUptimeOverview(id, containerId, renderedOnce) {
         const container = document.getElementById(containerId);
         const freshEntry = !renderedOnce.overview;
         const [dayData, weekData, monthData] = await Promise.all([
             requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`),
-            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=1`),
-            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=1`),
+            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=week&periods=2`),
+            requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=2`),
         ]);
         const today = dayData.buckets[dayData.buckets.length-1];
+        const yesterday = dayData.buckets[dayData.buckets.length-2];
         const thisWeek = weekData.buckets[weekData.buckets.length-1];
+        const lastWeek = weekData.buckets[weekData.buckets.length-2];
         const thisMonth = monthData.buckets[monthData.buckets.length-1];
+        const lastMonth = monthData.buckets[monthData.buckets.length-2];
         container.innerHTML = `
             <div class="uptime-summary-grid">
-                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today, yesterday)}</div>${today?renderUptimeBar(today):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}% ${renderUptimeDelta(thisWeek, lastWeek)}</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}% ${renderUptimeDelta(thisMonth, lastMonth)}</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
             </div>
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>
