@@ -630,6 +630,152 @@ let currentPage = "dashboard";
         return requestJson(`/api/uptime-summary?granularity=${granularity}&periods=${periods}`);
     }
 
+    // ---- 利用率 · 总览 chart -----------------------------------------
+    //
+    // One line chart backs the 总览 tab. It can show either:
+    //   - the fleet-wide combined trend (utilizationChartMode === "all"),
+    //     or
+    //   - one or more individually-selected devices
+    //     (utilizationChartMode === "devices", devices listed in
+    //     compareSelectedDevices).
+    //
+    // The chart is split into two independent DOM pieces so a selection
+    // change never touches the grid:
+    //   - a background <svg> (grid lines + x-axis day labels) rendered
+    //     once per page-visit and left alone afterwards -- this is what
+    //     stays visually "static" while the selection changes.
+    //   - a foreground <svg> (the line paths + dots) that gets replaced
+    //     and re-animated in (grow left-to-right) every time the
+    //     selection changes.
+    let utilizationChartMode = "all"; // "all" | "devices"
+    let utilizationFleetBuckets = [];
+
+    function renderTrendGrid(buckets) {
+        const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
+        const innerW=width-padL-padR, innerH=height-padT-padB;
+        const stepX = buckets.length>1 ? innerW/(buckets.length-1) : 0;
+        const gridLines=[0,25,50,75,100].map(v=>{
+            const y=padT+innerH-(v/100)*innerH;
+            return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
+        }).join("");
+        const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
+        const xLabels = buckets.map((b,i)=> i%labelEvery===0 ? `<text x="${padL+stepX*i}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(b.label)}</text>` : "").join("");
+        return `<svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">${gridLines}${xLabels}</svg>`;
+    }
+
+    function renderTrendForeground(series) {
+        const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
+        const innerW=width-padL-padR, innerH=height-padT-padB;
+        const bucketCount = series[0] ? series[0].buckets.length : 0;
+        const stepX = bucketCount>1 ? innerW/(bucketCount-1) : 0;
+        const dotRadius = series.length > 1 ? 2.5 : 3;
+        const seriesSvg = series.map(s => {
+            const points = s.buckets.map((b,i) => {
+                const x = padL + stepX*i;
+                const y = padT + innerH - (b.uptime_pct/100)*innerH;
+                return {x,y,b};
+            });
+            const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+            const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="${dotRadius}" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
+            return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
+        }).join("");
+        return `<svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">${seriesSvg}</svg>`;
+    }
+
+    function renderTrendLegend(series) {
+        if (series.length <= 1) return "";
+        return series.map(s => `<span><i class="dot" style="background:${s.color}"></i>${escapeHtml(s.label)}</span>`).join("");
+    }
+
+    // Rebuilds only the foreground line(s) + legend for the current
+    // selection, and (when animate is true) grows the new line(s) in from
+    // the left -- the background grid <svg> is never touched here.
+    async function refreshUtilizationChart(animate) {
+        const fgSlot = document.getElementById("util-trend-fg-slot");
+        const legendEl = document.getElementById("util-trend-legend");
+        if (!fgSlot) return;
+
+        let series;
+        if (utilizationChartMode === "devices" && compareSelectedDevices.size > 0) {
+            const selected = [...compareSelectedDevices];
+            try {
+                const results = await Promise.all(selected.map(id =>
+                    requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`)
+                ));
+                series = selected.map((id, i) => ({
+                    label: id, color: COMPARE_COLORS[i % COMPARE_COLORS.length], buckets: results[i].buckets,
+                }));
+            } catch (error) {
+                fgSlot.innerHTML = "";
+                if (legendEl) legendEl.innerHTML = "";
+                const wrap = document.getElementById("util-trend-wrap");
+                if (wrap) wrap.insertAdjacentHTML("afterend", `<div class="empty" data-trend-error="1">读取失败：${escapeHtml(error.message)}</div>`);
+                return;
+            }
+        } else {
+            series = [{ label: "全部设备", color: "#19b58a", buckets: utilizationFleetBuckets }];
+        }
+
+        document.querySelectorAll('[data-trend-error="1"]').forEach(el => el.remove());
+        fgSlot.innerHTML = renderTrendForeground(series);
+        if (legendEl) legendEl.innerHTML = renderTrendLegend(series);
+
+        if (!animate) return;
+        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        const fg = fgSlot.querySelector(".uptime-trend-fg");
+        if (!fg) return;
+        fg.style.clipPath = "inset(0 100% 0 0)";
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            fg.animate(
+                [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)" }],
+                { duration: 4200, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }
+            );
+        }));
+    }
+
+    function renderCompareDeviceCheckboxes() {
+        const container = document.getElementById("uptime-compare-devices");
+        if (!container) return;
+        const overviewChecked = utilizationChartMode === "all";
+        const deviceCheckboxes = devices.map(d => `
+            <label class="uptime-compare-device-label">
+                <input type="checkbox" class="compare-device-checkbox" value="${escapeHtml(d.device_id)}" ${(!overviewChecked && compareSelectedDevices.has(d.device_id))?"checked":""}>
+                ${escapeHtml(d.device_id)}
+            </label>`).join("");
+        container.innerHTML = `
+            <label class="uptime-compare-device-label uptime-compare-overview-label">
+                <input type="checkbox" id="compare-overview-checkbox" ${overviewChecked?"checked":""}>
+                总览（全部设备）
+            </label>
+            ${deviceCheckboxes || '<div class="muted">暂无设备</div>'}`;
+
+        document.getElementById("compare-overview-checkbox").addEventListener("change", async e => {
+            if (e.target.checked) {
+                utilizationChartMode = "all";
+                compareSelectedDevices.clear();
+                renderCompareDeviceCheckboxes();
+                await refreshUtilizationChart(true);
+            } else if (compareSelectedDevices.size === 0) {
+                // Nothing else selected -- keep at least one mode active.
+                e.target.checked = true;
+            }
+        });
+
+        container.querySelectorAll(".compare-device-checkbox").forEach(cb => {
+            cb.addEventListener("change", async () => {
+                if (cb.checked) {
+                    compareSelectedDevices.add(cb.value);
+                    utilizationChartMode = "devices";
+                } else {
+                    compareSelectedDevices.delete(cb.value);
+                    if (compareSelectedDevices.size === 0) utilizationChartMode = "all";
+                }
+                renderCompareDeviceCheckboxes();
+                await refreshUtilizationChart(true);
+            });
+        });
+    }
+
     async function renderUtilizationOverviewAll(containerId, renderedOnce) {
         const container = document.getElementById(containerId);
         const freshEntry = !renderedOnce.overview;
@@ -642,112 +788,38 @@ let currentPage = "dashboard";
         const thisWeek = weekData.buckets[weekData.buckets.length-1];
         const thisMonth = monthData.buckets[monthData.buckets.length-1];
         const deviceCount = dayData.device_count || 0;
+        utilizationFleetBuckets = dayData.buckets;
 
-        container.innerHTML = `
+        const summaryHtml = `
             <div class="uptime-summary-grid">
                 <div class="uptime-summary-card"><div class="muted">今日综合稼动率（${deviceCount} 台设备）</div><div class="uptime-summary-value">${today?today.uptime_pct:0}%</div>${today?renderUptimeBar(today):""}</div>
                 <div class="uptime-summary-card"><div class="muted">本周综合稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}%</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
                 <div class="uptime-summary-card"><div class="muted">本月综合稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}%</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
-            </div>
-            <article class="detail-card">
-                <div class="detail-header"><div class="detail-title">全部设备综合稼动率趋势（近30日）</div>
-                    <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
-                </div>
-                ${renderUptimeTrendChart(dayData.buckets)}
-            </article>
-            <article class="detail-card">
-                <div class="detail-title">多设备对比</div>
-                <div class="muted" style="margin-bottom:6px;">勾选要比较的设备（近30日稼动率趋势）</div>
-                <div class="uptime-compare-devices" id="uptime-compare-devices"></div>
-                <div id="uptime-compare-chart"><div class="empty">请至少选择一台设备</div></div>
-            </article>`;
+            </div>`;
 
-        renderCompareDeviceCheckboxes();
-        await refreshCompareChart();
+        if (freshEntry) {
+            container.innerHTML = `
+                ${summaryHtml}
+                <article class="detail-card">
+                    <div class="detail-header"><div class="detail-title">稼动率趋势（近30日）</div></div>
+                    <div class="muted" style="margin-bottom:10px;">默认展示全部设备的综合稼动率；勾选下方设备可切换为单台或多台设备的趋势对比</div>
+                    <div class="uptime-trend-wrap" id="util-trend-wrap">
+                        ${renderTrendGrid(utilizationFleetBuckets)}
+                        <div id="util-trend-fg-slot"></div>
+                    </div>
+                    <div class="uptime-compare-legend" id="util-trend-legend"></div>
+                    <div class="uptime-compare-devices" id="uptime-compare-devices" style="margin-top:14px;"></div>
+                </article>`;
+            renderCompareDeviceCheckboxes();
+        } else {
+            const summaryGrid = container.querySelector(".uptime-summary-grid");
+            if (summaryGrid) summaryGrid.outerHTML = summaryHtml;
+            renderCompareDeviceCheckboxes();
+        }
 
-        if (freshEntry) playUtilEntranceAnimation(container);
+        await refreshUtilizationChart(freshEntry);
         renderedOnce.overview = true;
     }
-
-    function renderCompareDeviceCheckboxes() {
-        const container = document.getElementById("uptime-compare-devices");
-        if (!container) return;
-        container.innerHTML = devices.map(d => `
-            <label class="uptime-compare-device-label">
-                <input type="checkbox" class="compare-device-checkbox" value="${escapeHtml(d.device_id)}" ${compareSelectedDevices.has(d.device_id)?"checked":""}>
-                ${escapeHtml(d.device_id)}
-            </label>`).join("") || '<div class="muted">暂无设备</div>';
-        container.querySelectorAll(".compare-device-checkbox").forEach(cb => {
-            cb.addEventListener("change", async () => {
-                if (cb.checked) compareSelectedDevices.add(cb.value);
-                else compareSelectedDevices.delete(cb.value);
-                await refreshCompareChart();
-            });
-        });
-    }
-
-    async function refreshCompareChart() {
-        const chartContainer = document.getElementById("uptime-compare-chart");
-        if (!chartContainer) return;
-        const selected = [...compareSelectedDevices];
-        if (!selected.length) {
-            chartContainer.innerHTML = '<div class="empty">请至少选择一台设备</div>';
-            return;
-        }
-        chartContainer.innerHTML = '<div class="empty">正在读取……</div>';
-        try {
-            const results = await Promise.all(selected.map(id =>
-                requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=day&periods=30`)
-            ));
-            const series = selected.map((id, i) => ({
-                id, label: id, color: COMPARE_COLORS[i % COMPARE_COLORS.length], buckets: results[i].buckets,
-            }));
-            chartContainer.innerHTML = renderMultiSeriesTrendChart(series);
-        } catch (error) {
-            chartContainer.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
-        }
-    }
-
-    function renderMultiSeriesTrendChart(series) {
-        const anyBuckets = series.find(s => s.buckets && s.buckets.length);
-        if (!anyBuckets) return '<div class="empty">暂无数据</div>';
-        const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
-        const innerW=width-padL-padR, innerH=height-padT-padB;
-        const bucketCount = anyBuckets.buckets.length;
-        const stepX = bucketCount>1 ? innerW/(bucketCount-1) : 0;
-
-        const gridLines=[0,25,50,75,100].map(v=>{
-            const y=padT+innerH-(v/100)*innerH;
-            return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/><text x="${padL-8}" y="${y+4}" font-size="10" fill="#9098a2" text-anchor="end">${v}%</text>`;
-        }).join("");
-        const labelEvery=Math.max(1,Math.ceil(bucketCount/8));
-        const xLabels = anyBuckets.buckets.map((b,i)=> i%labelEvery===0 ? `<text x="${padL+stepX*i}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(b.label)}</text>` : "").join("");
-
-        const seriesSvg = series.map(s => {
-            const points = s.buckets.map((b,i) => {
-                const x = padL + stepX*i;
-                const y = padT + innerH - (b.uptime_pct/100)*innerH;
-                return {x,y,b};
-            });
-            const linePath = points.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-            const dots = points.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${s.color}"><title>${escapeHtml(s.label)} · ${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`).join("");
-            return `<path d="${linePath}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
-        }).join("");
-
-        const legend = series.map(s => `<span><i class="dot" style="background:${s.color}"></i>${escapeHtml(s.label)}</span>`).join("");
-
-        return `<div class="uptime-trend-wrap">
-                <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
-                    ${gridLines}
-                    ${xLabels}
-                </svg>
-                <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
-                    ${seriesSvg}
-                </svg>
-            </div>
-            <div class="uptime-compare-legend">${legend}</div>`;
-    }
-
 
     async function requestJson(url,options={}) {
         const response=await fetch(url,{cache:"no-store",...options});
