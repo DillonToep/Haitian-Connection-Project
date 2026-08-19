@@ -650,7 +650,8 @@ let currentPage = "dashboard";
     let utilizationChartMode = "all";
     let utilizationFleetBuckets = [];
     let renderedTrendSeriesKeys = new Set();
-    let trendActiveSeries = [];
+    const trendWrapSeries = new Map();
+    function setTrendWrapSeries(wrapId, series) { trendWrapSeries.set(wrapId, series); }
 
     // ---- Shared hover tooltip for every uptime/utilization trend chart ----
     let trendTooltipEl = null;
@@ -709,27 +710,27 @@ let currentPage = "dashboard";
 
     function attachTrendWrapHover(wrapId) {
         const wrap = document.getElementById(wrapId);
-        if (!wrap || wrap.dataset.hoverBound) return;
-        wrap.dataset.hoverBound = "1";
+        if (!wrap) return;
         wrap.addEventListener("mousemove", event => {
-            event.stopPropagation(); // don't let the generic .trend-dot-hit handler hide this
-            if (!trendActiveSeries.length) { hideTrendTooltip(); return; }
+            event.stopPropagation();
+            const series = trendWrapSeries.get(wrapId) || [];
+            if (!series.length) { hideTrendTooltip(); return; }
             const bgSvg = wrap.querySelector(".uptime-trend-bg");
             const point = svgPointFromEvent(bgSvg, event);
             if (!point) { hideTrendTooltip(); return; }
             const width = 920, padL = 40, padR = 14;
             const innerW = width - padL - padR;
-            const maxLen = Math.max(...trendActiveSeries.map(s => s.buckets.length));
+            const maxLen = Math.max(...series.map(s => s.buckets.length));
             if (maxLen < 1) { hideTrendTooltip(); return; }
             const stepX = maxLen > 1 ? innerW / (maxLen - 1) : 0;
             let index = stepX > 0 ? Math.round((point.x - padL) / stepX) : 0;
             index = Math.max(0, Math.min(maxLen - 1, index));
 
-            const items = trendActiveSeries
+            const items = series
                 .filter(s => s.buckets[index])
                 .map(s => ({ label: s.label, pct: s.buckets[index].uptime_pct, color: s.color }));
             if (!items.length) { hideTrendTooltip(); return; }
-            const dateLabel = (trendActiveSeries[0].buckets[index] || {}).label || "";
+            const dateLabel = (series[0].buckets[index] || {}).label || "";
             showMultiTrendTooltip(items, dateLabel, event.clientX, event.clientY);
         });
         wrap.addEventListener("mouseleave", () => hideTrendTooltip());
@@ -805,7 +806,7 @@ let currentPage = "dashboard";
         }
 
         document.querySelectorAll('[data-trend-error="1"]').forEach(el => el.remove());
-        trendActiveSeries = series;
+        setTrendWrapSeries("util-trend-wrap", series);
 
         const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const currentKeys = new Set(series.map(seriesKey));
@@ -1310,7 +1311,8 @@ let currentPage = "dashboard";
         return `<span class="uptime-delta ${up ? "uptime-delta-up" : "uptime-delta-down"}" title="较上一周期${up ? "上升" : "下降"}">${up ? "▲" : "▼"} ${up ? "+" : ""}${delta.toFixed(1)}%</span>`;
     }
 
-    function renderUptimeTrendChart(buckets) {
+
+    function renderUptimeTrendChart(buckets, wrapId, seriesLabel = "稼动率", color = "#19b58a") {
         if(!buckets.length) return '<div class="empty">暂无数据</div>';
         const width=920, height=300, padL=40, padR=14, padT=18, padB=30;
         const innerW=width-padL-padR, innerH=height-padT-padB;
@@ -1329,20 +1331,19 @@ let currentPage = "dashboard";
         const labelEvery=Math.max(1,Math.ceil(buckets.length/8));
         const xLabels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${p.x}" y="${height-8}" font-size="10" fill="#9098a2" text-anchor="middle">${escapeHtml(p.b.label)}</text>` : "").join("");
         const dots = points.map((p)=>
-            `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="#19b58a"><title>${escapeHtml(p.b.label)}: ${p.b.uptime_pct}%</title></circle>`
+            `<circle class="uptime-trend-dot" cx="${p.x}" cy="${p.y}" r="3" fill="${color}" style="pointer-events:none"/>`
         ).join("");
-        return `<div class="uptime-trend-wrap">
+        return `<div class="uptime-trend-wrap" id="${wrapId}">
             <svg class="uptime-trend-svg uptime-trend-bg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
                 ${gridLines}
                 ${xLabels}
             </svg>
             <svg class="uptime-trend-svg uptime-trend-fg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
-                <path d="${linePath}" fill="none" stroke="#19b58a" stroke-width="2"/>
+                <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2"/>
                 ${dots}
             </svg>
         </div>`;
     }
-
 
     // Collapses whatever bars/trend-line are currently sitting in a
     // 利用率 tab's DOM -- leftover from a previous visit -- back to their
@@ -1442,8 +1443,10 @@ let currentPage = "dashboard";
                 <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>
                     <div class="uptime-legend"><span><i class="dot active"></i>生产</span><span><i class="dot standby"></i>待机</span><span><i class="dot off"></i>关机</span></div>
                 </div>
-                ${renderUptimeTrendChart(dayData.buckets)}
+                ${renderUptimeTrendChart(dayData.buckets, `${containerId}-trend-wrap`, "设备稼动率")}
             </article>`;
+        setTrendWrapSeries(`${containerId}-trend-wrap`, [{ label: "设备稼动率", color: "#19b58a", buckets: dayData.buckets }]);
+        attachTrendWrapHover(`${containerId}-trend-wrap`);
         if (freshEntry) playUtilEntranceAnimation(container);
         renderedOnce.overview = true;
     }
@@ -1455,7 +1458,7 @@ let currentPage = "dashboard";
         container.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">日稼动率趋势（近30日）</div></div>
-                ${renderUptimeTrendChart(data.buckets)}
+                ${renderUptimeTrendChart(data.buckets, `${containerId}-trend-wrap`, "设备稼动率")}
             </article>
             <article class="detail-card">
                 <div class="detail-title">每日明细</div>
@@ -1466,6 +1469,8 @@ let currentPage = "dashboard";
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
+        setTrendWrapSeries(`${containerId}-trend-wrap`, [{ label: "设备稼动率", color: "#19b58a", buckets: data.buckets }]);
+        attachTrendWrapHover(`${containerId}-trend-wrap`);
         container.querySelectorAll(".uptime-bucket-row").forEach(row=>{
             row.addEventListener("click",()=>openDayDetail(id,row.dataset.date));
         });
@@ -1480,7 +1485,7 @@ let currentPage = "dashboard";
         container.innerHTML = `
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">月稼动率趋势（近12个月）</div></div>
-                ${renderUptimeTrendChart(data.buckets)}
+                ${renderUptimeTrendChart(data.buckets, `${containerId}-trend-wrap`, "设备稼动率")}
             </article>
             <article class="detail-card">
                 <div class="detail-title">每月明细</div>
@@ -1491,6 +1496,8 @@ let currentPage = "dashboard";
                         <span class="uptime-bucket-pct">${b.uptime_pct}%</span>
                     </div>`).join("")}</div>
             </article>`;
+        setTrendWrapSeries(`${containerId}-trend-wrap`, [{ label: "设备稼动率", color: "#19b58a", buckets: data.buckets }]);
+        attachTrendWrapHover(`${containerId}-trend-wrap`);
         if (freshEntry) playUtilEntranceAnimation(container);
         renderedOnce.monthly = true;
     }
