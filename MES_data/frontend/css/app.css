@@ -119,9 +119,6 @@
         .detail-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
         .detail-title { font-size: 19px; font-weight: 700; }
         .muted { color: var(--muted); }
-        /* Header actions row on the 工艺参数 card: expand/collapse-all buttons
-           sit next to the "参数时间" timestamp, right-aligned like the plain
-           .muted text did before these buttons were added. */
         .tech-header-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
         .tech-action-button {
             height: 28px; padding: 0 12px; border: 1px solid #ccd4dd; border-radius: 3px;

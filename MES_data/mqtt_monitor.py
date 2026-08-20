@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from contextlib import closing
 from datetime import datetime, timedelta
 
 import paho.mqtt.client as mqtt
@@ -40,6 +41,14 @@ CHANGELOG_TAGS = set(PARAMETER_LABELS.keys())
 
 _last_values: dict[str, dict[str, str]] = {}
 _last_machine_status: dict[str, int] = {}
+
+# Device ids that have been permanently deleted via the web UI (DELETE
+# /api/devices/{device_id}). Loaded once at startup from
+# dbo.deleted_devices and consulted on every incoming message so a device
+# never "comes back" just because the broker redelivers a retained
+# message, or the physical machine is still publishing, after it was
+# deleted in the app.
+_deleted_devices: set[str] = set()
 
 TECH_MESSAGE_TOPIC = "tech"
 SPC_MESSAGE_TOPIC = "spc"
@@ -218,6 +227,21 @@ def connect_sql():
     logging.info("SQL Server 连接成功")
 
 
+def load_deleted_devices():
+    """Populate _deleted_devices from dbo.deleted_devices. Called once at
+    startup (after connect_sql()) so on_message can immediately start
+    filtering, and can also be called again later (e.g. after deleting a
+    new device while the collector is already running) to pick up
+    changes without a restart."""
+    global _deleted_devices
+
+    with closing(sql_connection.cursor()) as cursor:
+        cursor.execute("SELECT device_id FROM dbo.deleted_devices")
+        _deleted_devices = {row[0] for row in cursor.fetchall()}
+
+    logging.info("已加载 %d 个已删除设备", len(_deleted_devices))
+
+
 def close_sql():
     global sql_connection
 
@@ -350,15 +374,24 @@ def on_disconnect(
 def on_subscribe(client, userdata, mid, reason_codes, properties):
     print("SUBACK reason codes:", reason_codes)
 
+
 def on_message(client, userdata, message):
-    print("RAW MESSAGE RECEIVED:", message.topic)
     """收到 MQTT 消息后解析并写入 SQL。"""
+    print("RAW MESSAGE RECEIVED:", message.topic)
     try:
         raw_payload = message.payload.decode("utf-8")
         payload = json.loads(raw_payload)
 
         if not isinstance(payload, dict):
             raise ValueError("JSON 根节点不是对象")
+
+        device_id = payload.get("devId")
+        if device_id in _deleted_devices:
+            # Device was deleted via the web UI -- drop the message
+            # instead of re-inserting it (this is what a retained
+            # message, or a machine that's still publishing, would
+            # otherwise silently "resurrect").
+            return
 
         record_id = insert_message(
             message,
@@ -393,6 +426,9 @@ def main():
 
     # 程序启动时先测试数据库连接
     connect_sql()
+
+    # 加载已删除设备名单，避免保留消息/仍在发送数据的设备被重新写入
+    load_deleted_devices()
 
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
