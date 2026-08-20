@@ -1,6 +1,9 @@
 """Tag/label dictionary for raw MES parameter codes.
 
-Source: haitian_data_labels_csv.xlsx (id / remark / scale / use).
+Source: haitian_data_labels_csv.xlsx (id / remark / scale / use) for the
+Haitian (H-prefixed) machines, merged with Toshiba_Data_Names.csv for the
+Toshiba (T-prefixed) machines (see machineImageForPrefix in app.js for the
+H/T device-id convention).
 
 - id: the raw tag code as stored in dbo.vw_machine_tech.parameter_id
       (and, for a subset, the underlying source of the realtime /
@@ -8,6 +11,16 @@ Source: haitian_data_labels_csv.xlsx (id / remark / scale / use).
 - label: human readable Chinese name to show on the web app.
 - use: whether this machine/line actually uses this tag. Tags with
        use=False are hidden from the web app.
+
+NOTE: a handful of tags only exist on one machine family. Where a Haitian
+and a Toshiba tag clearly represent the same concept under a different raw
+code (e.g. Haitian's EEJET / 托模时间 vs Toshiba's EEFT / 顶出时间, or
+Haitian's ASTS / 警报状态 vs Toshiba's wm / 警报), both codes are kept as
+separate dictionary entries rather than merged, since dbo.vw_machine_tech
+keys off the raw tag code as sent by each gateway. If the SPC/realtime SQL
+views (vw_machine_spc / vw_machine_realtime, not part of this repo) pivot
+on one specific code for a named column, the other family's equivalent tag
+will need to be added to that view's mapping too.
 """
 import re
 
@@ -132,8 +145,10 @@ PARAMETER_LABELS: dict[str, dict] = {
     'EFP2': {"label": '顶进压力2', "use": True},
     'EFV1': {"label": '顶进速度1', "use": True},
     'EFV2': {"label": '顶进速度2', "use": True},
+    'EFV3': {"label": '顶进速度3', "use": True},
     'EFS1': {"label": '顶进位置1', "use": True},
     'EFS2': {"label": '顶进位置2', "use": True},
+    'EFS3': {"label": '顶进位置3', "use": True},
     'EBDT': {"label": '顶退延迟', "use": True},
     'EBP1': {"label": '顶退压力1', "use": True},
     'EBP2': {"label": '顶退压力2', "use": True},
@@ -190,12 +205,16 @@ PARAMETER_LABELS: dict[str, dict] = {
     'CFS1': {"label": '座进位置1', "use": True},
     'CFS2': {"label": '座进位置2', "use": True},
     'CFT1': {"label": '座进时间', "use": True},
+    'CFT2': {"label": '座进时间2', "use": False},
     'CBP1': {"label": '座退压力1', "use": True},
+    'CBP2': {"label": '座退压力2', "use": False},
     'CBV1': {"label": '座退速度1', "use": True},
+    'CBV2': {"label": '座退速度2', "use": False},
     'CBS1': {"label": '座退位置1', "use": True},
     'CBDT1': {"label": '座退延迟时间1', "use": True},
     'CBT1': {"label": '座退时间1', "use": True},
     'CYCN': {"label": '模数', "use": True},
+    'PARTN': {"label": '产品数量', "use": True},
     'ECYCT': {"label": '周期时间', "use": True},
     'EISS': {"label": '射出起点', "use": True},
     'EIVM': {"label": '最大射速', "use": True},
@@ -205,8 +224,10 @@ PARAMETER_LABELS: dict[str, dict] = {
     'ESIPS': {"label": '转保压位置', "use": True},
     'EIPT': {"label": '射出保压时间', "use": True},
     'EIPSE': {"label": '射出终点位置', "use": True},
+    'EIPSMIN': {"label": '最小射出位置', "use": True},
     'EPLST': {"label": '储料时间', "use": True},
     'EPLSPM': {"label": '最大储料压力', "use": True},
+    'EPLTorque': {"label": '储料扭矩', "use": True},
     'EMOS': {"label": '开模位置', "use": False},
     'EFCHT': {"label": '取出时间', "use": True},
     'EMCT': {"label": '关模时间', "use": True},
@@ -214,6 +235,7 @@ PARAMETER_LABELS: dict[str, dict] = {
     'EMCHP': {"label": '高压时间', "use": True},
     'EMOT': {"label": '开模时间', "use": True},
     'EEJET': {"label": '托模时间', "use": True},
+    'EEFT': {"label": '顶出时间', "use": True},
     'ESB2T': {"label": '射退时间', "use": True},
     'ET1': {"label": '生产温度1', "use": True},
     'ET2': {"label": '生产温度2', "use": True},
@@ -231,6 +253,7 @@ PARAMETER_LABELS: dict[str, dict] = {
     'OPM': {"label": '模式', "use": True},
     'STS': {"label": '生产状态', "use": True},
     'ASTS': {"label": '警报状态', "use": True},
+    'wm': {"label": '警报', "use": True},
     'T1': {"label": '温度1', "use": True},
     'T2': {"label": '温度2', "use": True},
     'T3': {"label": '温度3', "use": True},
@@ -299,13 +322,14 @@ def get_label(parameter_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Tags that should never be offered as a 高级工艺参数 target/tolerance row
 # (mold-specific targets or the global defaults template). These aren't
-# continuous measurements: STS/ASTS are categorical status codes (STS
-# legitimately alternates 1/2 during normal operation; ASTS is an alarm id,
-# not a severity scale) and CYCN is a monotonically increasing shot counter.
+# continuous measurements: STS/ASTS/wm are categorical status/alarm codes
+# (STS legitimately alternates 1/2 during normal operation; ASTS and wm are
+# alarm ids, not a severity scale) and CYCN/PARTN are monotonically
+# increasing shot/part counters.
 # A numeric tolerance check against any of them (see _exceeds_tolerance in
 # mqtt_monitor.py) is either meaningless or guaranteed to misfire.
 # ---------------------------------------------------------------------------
-EXCLUDED_FROM_TARGETS: set[str] = {"STS", "ASTS", "CYCN"}
+EXCLUDED_FROM_TARGETS: set[str] = {"STS", "ASTS", "wm", "CYCN", "PARTN"}
 
 
 # Per-tag category overrides for parameters whose Chinese label doesn't
@@ -314,9 +338,12 @@ EXCLUDED_FROM_TARGETS: set[str] = {"STS", "ASTS", "CYCN"}
 # position/speed/pressure/time values.
 CATEGORY_OVERRIDES: dict[str, str] = {
     "EISS": "位置参数",   # 射出起点 -- injection start position
+    "EIPSMIN": "位置参数", # 最小射出位置 -- min injection position (Toshiba)
     "EIVM": "速度参数",   # 最大射速 -- max injection speed
     "EIPM": "压力参数",   # 最大射压 -- max injection pressure
     "CTBFPL": "时间参数", # 储前冷却 -- pre-storage cooling duration
+    "PARTN": "其他参数",  # 产品数量 -- product count (Toshiba)
+    "EPLTorque": "其他参数",  # 储料扭矩 -- plasticizing torque (Toshiba)
 }
 
 
