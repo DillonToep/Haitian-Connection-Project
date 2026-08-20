@@ -981,11 +981,8 @@ let currentPage = "dashboard";
             }
 
             const today = dayData.buckets[dayData.buckets.length-1];
-            const yesterday = dayData.buckets[dayData.buckets.length-2];
             const thisWeek = weekData.buckets[weekData.buckets.length-1];
-            const lastWeek = weekData.buckets[weekData.buckets.length-2];
             const thisMonth = monthData.buckets[monthData.buckets.length-1];
-            const lastMonth = monthData.buckets[monthData.buckets.length-2];
             const deviceCount = dayData.device_count || 0;
             utilizationFleetBuckets = dayData.buckets;
 
@@ -1478,11 +1475,8 @@ let currentPage = "dashboard";
             requestJson(`/api/uptime/${encodeURIComponent(id)}?granularity=month&periods=2`),
         ]);
         const today = dayData.buckets[dayData.buckets.length-1];
-        const yesterday = dayData.buckets[dayData.buckets.length-2];
         const thisWeek = weekData.buckets[weekData.buckets.length-1];
-        const lastWeek = weekData.buckets[weekData.buckets.length-2];
         const thisMonth = monthData.buckets[monthData.buckets.length-1];
-        const lastMonth = monthData.buckets[monthData.buckets.length-2];
         container.innerHTML = `
             <div class="uptime-summary-grid">
                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today?.uptime_pct, dayData.comparable_previous_pct)}</div>${today?renderUptimeBar(today):""}</div>
