@@ -99,10 +99,6 @@ let currentPage = "dashboard";
     function selectedDeviceId() { return document.getElementById("device-select").value; }
     function metric(label,value,suffix="",primary=false) { return `<div class="metric${primary?" primary":""}"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${showValue(value,suffix)}</div></div>`; }
     function machineGraphic() { return `<svg class="machine-svg" viewBox="0 0 190 54" aria-hidden="true"><rect x="4" y="18" width="48" height="26" rx="2" fill="#d7dde4" stroke="#9099a4"/><rect x="10" y="12" width="33" height="14" fill="#f4f6f8" stroke="#9099a4"/><rect x="55" y="25" width="67" height="19" fill="#cbd3dc" stroke="#89939e"/><path d="M60 24 L78 8 L104 8 L118 24" fill="#eef1f4" stroke="#89939e"/><rect x="124" y="18" width="58" height="26" fill="#dbe1e7" stroke="#89939e"/><rect x="135" y="10" width="34" height="13" fill="#f4f6f8" stroke="#89939e"/><circle cx="24" cy="48" r="4" fill="#59636f"/><circle cx="148" cy="48" r="4" fill="#59636f"/><circle cx="174" cy="48" r="4" fill="#59636f"/></svg>`; }
-    function machineVisual(deviceId) {
-        const image = deviceMachineImages[deviceId] || "/static/img/haitianMars.png";
-        return `<img class="machine-photo" src="${image}" alt="${escapeHtml(deviceId)} 机台照片">`;
-    }
 
     function rebuildCavityTable(cavitiesInputId = "mold-cavities", tableId = "mold-cavity-table") {
         const cavities = Math.max(1, Number(document.getElementById(cavitiesInputId).value) || 1);
