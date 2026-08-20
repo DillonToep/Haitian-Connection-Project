@@ -69,10 +69,23 @@ let currentPage = "dashboard";
         oil_temperature:["生产油温",""]
     };
 
-    // Map specific device IDs to a real machine photo instead of the generic SVG.
     const deviceMachineImages = {
-        "C02": "/static/img/haitianMars.png"
+        "C02": "/static/img/haitianMars.png",
+        "T29": "/static/img/toshiba.png"
     };
+
+    function machineImageForPrefix(deviceId) {
+        if (typeof deviceId === "string") {
+            if (deviceId.startsWith("H")) return "/static/img/haitianMars.png";
+            if (deviceId.startsWith("T")) return "/static/img/toshiba.png";
+        }
+        return "/static/img/haitianMars.png";
+    }
+
+    function machineVisual(deviceId) {
+        const image = deviceMachineImages[deviceId] || machineImageForPrefix(deviceId);
+        return `<img class="machine-photo" src="${image}" alt="${escapeHtml(deviceId)} 机台照片">`;
+    }
 
     function cycleCell(r) {
         if (r.spc_cycle_number != null) return `模次 #${r.spc_cycle_number}`;
