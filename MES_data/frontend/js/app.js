@@ -325,7 +325,7 @@ let currentPage = "dashboard";
             await loadDevices();
         } catch (error) { alert(error.message); }
     });
-    
+
     document.getElementById("device-delete-button").addEventListener("click", async () => {
         if (!confirm(
             `确认永久删除设备 ${detailDeviceId}？\n\n` +
@@ -722,6 +722,8 @@ let currentPage = "dashboard";
         tooltip.style.top = `${clientY - 10}px`;
     }
 
+    const TREND_DOT_HIT_RADIUS = 14;
+
     function attachTrendWrapHover(wrapId) {
         const wrap = document.getElementById(wrapId);
         if (!wrap) return;
@@ -732,8 +734,9 @@ let currentPage = "dashboard";
             const bgSvg = wrap.querySelector(".uptime-trend-bg");
             const point = svgPointFromEvent(bgSvg, event);
             if (!point) { hideTrendTooltip(); return; }
-            const width = 920, padL = 40, padR = 14;
-            const innerW = width - padL - padR;
+
+            const width = 920, height = 300, padL = 40, padR = 14, padT = 18, padB = 30;
+            const innerW = width - padL - padR, innerH = height - padT - padB;
             const maxLen = Math.max(...series.map(s => s.buckets.length));
             if (maxLen < 1) { hideTrendTooltip(); return; }
             const stepX = maxLen > 1 ? innerW / (maxLen - 1) : 0;
@@ -742,7 +745,14 @@ let currentPage = "dashboard";
 
             const items = series
                 .filter(s => s.buckets[index])
-                .map(s => ({ label: s.label, pct: s.buckets[index].uptime_pct, color: s.color }));
+                .map(s => {
+                    const dotX = padL + stepX * index;
+                    const dotY = padT + innerH - (s.buckets[index].uptime_pct / 100) * innerH;
+                    const dist = Math.hypot(point.x - dotX, point.y - dotY);
+                    return { label: s.label, pct: s.buckets[index].uptime_pct, color: s.color, dist };
+                })
+                .filter(item => item.dist <= TREND_DOT_HIT_RADIUS);
+
             if (!items.length) { hideTrendTooltip(); return; }
             const dateLabel = (series[0].buckets[index] || {}).label || "";
             showMultiTrendTooltip(items, dateLabel, event.clientX, event.clientY);
