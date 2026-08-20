@@ -325,6 +325,20 @@ let currentPage = "dashboard";
             await loadDevices();
         } catch (error) { alert(error.message); }
     });
+    
+    document.getElementById("device-delete-button").addEventListener("click", async () => {
+        if (!confirm(
+            `确认永久删除设备 ${detailDeviceId}？\n\n` +
+            "该设备的全部历史数据（实时数据、工艺参数、变更记录、模具装卸记录）将被永久删除，此操作不可恢复。"
+        )) return;
+        try {
+            await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}`, { method: "DELETE" });
+            await loadDevices();
+            await switchPage("dashboard");
+        } catch (error) {
+            alert(error.message);
+        }
+    });
 
     document.getElementById("mold-edit-close-x").addEventListener("click", () => {
         document.getElementById("mold-advanced-dialog").close();
@@ -1064,6 +1078,7 @@ let currentPage = "dashboard";
         document.getElementById("device-mold-change-button").disabled = readOnly;
         document.getElementById("device-mold-unmount-button").disabled = readOnly;
         document.getElementById("mold-defaults-save").disabled = readOnly;
+        document.getElementById("device-delete-button").disabled = readOnly;
     }
     async function loadDevices() {
         devices=await requestJson("/api/devices");

@@ -12,7 +12,7 @@ from ..parameter_labels import (
     OPERATION_MODE_LABELS,
     label_status_code,
 )
-from ..security import require_user
+from ..security import require_editor, require_user
 
 
 router = APIRouter(prefix="/api", tags=["devices"])
@@ -262,3 +262,57 @@ def get_device_spc(device_id: str, user: dict = Depends(require_user)):
         ORDER BY data_time DESC, raw_message_id DESC
     """
     return get_single_device_row(sql, device_id, "没有找到该设备的 SPC 数据")
+
+
+@router.delete("/devices/{device_id}")
+def delete_device(device_id: str, user: dict = Depends(require_user)):
+    """Permanently remove a machine and every record tied to its
+    device_id -- raw MQTT messages, 工艺参数 changelog rows, mold
+    装卸 history, and any pending cleaning alerts. Devices aren't a real
+    table (they're just distinct device_id values seen in
+    dbo.mqtt_messages), so "deleting a machine" means purging all of its
+    stored data; once the last mqtt_messages row for a device_id is gone
+    it stops appearing on the dashboard / device list entirely. This
+    cannot be undone.
+
+    Order matters for FK safety: tech_parameter_changelog rows reference
+    dbo.mqtt_messages(id) (see setup_changelog.sql), so they're deleted
+    before the mqtt_messages rows themselves. cleaning_alerts and
+    device_mold_assignments key off device_id directly and have no such
+    dependency, so their order relative to the others doesn't matter.
+    """
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+
+            exists = cursor.execute(
+                "SELECT TOP 1 1 FROM dbo.mqtt_messages WHERE device_id = ?",
+                device_id,
+            ).fetchone()
+            if exists is None:
+                raise HTTPException(status_code=404, detail="设备不存在")
+
+            cursor.execute(
+                "DELETE FROM dbo.tech_parameter_changelog WHERE device_id = ?",
+                device_id,
+            )
+            cursor.execute(
+                "DELETE FROM dbo.cleaning_alerts WHERE device_id = ?",
+                device_id,
+            )
+            cursor.execute(
+                "DELETE FROM dbo.device_mold_assignments WHERE device_id = ?",
+                device_id,
+            )
+            cursor.execute(
+                "DELETE FROM dbo.mqtt_messages WHERE device_id = ?",
+                device_id,
+            )
+
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
