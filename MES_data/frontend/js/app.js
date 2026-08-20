@@ -1121,6 +1121,18 @@ let currentPage = "dashboard";
         const statuses=new Set([...document.querySelectorAll(".status-filter:checked")].map(input=>input.value));
         return dashboardMachines.filter(m=>(!device||m.device_id===device)&&(!product||m.mold_code===product)&&statuses.has(statusOf(m)));
     }
+
+    function deviceCardInnerHtml(machine) {
+        const status=statusOf(machine),meta=statusMeta(status);
+        return `<div class="machine-visual"><div class="device-name">${escapeHtml(machine.device_id)}</div>${machineVisual(machine.device_id)}</div><div class="device-info">
+                <div class="info-row"><span class="info-label">设备编号</span><span>${showValue(machine.device_id)}</span></div>
+                <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
+                <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
+                <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.data_time)}</span></span></div>
+                <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
+            </div>`;
+    }
+
     function renderDashboard() {
         const totals={production:0,waiting:0,offline:0};
         dashboardMachines.forEach(m=>totals[statusOf(m)]++);
@@ -1131,17 +1143,24 @@ let currentPage = "dashboard";
         dashboardPage=Math.min(dashboardPage,pages);
         const start=(dashboardPage-1)*pageSize,current=filtered.slice(start,start+pageSize);
         const grid=document.getElementById("device-grid");
-        grid.innerHTML=current.length?current.map(machine=>{
-            const status=statusOf(machine),meta=statusMeta(status);
-            return `<article class="device-card" data-device="${escapeHtml(machine.device_id)}"><div class="machine-visual"><div class="device-name">${escapeHtml(machine.device_id)}</div>${machineVisual(machine.device_id)}</div><div class="device-info">
-                <div class="info-row"><span class="info-label">设备编号</span><span>${showValue(machine.device_id)}</span></div>
-                <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
-                <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
-                <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.data_time)}</span></span></div>
-                <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
-            </div></article>`;
-        }).join(""):'<div class="empty panel">没有符合条件的设备</div>';
-        grid.querySelectorAll(".device-card").forEach(card=>card.addEventListener("click",()=>openDeviceDetail(card.dataset.device)));
+
+        if (!current.length) {
+            grid.innerHTML='<div class="empty panel">没有符合条件的设备</div>';
+        } else {
+            const existingCards=[...grid.querySelectorAll(".device-card")];
+            const existingIds=existingCards.map(card=>card.dataset.device);
+            const currentIds=current.map(m=>m.device_id);
+            const sameLayout=existingIds.length===currentIds.length && existingIds.every((id,i)=>id===currentIds[i]);
+
+            if (sameLayout) {
+                current.forEach((machine,i)=>{ existingCards[i].innerHTML=deviceCardInnerHtml(machine); });
+            } else {
+                grid.innerHTML=current.map(machine=>
+                    `<article class="device-card" data-device="${escapeHtml(machine.device_id)}">${deviceCardInnerHtml(machine)}</article>`
+                ).join("");
+            }
+        }
+
         document.getElementById("page-summary").textContent=`共 ${filtered.length} 台，每页 ${pageSize} 台`;
         const buttons=document.getElementById("page-buttons");
         buttons.innerHTML=Array.from({length:pages},(_,i)=>`<button class="${i+1===dashboardPage?"active":""}" data-page-number="${i+1}">${i+1}</button>`).join("");
@@ -1993,7 +2012,11 @@ let currentPage = "dashboard";
     document.getElementById("password-button").addEventListener("click",()=>passwordDialog.showModal());
     document.getElementById("password-cancel").addEventListener("click",()=>passwordDialog.close());
     document.getElementById("password-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:f.get("current_password"),new_password:f.get("new_password")})});event.target.reset();passwordDialog.close();alert("密码修改成功");}catch(error){alert(error.message);}});
-
+        document.getElementById("device-grid").addEventListener("click", event => {
+        const card = event.target.closest(".device-card");
+        if (card) openDeviceDetail(card.dataset.device);
+    });
+    
     let refreshChain = Promise.resolve();
 
     async function runRefreshOnce() {

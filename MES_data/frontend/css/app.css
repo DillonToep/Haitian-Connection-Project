@@ -87,9 +87,10 @@
         .device-grid { display: grid; grid-template-columns: repeat(4, minmax(245px, 1fr)); gap: 12px; }
         .device-card {
             min-height: 292px; overflow: hidden; border: 1px solid var(--line); cursor: pointer;
-            background: white; transition: box-shadow .18s, transform .18s;
+            background: white; transition: box-shadow .18s ease, transform .18s ease;
         }
-        .device-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(31,41,55,.1); }
+        .device-card:hover { transform: translateY(-3px); box-shadow: 0 8px 22px rgba(31,41,55,.1); }
+        .device-card:active { transform: translateY(1px); box-shadow: 0 3px 10px rgba(31,41,55,.14); transition: transform .08s ease, box-shadow .08s ease; }
         .machine-visual {
             height: 116px; position: relative; display: grid; place-items: center;
             border-bottom: 1px solid var(--line); background: #fff;
