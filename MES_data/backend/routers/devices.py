@@ -310,10 +310,6 @@ def delete_device(device_id: str, user: dict = Depends(require_user)):
                 device_id,
             )
             cursor.execute(
-                "DELETE FROM dbo.mqtt_messages WHERE device_id = ?",
-                device_id,
-            )
-            cursor.execute(
                 "MERGE dbo.deleted_devices AS target "
                 "USING (SELECT ? AS device_id) AS src ON target.device_id = src.device_id "
                 "WHEN NOT MATCHED THEN INSERT (device_id) VALUES (src.device_id);",
