@@ -991,9 +991,9 @@ let currentPage = "dashboard";
 
             const summaryHtml = `
                 <div class="uptime-summary-grid">
-                    <div class="uptime-summary-card"><div class="muted">今日综合稼动率（${deviceCount} 台设备）</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today, yesterday)}</div>${today?renderUptimeBar(today):""}</div>
-                    <div class="uptime-summary-card"><div class="muted">本周综合稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}% ${renderUptimeDelta(thisWeek, lastWeek)}</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
-                    <div class="uptime-summary-card"><div class="muted">本月综合稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}% ${renderUptimeDelta(thisMonth, lastMonth)}</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+                    <div class="uptime-summary-card"><div class="muted">今日综合稼动率（${deviceCount} 台设备）</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today?.uptime_pct, dayData.comparable_previous_pct)}</div>${today?renderUptimeBar(today):""}</div>
+                    <div class="uptime-summary-card"><div class="muted">本周综合稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}% ${renderUptimeDelta(thisWeek?.uptime_pct, weekData.comparable_previous_pct)}</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+                    <div class="uptime-summary-card"><div class="muted">本月综合稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}% ${renderUptimeDelta(thisMonth?.uptime_pct, monthData.comparable_previous_pct)}</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
                 </div>`;
 
         if (freshEntry) {
@@ -1353,12 +1353,12 @@ let currentPage = "dashboard";
     }
 
 
-    function renderUptimeDelta(current, previous) {
-        if (!current || !previous) return "";
-        const delta = Math.round((current.uptime_pct - previous.uptime_pct) * 10) / 10;
-        if (delta === 0) return `<span class="uptime-delta uptime-delta-flat" title="较上一周期持平">± 0%</span>`;
+    function renderUptimeDelta(currentPct, previousPct) {
+        if (currentPct == null || previousPct == null) return "";
+        const delta = Math.round((currentPct - previousPct) * 10) / 10;
+        if (delta === 0) return `<span class="uptime-delta uptime-delta-flat" title="较上一周期同时段持平">± 0%</span>`;
         const up = delta > 0;
-        return `<span class="uptime-delta ${up ? "uptime-delta-up" : "uptime-delta-down"}" title="较上一周期${up ? "上升" : "下降"}">${up ? "▲" : "▼"} ${up ? "+" : ""}${delta.toFixed(1)}%</span>`;
+        return `<span class="uptime-delta ${up ? "uptime-delta-up" : "uptime-delta-down"}" title="较上一周期同时段${up ? "上升" : "下降"}">${up ? "▲" : "▼"} ${up ? "+" : ""}${delta.toFixed(1)}%</span>`;
     }
 
 
@@ -1485,9 +1485,9 @@ let currentPage = "dashboard";
         const lastMonth = monthData.buckets[monthData.buckets.length-2];
         container.innerHTML = `
             <div class="uptime-summary-grid">
-                <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today, yesterday)}</div>${today?renderUptimeBar(today):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}% ${renderUptimeDelta(thisWeek, lastWeek)}</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
-                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}% ${renderUptimeDelta(thisMonth, lastMonth)}</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
+               <div class="uptime-summary-card"><div class="muted">今日稼动率</div><div class="uptime-summary-value">${today?today.uptime_pct:0}% ${renderUptimeDelta(today?.uptime_pct, dayData.comparable_previous_pct)}</div>${today?renderUptimeBar(today):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本周稼动率</div><div class="uptime-summary-value">${thisWeek?thisWeek.uptime_pct:0}% ${renderUptimeDelta(thisWeek?.uptime_pct, weekData.comparable_previous_pct)}</div>${thisWeek?renderUptimeBar(thisWeek):""}</div>
+                <div class="uptime-summary-card"><div class="muted">本月稼动率</div><div class="uptime-summary-value">${thisMonth?thisMonth.uptime_pct:0}% ${renderUptimeDelta(thisMonth?.uptime_pct, monthData.comparable_previous_pct)}</div>${thisMonth?renderUptimeBar(thisMonth):""}</div>
             </div>
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">近30日稼动率趋势</div>

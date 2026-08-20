@@ -53,6 +53,73 @@ def _range_start(granularity: str, periods: int, today: date) -> date:
     return date(year, month + 1, 1)
 
 
+def _period_start(granularity: str, day: date) -> date:
+    """Calendar start date of the bucket `day` falls into (mirrors _bucket_key)."""
+    if granularity == "day":
+        return day
+    if granularity == "week":
+        return day - timedelta(days=day.weekday())
+    return date(day.year, day.month, 1)
+
+
+def _shift_period_start(granularity: str, period_start: date) -> date:
+    """One granularity-step earlier -- calendar-correct, not just -N days."""
+    if granularity == "day":
+        return period_start - timedelta(days=1)
+    if granularity == "week":
+        return period_start - timedelta(weeks=1)
+    total_months = period_start.year * 12 + (period_start.month - 1) - 1
+    year, month = divmod(total_months, 12)
+    return date(year, month + 1, 1)
+
+
+def _comparable_previous_window(granularity: str, today: date, now: datetime) -> tuple[datetime, datetime]:
+    """[start, end) for the previous period, clipped to the same elapsed
+    duration as the current in-progress period -- e.g. at Wed 2pm this is
+    'last Wednesday midnight -> 2pm', not the full previous day/week/month.
+    Keeps the summary-card delta an apples-to-apples comparison instead of
+    penalizing every in-progress period against a previous period that had
+    a full 24h/7d/month to accumulate against."""
+    current_start = datetime.combine(_period_start(granularity, today), datetime.min.time())
+    elapsed = now - current_start
+    previous_start = datetime.combine(_shift_period_start(granularity, current_start.date()), datetime.min.time())
+    return previous_start, previous_start + elapsed
+
+
+def _uptime_pct_for_range(cursor, device_ids: list[str], range_start: datetime, range_end: datetime) -> float | None:
+    """Active-time % across `device_ids` for an arbitrary (non
+    calendar-aligned) window -- used only as the comparable-previous
+    baseline, since it doesn't reuse the pre-rolled-up buckets. None if
+    the window is empty (e.g. before any period at that granularity)."""
+    if range_end <= range_start or not device_ids:
+        return None
+
+    placeholders = ",".join("?" for _ in device_ids)
+    cursor.execute(
+        f"""
+        SELECT device_id, data_time, machine_status
+        FROM dbo.vw_machine_realtime
+        WHERE device_id IN ({placeholders}) AND data_time >= ? AND data_time <= ?
+        ORDER BY device_id, data_time
+        """,
+        *device_ids, range_start, range_end,
+    )
+    rows_by_device: dict[str, list] = {}
+    for row in cursor.fetchall():
+        rows_by_device.setdefault(row.device_id, []).append((row.data_time, row.machine_status))
+
+    active = standby = off = 0.0
+    for device_id in device_ids:
+        totals = _compute_day_totals(rows_by_device.get(device_id, []), range_start, range_end)
+        for bucket in totals.values():
+            active += bucket["active"]
+            standby += bucket["standby"]
+            off += bucket["off"]
+
+    total = active + standby + off
+    return round(active / total * 100, 1) if total > 0 else None
+
+
 def _split_into_days(seg_start: datetime, seg_end: datetime, status: str, day_totals: dict):
     """Attribute the [seg_start, seg_end) interval to `status`, splitting
     across midnight so each calendar day only gets the seconds that
@@ -191,6 +258,9 @@ def get_uptime_day(
     }
 
 
+
+
+
 def _fill_missing_days(day_totals: dict, range_start: date, range_end: date, now: datetime, device_count: int = 1):
     """Safety net: make sure every day in range sums to its full expected
     duration (rounding, or a day with zero rows some other way). When
@@ -282,6 +352,9 @@ def get_uptime_summary(
             device_ids = [row.device_id for row in cursor.fetchall()]
             cursor.execute(sql_rows, range_start_dt, now)
             rows = cursor.fetchall()
+
+            prev_start, prev_end = _comparable_previous_window(granularity, today, now)
+            comparable_previous_pct = _uptime_pct_for_range(cursor, device_ids, prev_start, prev_end)
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
@@ -307,7 +380,12 @@ def get_uptime_summary(
     _fill_missing_days(combined_day_totals, range_start_date, today, now, device_count)
     buckets = _roll_up(combined_day_totals, granularity, range_start_date, today, periods)
 
-    return {"granularity": granularity, "device_count": device_count, "buckets": buckets}
+    return {
+        "granularity": granularity,
+        "device_count": device_count,
+        "buckets": buckets,
+        "comparable_previous_pct": comparable_previous_pct,
+    }
 
 @router.get("/uptime/{device_id}")
 def get_uptime(
@@ -335,6 +413,9 @@ def get_uptime(
             cursor = connection.cursor()
             cursor.execute(sql, device_id, range_start_dt, now)
             rows = cursor.fetchall()
+
+            prev_start, prev_end = _comparable_previous_window(granularity, today, now)
+            comparable_previous_pct = _uptime_pct_for_range(cursor, [device_id], prev_start, prev_end)
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
@@ -346,4 +427,9 @@ def get_uptime(
     _fill_missing_days(day_totals, range_start_date, today, now)
     buckets = _roll_up(day_totals, granularity, range_start_date, today, periods)
 
-    return {"device_id": device_id, "granularity": granularity, "buckets": buckets}
+    return {
+        "device_id": device_id,
+        "granularity": granularity,
+        "buckets": buckets,
+        "comparable_previous_pct": comparable_previous_pct,
+    }
