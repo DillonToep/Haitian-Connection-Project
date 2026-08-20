@@ -79,12 +79,13 @@ let currentPage = "dashboard";
             if (deviceId.startsWith("H")) return "/static/img/haitianMars.png";
             if (deviceId.startsWith("T")) return "/static/img/toshiba.png";
         }
-        return "/static/img/haitianMars.png";
+        return "/static/img/haitianMars.png"; // default when no rule matches
     }
 
     function machineVisual(deviceId) {
         const image = deviceMachineImages[deviceId] || machineImageForPrefix(deviceId);
-        return `<img class="machine-photo" src="${image}" alt="${escapeHtml(deviceId)} 机台照片">`;
+        const extraClass = image.endsWith("/toshiba.png") ? " machine-photo-toshiba" : "";
+        return `<img class="machine-photo${extraClass}" src="${image}" alt="${escapeHtml(deviceId)} 机台照片">`;
     }
 
     function cycleCell(r) {

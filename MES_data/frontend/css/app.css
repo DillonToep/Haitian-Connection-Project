@@ -97,6 +97,7 @@
         .device-name { position: absolute; top: 17px; left: 0; right: 0; text-align: center; font-size: 15px; }
         .machine-svg { width: 132px; margin-top: 22px; }
         .machine-photo { width: 70%; height: 70%; margin: 0 auto; display: block; object-fit: contain; }
+        .machine-photo-toshiba { width: 55%; height: 55%; }
         .device-info { padding: 12px 15px 10px; }
         .info-row { display: grid; grid-template-columns: 86px 1fr; gap: 7px; margin-bottom: 5px; }
         .info-label { color: #87919d; }
