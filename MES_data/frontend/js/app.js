@@ -1272,7 +1272,7 @@ let currentPage = "dashboard";
                 <div class="metric-label">模次${m.cycle_reset_at?`　<span class="muted">(重置于 ${formatTime(m.cycle_reset_at)})</span>`:""}</div>
                 <div class="metric-value-row">
                     <div class="metric-value">${showValue(m.cycle_count_display)}</div>
-                    <button type="button" class="metric-reset-button" id="cycle-count-reset-button" title="重置模次显示，不影响机台原始计数"${readOnly?" disabled":""}>重置</button>
+                    <button type="button" class="metric-reset-button" id="cycle-count-reset-button" title="重置模次显示及当前模具的产量统计，不影响机台原始 CYCN 计数"${readOnly?" disabled":""}>重置</button>
                 </div>
             </div>`;
         document.getElementById("detail-tab-realtime").innerHTML=`
@@ -1286,10 +1286,11 @@ let currentPage = "dashboard";
             </article>`;
 
         document.getElementById("cycle-count-reset-button")?.addEventListener("click", async () => {
-            if (!confirm("确认重置模次显示？该操作只重置本页显示的计数，机台原始计数和产量统计不受影响。")) return;
+            if (!confirm("确认重置？将清零本页模次显示，以及当前装机模具的今日/本周/累计产量与产量超限提醒。机台原始 CYCN 计数不受影响，此操作不可撤销。")) return;
             try {
                 await requestJson(`/api/devices/${encodeURIComponent(id)}/cycle-count/reset`, { method: "POST" });
                 await loadRealtime(id);
+                await loadDeviceMoldCard(id);
             } catch (error) { alert(error.message); }
         });
     }

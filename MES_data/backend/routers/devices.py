@@ -222,17 +222,19 @@ def get_device_realtime(device_id: str, user: dict = Depends(require_user)):
 
 @router.post("/devices/{device_id}/cycle-count/reset")
 def reset_cycle_count(device_id: str, user: dict = Depends(require_user)):
-    """Zero out the displayed 模次 tile on the 实时参数 tab. Stores the
-    machine's current raw CYCN value as a per-device baseline; the raw
-    counter itself (and mold total_output) is untouched."""
+    """Zero out the displayed 模次 tile AND the currently-mounted mold's
+    production counters (今日/本周/累计产量, plus its max_output alert
+    baseline) in one action. This is a full "start a new count" reset for
+    the device's current run -- the machine's raw CYCN value itself is
+    never touched, only our own derived counters."""
     require_editor(user)
-    sql_latest = """
+    sql_latest_cycle = """
         SELECT TOP 1 cycle_number
         FROM dbo.vw_machine_spc
         WHERE device_id = ?
         ORDER BY data_time DESC, raw_message_id DESC
     """
-    sql_upsert = """
+    sql_upsert_cycle = """
         MERGE dbo.device_cycle_resets AS target
         USING (SELECT ? AS device_id) AS src
         ON target.device_id = src.device_id
@@ -242,13 +244,37 @@ def reset_cycle_count(device_id: str, user: dict = Depends(require_user)):
             INSERT (device_id, reset_cycle_number, reset_by)
             VALUES (src.device_id, ?, ?);
     """
+    sql_current_mold = """
+        SELECT m.id AS mold_id
+        FROM dbo.device_mold_assignments AS a
+        INNER JOIN dbo.molds AS m ON m.id = a.mold_id
+        WHERE a.device_id = ? AND a.unmounted_at IS NULL
+    """
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
-            cursor.execute(sql_latest, device_id)
+
+            cursor.execute(sql_latest_cycle, device_id)
             row = cursor.fetchone()
             baseline = row.cycle_number if row and row.cycle_number is not None else 0
-            cursor.execute(sql_upsert, device_id, baseline, user["id"], baseline, user["id"])
+            cursor.execute(sql_upsert_cycle, device_id, baseline, user["id"], baseline, user["id"])
+
+            cursor.execute(sql_current_mold, device_id)
+            mold_row = cursor.fetchone()
+            if mold_row is not None:
+                mold_id = mold_row.mold_id
+                # 今日 / 本周产量 are COUNT(*) rollups over this table --
+                # wiping the log for this mold zeroes both in one step.
+                cursor.execute("DELETE FROM dbo.mold_production_log WHERE mold_id = ?", mold_id)
+                cursor.execute("UPDATE dbo.molds SET total_output = 0 WHERE id = ?", mold_id)
+                # A pending 产量超限 alert no longer reflects reality once
+                # total_output is back to 0 -- clear it so it doesn't sit
+                # around stale until production climbs past max_output again.
+                cursor.execute(
+                    "DELETE FROM dbo.mold_output_alerts WHERE mold_id = ? AND acknowledged_at IS NULL",
+                    mold_id,
+                )
+
             connection.commit()
             return {"status": "ok", "reset_cycle_number": baseline}
     except pyodbc.Error as error:
