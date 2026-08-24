@@ -1888,7 +1888,7 @@ let currentPage = "dashboard";
             return `<tr class="warning-row" data-id="${r.id}" data-warning-type="output" data-mold="${r.mold_id}">
                 <td>${formatTime(r.detected_at)}</td>
                 <td>${escapeHtml(r.device_id)}</td>
-                <td>🏭 ${escapeHtml(r.mold_code||"")} 超过最大产量</td>
+                <td>${escapeHtml(r.mold_code||"")} 超过最大产量</td>
                 <td>已生产 ${showValue(r.total_output)} 模</td>
                 <td class="changelog-new-value">上限 ${showValue(r.max_output)} 模</td>
                 <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="output" type="button">清除</button>`}</td>
