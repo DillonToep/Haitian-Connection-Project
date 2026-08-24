@@ -1255,8 +1255,6 @@ let currentPage = "dashboard";
     }
     document.getElementById("day-detail-close").addEventListener("click",()=>document.getElementById("day-detail-dialog").close());
 
-    // Realtime tab: labelled status + temperature tiles. Values arrive
-    // already scaled from the API (backend/parameter_labels.py).
     async function loadRealtime(id) {
         const m=await requestJson(`/api/realtime/${encodeURIComponent(id)}`);
         const statusTiles=[
@@ -1266,15 +1264,31 @@ let currentPage = "dashboard";
             metric("生产油温 (OT)",m.oil_temperature," ℃",true),
         ].join("");
         const temperatureTiles=[1,2,3,4,5,6,7].map(i=>metric(`温度 T${i}`,m[`temperature_${i}`]," ℃")).join("");
+        const readOnly = currentUser.role === "viewer";
+        const cycleTile = `<div class="metric primary metric-with-action">
+                <div class="metric-label">模次${m.cycle_reset_at?`　<span class="muted">(重置于 ${formatTime(m.cycle_reset_at)})</span>`:""}</div>
+                <div class="metric-value-row">
+                    <div class="metric-value">${showValue(m.cycle_count_display)}</div>
+                    <button type="button" class="metric-reset-button" id="cycle-count-reset-button" title="重置模次显示，不影响机台原始计数"${readOnly?" disabled":""}>重置</button>
+                </div>
+            </div>`;
         document.getElementById("detail-tab-realtime").innerHTML=`
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">实时状态</div><div class="muted">数据时间：${formatTime(m.data_time)}</div></div>
-                <div class="metric-grid">${statusTiles}</div>
+                <div class="metric-grid">${cycleTile}${statusTiles}</div>
             </article>
             <article class="detail-card">
                 <div class="detail-title">料筒温度</div>
                 <div class="metric-grid">${temperatureTiles}</div>
             </article>`;
+
+        document.getElementById("cycle-count-reset-button")?.addEventListener("click", async () => {
+            if (!confirm("确认重置模次显示？该操作只重置本页显示的计数，机台原始计数和产量统计不受影响。")) return;
+            try {
+                await requestJson(`/api/devices/${encodeURIComponent(id)}/cycle-count/reset`, { method: "POST" });
+                await loadRealtime(id);
+            } catch (error) { alert(error.message); }
+        });
     }
 
     function groupTechParameters(items) {

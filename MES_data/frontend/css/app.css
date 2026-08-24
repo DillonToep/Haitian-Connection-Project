@@ -131,6 +131,16 @@
         .metric.primary { border-color: #cfe8db; background: #eef8f1; }
         .metric-label { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
         .metric-value { font-size: 19px; font-weight: 700; }
+        .metric-with-action { display: flex; flex-direction: column; }
+        .metric-value-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .metric-reset-button {
+            flex: 0 0 auto; height: 26px; padding: 0 10px; border: 1px solid #ccd4dd; border-radius: 3px;
+            color: #4c5663; background: white; font-size: 12px; font-weight: 600;
+        }
+        .metric-reset-button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+        .metric-reset-button:disabled { opacity: .5; cursor: not-allowed; }
+        html[data-theme="dark"] .metric-reset-button { border-color: #313a46; color: #d3d8de; background: #1a1f27; }
+        html[data-theme="dark"] .metric-reset-button:hover:not(:disabled) { border-color: #57caa0; color: #57caa0; }
         .parameter-grid { display: flex; flex-direction: column; gap: 8px; }
         .parameter { display: flex; justify-content: space-between; align-items: baseline; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
         .parameter span:first-child { min-width: 58px; color: var(--muted); }

@@ -163,7 +163,7 @@ def get_all_realtime(user: dict = Depends(require_user)):
 @router.get("/realtime/{device_id}")
 def get_device_realtime(device_id: str, user: dict = Depends(require_user)):
     del user
-    sql = """
+    sql_realtime = """
         SELECT TOP 1
             raw_message_id, device_id, data_time,
             alarm_status, operation_mode,
@@ -175,7 +175,78 @@ def get_device_realtime(device_id: str, user: dict = Depends(require_user)):
         WHERE device_id = ?
         ORDER BY data_time DESC, raw_message_id DESC
     """
-    return _decorate_status_labels(get_single_device_row(sql, device_id, "没有找到该设备的实时数据"))
+    sql_cycle = """
+        SELECT TOP 1 cycle_number
+        FROM dbo.vw_machine_spc
+        WHERE device_id = ?
+        ORDER BY data_time DESC, raw_message_id DESC
+    """
+    sql_reset = """
+        SELECT reset_cycle_number, reset_at
+        FROM dbo.device_cycle_resets
+        WHERE device_id = ?
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql_realtime, device_id)
+            row = cursor.fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="没有找到该设备的实时数据")
+            record = row_to_dict(cursor, row)
+
+            cursor.execute(sql_cycle, device_id)
+            cycle_row = cursor.fetchone()
+            record["cycle_number"] = cycle_row.cycle_number if cycle_row else None
+
+            cursor.execute(sql_reset, device_id)
+            reset_row = cursor.fetchone()
+            baseline = reset_row.reset_cycle_number if reset_row else 0
+            record["cycle_reset_at"] = reset_row.reset_at if reset_row else None
+            record["cycle_count_display"] = (
+                max(record["cycle_number"] - baseline, 0)
+                if record["cycle_number"] is not None else None
+            )
+            return _decorate_status_labels(record)
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.post("/devices/{device_id}/cycle-count/reset")
+def reset_cycle_count(device_id: str, user: dict = Depends(require_user)):
+    """Zero out the displayed 模次 tile on the 实时参数 tab. Stores the
+    machine's current raw CYCN value as a per-device baseline; the raw
+    counter itself (and mold total_output) is untouched."""
+    require_editor(user)
+    sql_latest = """
+        SELECT TOP 1 cycle_number
+        FROM dbo.vw_machine_spc
+        WHERE device_id = ?
+        ORDER BY data_time DESC, raw_message_id DESC
+    """
+    sql_upsert = """
+        MERGE dbo.device_cycle_resets AS target
+        USING (SELECT ? AS device_id) AS src
+        ON target.device_id = src.device_id
+        WHEN MATCHED THEN
+            UPDATE SET reset_cycle_number = ?, reset_at = SYSUTCDATETIME(), reset_by = ?
+        WHEN NOT MATCHED THEN
+            INSERT (device_id, reset_cycle_number, reset_by)
+            VALUES (src.device_id, ?, ?);
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql_latest, device_id)
+            row = cursor.fetchone()
+            baseline = row.cycle_number if row and row.cycle_number is not None else 0
+            cursor.execute(sql_upsert, device_id, baseline, user["id"], baseline, user["id"])
+            connection.commit()
+            return {"status": "ok", "reset_cycle_number": baseline}
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
 @router.get("/tech/{device_id}")
