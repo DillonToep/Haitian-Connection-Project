@@ -1398,7 +1398,7 @@ let currentPage = "dashboard";
         const result=await requestJson(`/api/spc/${encodeURIComponent(id)}`);
         const has=name=>Object.hasOwn(result,name);
         const tile=name=>metric(spcFields[name][0],result[name],spcFields[name][1]);
-        const overviewNames=["cycle_number","cycle_time","oil_temperature","injection_max_pressure"];
+        const overviewNames=["cycle_time","oil_temperature","injection_max_pressure"];
         const tempNames=["temperature_1","temperature_2","temperature_3","temperature_4","temperature_5","temperature_6","temperature_7"];
         const injectionNames=["injection_start_position","injection_max_speed","injection_time","injection_end_position","switch_pressure","switch_position","switch_time"];
         const timingNames=["mold_close_time","mold_open_time","plasticizing_time","plasticizing_max_pressure","pickup_time","low_pressure_time","high_pressure_time","screw_retract_time","eject_time"];
