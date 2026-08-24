@@ -2129,9 +2129,8 @@ let currentPage = "dashboard";
     function scheduleAutoRefresh() {
         if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
         autoRefreshTimer = setTimeout(async () => {
-
             const onUptimeTab = currentPage === "device-detail" && activeDetailTab === "uptime";
-            if ((currentPage === "dashboard" || currentPage === "device-detail") && !onUptimeTab) {
+            if ((currentPage === "dashboard" || currentPage === "device-detail" || currentPage === "molds") && !onUptimeTab) {
                 await refreshPage();
             }
             scheduleAutoRefresh();

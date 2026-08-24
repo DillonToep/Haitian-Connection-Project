@@ -187,68 +187,6 @@ def get_molds(user: dict = Depends(require_user)):
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-@router.get("/molds/{mold_id}/output")
-def get_mold_output(
-    mold_id: int,
-    days: int = Query(30, ge=1, le=366),
-    user: dict = Depends(require_user),
-):
-    """Daily production counts for a mold over the last `days` days (for
-    the trend chart), plus ready-to-display today/this-week/lifetime
-    totals. Counts come from dbo.mold_production_log -- one row per
-    completed cycle while this mold was mounted (see
-    _record_production_and_check_output in mqtt_monitor.py) -- so moving
-    a mold between machines never double-counts or loses cycles."""
-    del user
-    try:
-        with closing(get_connection()) as connection:
-            cursor = connection.cursor()
-            mold = cursor.execute(
-                "SELECT id, mold_code, mold_name, max_output, total_output FROM dbo.molds WHERE id = ?",
-                mold_id,
-            ).fetchone()
-            if mold is None:
-                raise HTTPException(status_code=404, detail="模具不存在")
-
-            range_start = date.today() - timedelta(days=days - 1)
-            cursor.execute(
-                """
-                SELECT CAST(produced_at AS DATE) AS day, COUNT(*) AS count
-                FROM dbo.mold_production_log
-                WHERE mold_id = ? AND produced_at >= ?
-                GROUP BY CAST(produced_at AS DATE)
-                """,
-                mold_id,
-                range_start,
-            )
-            counts_by_day = {row.day: row.count for row in cursor.fetchall()}
-    except HTTPException:
-        raise
-    except pyodbc.Error as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
-    daily = []
-    day = range_start
-    today = date.today()
-    while day <= today:
-        daily.append({"date": day.isoformat(), "count": counts_by_day.get(day, 0)})
-        day += timedelta(days=1)
-
-    today_count = counts_by_day.get(today, 0)
-    week_start = today - timedelta(days=today.weekday())
-    week_count = sum(count for d, count in counts_by_day.items() if d >= week_start)
-
-    return {
-        "mold_id": mold_id,
-        "mold_code": mold.mold_code,
-        "mold_name": mold.mold_name,
-        "max_output": mold.max_output,
-        "total_output": mold.total_output,
-        "today_output": today_count,
-        "week_output": week_count,
-        "daily": daily,
-    }
-
 
 @router.get("/molds/parameter-defaults")
 def get_mold_parameter_defaults(user: dict = Depends(require_user)):
