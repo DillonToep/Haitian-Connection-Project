@@ -105,7 +105,12 @@ def get_dashboard(user: dict = Depends(require_user)):
             d.device_id, r.data_time, r.received_at,
             r.alarm_status, r.operation_mode,
             r.operation_time AS oil_temperature, r.machine_status,
-            s.cycle_number, s.cycle_time,
+            s.cycle_time,
+            CASE
+                WHEN s.cycle_number IS NULL THEN NULL
+                WHEN s.cycle_number - ISNULL(c.reset_cycle_number, 0) < 0 THEN 0
+                ELSE s.cycle_number - ISNULL(c.reset_cycle_number, 0)
+            END AS cycle_count_display,
             m.id AS mold_id, m.mold_code, m.mold_name,
             m.product_code, m.cavities, a.mounted_at
         FROM devices AS d
@@ -113,6 +118,8 @@ def get_dashboard(user: dict = Depends(require_user)):
             ON r.device_id = d.device_id AND r.row_number = 1
         LEFT JOIN latest_spc AS s
             ON s.device_id = d.device_id AND s.row_number = 1
+        LEFT JOIN dbo.device_cycle_resets AS c
+            ON c.device_id = d.device_id
         LEFT JOIN dbo.device_mold_assignments AS a
             ON a.device_id = d.device_id AND a.unmounted_at IS NULL
         LEFT JOIN dbo.molds AS m ON m.id = a.mold_id
@@ -125,7 +132,6 @@ def get_dashboard(user: dict = Depends(require_user)):
             return [_decorate_status_labels(row_to_dict(cursor, row)) for row in cursor.fetchall()]
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
-
 
 @router.get("/realtime")
 def get_all_realtime(user: dict = Depends(require_user)):

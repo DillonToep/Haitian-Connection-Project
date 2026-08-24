@@ -1174,7 +1174,7 @@ let currentPage = "dashboard";
                 <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
                 <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.data_time)}</span></span></div>
-                <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
+                <div class="device-metrics">模次：${showValue(machine.cycle_count_display)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
             </div>`;
     }
 
