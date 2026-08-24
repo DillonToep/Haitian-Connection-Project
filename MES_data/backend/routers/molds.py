@@ -313,13 +313,30 @@ def get_mold_output(
     del user
     date_expr = "CAST(produced_at AS DATE)" if granularity == "day" else \
                 "DATEADD(day, -DATEPART(weekday, produced_at) + 1, CAST(produced_at AS DATE))"
-    sql = f"""
+    sql_buckets = f"""
         SELECT {date_expr} AS bucket, COUNT(*) AS count
         FROM dbo.mold_production_log
         WHERE mold_id = ?
         GROUP BY {date_expr}
         ORDER BY bucket DESC
         OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+    """
+    # Independent of the requested granularity/periods -- these two
+    # convenience totals always mean "today" and "this calendar week"
+    # (Mon-Sun), same window the dashboard's 模次/产量 figures use.
+    sql_today = """
+        SELECT COUNT(*) AS count
+        FROM dbo.mold_production_log
+        WHERE mold_id = ? AND CAST(produced_at AS DATE) = CAST(SYSDATETIME() AS DATE)
+    """
+    sql_week = """
+        SELECT COUNT(*) AS count
+        FROM dbo.mold_production_log
+        WHERE mold_id = ?
+          AND produced_at >= DATEADD(
+                day, -DATEPART(weekday, CAST(SYSDATETIME() AS DATE)) + 1,
+                CAST(SYSDATETIME() AS DATE)
+              )
     """
     try:
         with closing(get_connection()) as connection:
@@ -329,21 +346,25 @@ def get_mold_output(
             ).fetchone()
             if mold is None:
                 raise HTTPException(status_code=404, detail="模具不存在")
-            cursor.execute(sql, mold_id, periods)
+
+            cursor.execute(sql_buckets, mold_id, periods)
             buckets = [{"date": r.bucket.isoformat(), "count": r.count} for r in cursor.fetchall()]
-            # today / this week convenience totals
-            today_count = next((b["count"] for b in buckets if b["date"] == date.today().isoformat()), 0) if granularity == "day" else None
+
+            today_output = cursor.execute(sql_today, mold_id).fetchone().count
+            week_output = cursor.execute(sql_week, mold_id).fetchone().count
+
             return {
                 "mold_id": mold_id,
                 "total_output": mold.total_output,
                 "max_output": mold.max_output,
+                "today_output": today_output,
+                "week_output": week_output,
                 "buckets": list(reversed(buckets)),
             }
     except HTTPException:
         raise
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
-
 
 @router.put("/molds/{mold_id}/parameters")
 def update_mold_parameters(
