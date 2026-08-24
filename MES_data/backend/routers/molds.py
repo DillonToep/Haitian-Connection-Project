@@ -366,6 +366,65 @@ def get_mold_output(
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
+
+@router.post("/molds/{mold_id}/output/reset")
+def reset_mold_output(mold_id: int, user: dict = Depends(require_user)):
+    """Zero out this mold's own production counters (今日/本周/累计产量,
+    plus its max_output alert baseline) -- reachable directly from
+    模具管理, independent of whether the mold is currently mounted on a
+    device. If it IS currently mounted, this also resets that device's
+    模次 display baseline (dbo.device_cycle_resets) the same way the
+    device-detail page's reset button does, so the two views never drift
+    apart from each other."""
+    require_editor(user)
+    sql_current_device = """
+        SELECT device_id FROM dbo.device_mold_assignments
+        WHERE mold_id = ? AND unmounted_at IS NULL
+    """
+    sql_latest_cycle = """
+        SELECT TOP 1 cycle_number
+        FROM dbo.vw_machine_spc
+        WHERE device_id = ?
+        ORDER BY data_time DESC, raw_message_id DESC
+    """
+    sql_upsert_cycle = """
+        MERGE dbo.device_cycle_resets AS target
+        USING (SELECT ? AS device_id) AS src
+        ON target.device_id = src.device_id
+        WHEN MATCHED THEN
+            UPDATE SET reset_cycle_number = ?, reset_at = SYSUTCDATETIME(), reset_by = ?
+        WHEN NOT MATCHED THEN
+            INSERT (device_id, reset_cycle_number, reset_by)
+            VALUES (src.device_id, ?, ?);
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            row = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+
+            cursor.execute("DELETE FROM dbo.mold_production_log WHERE mold_id = ?", mold_id)
+            cursor.execute("UPDATE dbo.molds SET total_output = 0 WHERE id = ?", mold_id)
+            cursor.execute(
+                "DELETE FROM dbo.mold_output_alerts WHERE mold_id = ? AND acknowledged_at IS NULL",
+                mold_id,
+            )
+
+            device_row = cursor.execute(sql_current_device, mold_id).fetchone()
+            if device_row is not None:
+                device_id = device_row.device_id
+                cycle_row = cursor.execute(sql_latest_cycle, device_id).fetchone()
+                baseline = cycle_row.cycle_number if cycle_row and cycle_row.cycle_number is not None else 0
+                cursor.execute(sql_upsert_cycle, device_id, baseline, user["id"], baseline, user["id"])
+
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
 @router.put("/molds/{mold_id}/parameters")
 def update_mold_parameters(
     mold_id: int,

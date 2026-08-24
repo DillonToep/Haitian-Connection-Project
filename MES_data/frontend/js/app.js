@@ -308,6 +308,7 @@ let currentPage = "dashboard";
 
         const readOnly = currentUser.role === "viewer";
         document.getElementById("mold-edit-form").querySelectorAll("input,textarea,select,button").forEach(el => el.disabled = readOnly);
+        document.getElementById("mold-edit-reset-output-button").disabled = readOnly;
 
         moldAdvancedLoaded = false;
         document.getElementById("mold-advanced-dialog").close();
@@ -327,6 +328,14 @@ let currentPage = "dashboard";
             await requestJson(`/api/molds/${editMoldId}`, { method: "DELETE" });
             document.getElementById("mold-advanced-dialog").close();
             document.getElementById("mold-edit-dialog").close();
+            await loadMolds();
+        } catch (error) { alert(error.message); }
+    });
+    document.getElementById("mold-edit-reset-output-button").addEventListener("click", async () => {
+        if (!confirm("确认重置该模具的产量统计（今日/本周/累计）？如该模具当前已装机，对应设备的模次显示也会一并重置，此操作不可撤销。")) return;
+        try {
+            await requestJson(`/api/molds/${editMoldId}/output/reset`, { method: "POST" });
+            await loadMoldOutputStats(editMoldId);
             await loadMolds();
         } catch (error) { alert(error.message); }
     });
