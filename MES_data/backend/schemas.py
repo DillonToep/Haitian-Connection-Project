@@ -27,6 +27,7 @@ class MoldUpdateRequest(BaseModel):
     cavities: int = Field(gt=0, le=10_000)
     remark: str | None = Field(default=None, max_length=500)
     is_active: bool = True
+    max_output: int | None = Field(default=None, gt=0, le=10_000_000)
 
 
 class MoldAssignmentRequest(BaseModel):

@@ -150,6 +150,55 @@ def _exceeds_tolerance(new_value, target_value, tolerance_mode, tolerance_percen
     return abs(new_num - target_num) / abs(target_num) * 100 > tol_num
 
 
+def _record_production_and_check_output(cursor, device_id, spc_message_id, data_time):
+    """Called once per SPC (cycle-complete) message. Attributes the cycle
+    to whatever mold is currently mounted on this device, bumps its
+    lifetime counter, and raises/refreshes an output alert if it just
+    crossed max_output."""
+    row = cursor.execute(
+        """
+        SELECT a.id AS assignment_id, m.id AS mold_id, m.max_output
+        FROM dbo.device_mold_assignments AS a
+        INNER JOIN dbo.molds AS m ON m.id = a.mold_id
+        WHERE a.device_id = ? AND a.unmounted_at IS NULL
+        """,
+        device_id,
+    ).fetchone()
+    if row is None:
+        return  # nothing mounted -- nothing to attribute this cycle to
+
+    cursor.execute(
+        """
+        INSERT INTO dbo.mold_production_log
+            (mold_id, device_id, assignment_id, produced_at, raw_message_id)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        row.mold_id, device_id, row.assignment_id, data_time, spc_message_id,
+    )
+
+    new_total = cursor.execute(
+        """
+        UPDATE dbo.molds SET total_output = total_output + 1
+        OUTPUT INSERTED.total_output
+        WHERE id = ?
+        """,
+        row.mold_id,
+    ).fetchone()[0]
+
+    if row.max_output is not None and new_total > row.max_output:
+        cursor.execute(
+            """
+            IF NOT EXISTS (
+                SELECT 1 FROM dbo.mold_output_alerts
+                WHERE mold_id = ? AND acknowledged_at IS NULL
+            )
+            INSERT INTO dbo.mold_output_alerts (mold_id, device_id, total_output, max_output)
+            VALUES (?, ?, ?, ?)
+            """,
+            row.mold_id, row.mold_id, device_id, new_total, row.max_output,
+        )
+
+
 def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
     if not changes:
         return
@@ -331,6 +380,7 @@ def insert_message(message, payload, raw_payload):
 
             if device_id and topic == SPC_MESSAGE_TOPIC:
                 _assign_pending_changelogs_to_spc(cursor, device_id, record_id)
+                _record_production_and_check_output(cursor, device_id, record_id, data_time)
 
             sql_connection.commit()
 

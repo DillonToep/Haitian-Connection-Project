@@ -1,10 +1,11 @@
 from contextlib import closing
+from datetime import date, timedelta
 import json
 import shutil
 import uuid
 
 import pyodbc
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 
 from ..config import MOLD_UPLOAD_DIR
@@ -96,6 +97,21 @@ def _parse_cleaning_fields(
     return True, interval, duration
 
 
+def _parse_max_output(raw: str | None) -> int | None:
+    """max_output arrives as a plain (optional) string from multipart
+    forms -- blank means "no limit", same convention as the cleaning
+    interval/duration fields above."""
+    if raw in (None, ""):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="最大产量格式不正确") from None
+    if value <= 0:
+        raise HTTPException(status_code=400, detail="最大产量必须大于 0")
+    return value
+
+
 def _attach_images_and_temps(cursor, records: list[dict]) -> list[dict]:
     if not records:
         return records
@@ -154,6 +170,7 @@ def get_molds(user: dict = Depends(require_user)):
             m.id, m.mold_code, m.mold_name, m.product_code,
             m.cavities, m.remark, m.is_active,
             m.requires_cleaning, m.cleaning_interval_hours, m.cleaning_duration_minutes,
+            m.max_output, m.total_output,
             a.device_id AS mounted_device_id, a.mounted_at
         FROM dbo.molds AS m
         LEFT JOIN dbo.device_mold_assignments AS a
@@ -168,6 +185,69 @@ def get_molds(user: dict = Depends(require_user)):
             return _attach_images_and_temps(cursor, records)
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.get("/molds/{mold_id}/output")
+def get_mold_output(
+    mold_id: int,
+    days: int = Query(30, ge=1, le=366),
+    user: dict = Depends(require_user),
+):
+    """Daily production counts for a mold over the last `days` days (for
+    the trend chart), plus ready-to-display today/this-week/lifetime
+    totals. Counts come from dbo.mold_production_log -- one row per
+    completed cycle while this mold was mounted (see
+    _record_production_and_check_output in mqtt_monitor.py) -- so moving
+    a mold between machines never double-counts or loses cycles."""
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute(
+                "SELECT id, mold_code, mold_name, max_output, total_output FROM dbo.molds WHERE id = ?",
+                mold_id,
+            ).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+
+            range_start = date.today() - timedelta(days=days - 1)
+            cursor.execute(
+                """
+                SELECT CAST(produced_at AS DATE) AS day, COUNT(*) AS count
+                FROM dbo.mold_production_log
+                WHERE mold_id = ? AND produced_at >= ?
+                GROUP BY CAST(produced_at AS DATE)
+                """,
+                mold_id,
+                range_start,
+            )
+            counts_by_day = {row.day: row.count for row in cursor.fetchall()}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    daily = []
+    day = range_start
+    today = date.today()
+    while day <= today:
+        daily.append({"date": day.isoformat(), "count": counts_by_day.get(day, 0)})
+        day += timedelta(days=1)
+
+    today_count = counts_by_day.get(today, 0)
+    week_start = today - timedelta(days=today.weekday())
+    week_count = sum(count for d, count in counts_by_day.items() if d >= week_start)
+
+    return {
+        "mold_id": mold_id,
+        "mold_code": mold.mold_code,
+        "mold_name": mold.mold_name,
+        "max_output": mold.max_output,
+        "total_output": mold.total_output,
+        "today_output": today_count,
+        "week_output": week_count,
+        "daily": daily,
+    }
 
 
 @router.get("/molds/parameter-defaults")
@@ -285,6 +365,47 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
         )
     return {"mold_id": mold_id, "parameters": parameters}
 
+@router.get("/molds/{mold_id}/output")
+def get_mold_output(
+    mold_id: int,
+    granularity: str = Query("day", pattern="^(day|week)$"),
+    periods: int = Query(30, ge=1, le=366),
+    user: dict = Depends(require_user),
+):
+    del user
+    date_expr = "CAST(produced_at AS DATE)" if granularity == "day" else \
+                "DATEADD(day, -DATEPART(weekday, produced_at) + 1, CAST(produced_at AS DATE))"
+    sql = f"""
+        SELECT {date_expr} AS bucket, COUNT(*) AS count
+        FROM dbo.mold_production_log
+        WHERE mold_id = ?
+        GROUP BY {date_expr}
+        ORDER BY bucket DESC
+        OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute(
+                "SELECT total_output, max_output FROM dbo.molds WHERE id = ?", mold_id
+            ).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+            cursor.execute(sql, mold_id, periods)
+            buckets = [{"date": r.bucket.isoformat(), "count": r.count} for r in cursor.fetchall()]
+            # today / this week convenience totals
+            today_count = next((b["count"] for b in buckets if b["date"] == date.today().isoformat()), 0) if granularity == "day" else None
+            return {
+                "mold_id": mold_id,
+                "total_output": mold.total_output,
+                "max_output": mold.max_output,
+                "buckets": list(reversed(buckets)),
+            }
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
 
 @router.put("/molds/{mold_id}/parameters")
 def update_mold_parameters(
@@ -344,6 +465,7 @@ async def create_mold(
     requires_cleaning: str = Form("0"),
     cleaning_interval_hours: str | None = Form(None),
     cleaning_duration_minutes: str | None = Form(None),
+    max_output: str | None = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
     require_editor(user)
@@ -361,13 +483,15 @@ async def create_mold(
     cleaning_flag, cleaning_interval, cleaning_duration = _parse_cleaning_fields(
         requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes
     )
+    max_output_value = _parse_max_output(max_output)
 
     sql_insert_mold = """
         INSERT INTO dbo.molds
             (mold_code, mold_name, cavities, remark, created_by,
-             requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes)
+             requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes,
+             max_output)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     try:
@@ -383,6 +507,7 @@ async def create_mold(
                 cleaning_flag,
                 cleaning_interval,
                 cleaning_duration,
+                max_output_value,
             ).fetchone()[0]
 
             for sort_order, label in enumerate(expected_labels):
@@ -464,6 +589,7 @@ async def update_mold(
     requires_cleaning: str = Form("0"),
     cleaning_interval_hours: str | None = Form(None),
     cleaning_duration_minutes: str | None = Form(None),
+    max_output: str | None = Form(None),
     keep_image_ids: str | None = Form(None),   # JSON array of existing image ids to keep
     face_image_id: int | None = Form(None),    # id of a kept existing image to use as cover
     face_new_index: int | None = Form(None),   # index within the new `images` list to use as cover
@@ -478,6 +604,7 @@ async def update_mold(
     cleaning_flag, cleaning_interval, cleaning_duration = _parse_cleaning_fields(
         requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes
     )
+    max_output_value = _parse_max_output(max_output)
 
     try:
         with closing(get_connection()) as connection:
@@ -520,7 +647,7 @@ async def update_mold(
                 UPDATE dbo.molds
                 SET mold_code = ?, mold_name = ?, cavities = ?, remark = ?,
                     is_active = ?, requires_cleaning = ?, cleaning_interval_hours = ?,
-                    cleaning_duration_minutes = ?, updated_at = SYSDATETIME()
+                    cleaning_duration_minutes = ?, max_output = ?, updated_at = SYSDATETIME()
                 WHERE id = ?
                 """,
                 mold_code.strip(),
@@ -531,6 +658,7 @@ async def update_mold(
                 cleaning_flag,
                 cleaning_interval,
                 cleaning_duration,
+                max_output_value,
                 mold_id,
             )
 
@@ -642,6 +770,8 @@ def delete_mold(mold_id: int, user: dict = Depends(require_user)):
                 raise HTTPException(status_code=400, detail="该模具当前已装机，请先卸载后再删除")
             cursor.execute("DELETE FROM dbo.device_mold_assignments WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.mold_parameter_targets WHERE mold_id = ?", mold_id)
+            cursor.execute("DELETE FROM dbo.mold_output_alerts WHERE mold_id = ?", mold_id)
+            cursor.execute("DELETE FROM dbo.mold_production_log WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.molds WHERE id = ?", mold_id)
             connection.commit()
 

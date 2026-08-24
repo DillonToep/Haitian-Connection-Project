@@ -122,6 +122,11 @@
                                 <input id="mold-cleaning-duration" type="number" min="0" step="1">
                             </div>
 
+                            <div class="field">
+                                <label>最大产量（模，留空为不限）</label>
+                                <input id="mold-max-output" type="number" min="1" step="1">
+                            </div>
+
                             <div class="field full">
                                 <label>项目图片（至少 1 张，选择一张作为封面）</label>
                                 <input id="mold-images-input" type="file" accept="image/*" multiple>
@@ -229,6 +234,7 @@
         </div>
     </div>
     <div class="muted" id="mold-edit-current-device"></div>
+    <div id="mold-edit-output-stats" class="detail-card" style="margin:10px 0;"></div>
     <form id="mold-edit-form" class="form-grid">
         <div class="field"><label>项目名称</label><input id="edit-mold-name" required maxlength="200"></div>
         <div class="field"><label>项目编号</label><input id="edit-mold-code" required maxlength="100"></div>
@@ -248,6 +254,11 @@
         <div class="field" id="mold-edit-cleaning-duration-field">
             <label>预计清洗时长（分钟）</label>
             <input id="mold-edit-cleaning-duration" type="number" min="0" step="1">
+        </div>
+
+        <div class="field">
+            <label>最大产量（模，留空为不限）</label>
+            <input id="mold-edit-max-output" type="number" min="1" step="1">
         </div>
 
         <div class="field full">

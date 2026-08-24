@@ -260,6 +260,27 @@ let currentPage = "dashboard";
         e.target.value = "";
     });
 
+    async function loadMoldOutputStats(moldId) {
+        const el = document.getElementById("mold-edit-output-stats");
+        if (!el) return;
+        el.textContent = "正在读取产量……";
+        try {
+            const stats = await requestJson(`/api/molds/${encodeURIComponent(moldId)}/output`);
+            const overLimit = stats.max_output != null && stats.total_output > stats.max_output;
+            el.innerHTML = `
+                <div class="metric-grid">
+                    ${metric("今日产量", stats.today_output, " 模")}
+                    ${metric("本周产量", stats.week_output, " 模")}
+                    <div class="metric${overLimit ? "" : " primary"}">
+                        <div class="metric-label">累计产量${stats.max_output != null ? ` / 上限 ${stats.max_output}` : ""}</div>
+                        <div class="metric-value"${overLimit ? ' style="color:var(--red)"' : ""}>${showValue(stats.total_output," 模")}</div>
+                    </div>
+                </div>`;
+        } catch (error) {
+            el.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+        }
+    }
+
     function openMoldEdit(moldId) {
         const m = molds.find(x => x.id === moldId);
         if (!m) return;
@@ -274,6 +295,9 @@ let currentPage = "dashboard";
         document.getElementById("mold-edit-cleaning-duration").value = m.cleaning_duration_minutes ?? "";
         updateCleaningFieldsVisibility("mold-edit-requires-cleaning", "mold-edit-cleaning-interval-field", "mold-edit-cleaning-duration-field");
         document.getElementById("mold-edit-current-device").textContent = m.mounted_device_id ? `当前装机设备：${m.mounted_device_id}` : "当前未装机";
+        const maxOutputInput = document.getElementById("mold-edit-max-output");
+        if (maxOutputInput) maxOutputInput.value = m.max_output ?? "";
+        loadMoldOutputStats(moldId);
 
         editImageItems = (m.images || []).map(img => ({ type: "existing", id: img.id, url: img.url, is_face: img.is_face }));
         editFaceIndex = Math.max(0, editImageItems.findIndex(item => item.is_face));
@@ -380,6 +404,7 @@ let currentPage = "dashboard";
         body.set("requires_cleaning", document.getElementById("mold-edit-requires-cleaning").checked ? "1" : "0");
         body.set("cleaning_interval_hours", document.getElementById("mold-edit-cleaning-interval").value || "");
         body.set("cleaning_duration_minutes", document.getElementById("mold-edit-cleaning-duration").value || "");
+        body.set("max_output", document.getElementById("mold-edit-max-output")?.value || "");
         editImageItems.filter(i => i.type === "new").forEach(i => body.append("images", i.file));
 
         try {
@@ -414,7 +439,7 @@ let currentPage = "dashboard";
                 ${deviceBadge}
                 <div class="mold-card-overlay">
                     <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
-                    <div class="mold-card-meta">模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}</div>
+                    <div class="mold-card-meta">模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}　产量：${showValue(m.total_output)}${m.max_output != null ? `/${m.max_output}` : ""}</div>
                 </div>
             </div>`;
         }).join("") : '<div class="empty">尚未建立模具档案</div>';
@@ -429,6 +454,11 @@ let currentPage = "dashboard";
         try {
             const current = await requestJson(`/api/devices/${encodeURIComponent(id)}/mold`);
             renderDeviceMoldCard(current);
+            if (current) {
+                requestJson(`/api/molds/${encodeURIComponent(current.mold_id)}/output`)
+                    .then(renderDeviceMoldOutput)
+                    .catch(() => {});
+            }
         } catch (error) {
             container.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
         }
@@ -444,12 +474,26 @@ let currentPage = "dashboard";
                     <div class="mold-code">${escapeHtml(current.mold_code)}</div>
                     <div>${escapeHtml(current.mold_name)}</div>
                     <div class="muted">模穴：${showValue(current.cavities)}</div>${current.requires_cleaning ? `<div class="muted">清洗周期：每 ${showValue(current.cleaning_interval_hours)} 小时 · 约 ${showValue(current.cleaning_duration_minutes)} 分钟</div>` : ""}
-                </div>`;
+                </div>
+                <div class="metric-grid" id="device-mold-output" style="margin-top:10px;"></div>`;
             unmountButton.classList.remove("hidden");
         } else {
             container.innerHTML = '<div class="empty">该设备当前未分配模具</div>';
             unmountButton.classList.add("hidden");
         }
+    }
+
+    function renderDeviceMoldOutput(stats) {
+        const el = document.getElementById("device-mold-output");
+        if (!el) return;
+        const overLimit = stats.max_output != null && stats.total_output > stats.max_output;
+        el.innerHTML = `
+            ${metric("今日产量", stats.today_output, " 模")}
+            ${metric("本周产量", stats.week_output, " 模")}
+            <div class="metric${overLimit ? "" : " primary"}">
+                <div class="metric-label">累计产量${stats.max_output != null ? ` / 上限 ${stats.max_output}` : ""}</div>
+                <div class="metric-value"${overLimit ? ' style="color:var(--red)"' : ""}>${showValue(stats.total_output," 模")}</div>
+            </div>`;
     }
 
     async function openMoldAssignDialog() {
@@ -480,6 +524,7 @@ let currentPage = "dashboard";
         body.set("requires_cleaning", document.getElementById("mold-requires-cleaning").checked ? "1" : "0");
         body.set("cleaning_interval_hours", document.getElementById("mold-cleaning-interval").value || "");
         body.set("cleaning_duration_minutes", document.getElementById("mold-cleaning-duration").value || "");
+        body.set("max_output", document.getElementById("mold-max-output")?.value || "");
         moldImageFiles.forEach(file => body.append("images", file));
         try {
             await requestJson("/api/molds", { method: "POST", body });
@@ -1742,6 +1787,14 @@ let currentPage = "dashboard";
                     <div class="toast-detail">${escapeHtml(warning.mold_code||"")} 已连续生产约 ${formatDurationMinutes(warning.elapsed_minutes)}，超过清洗周期（${hours} 小时）</div>
                 </div>
                 <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        } else if(warning.warning_type==="output"){
+            toast.innerHTML=`
+                <div class="toast-icon">🏭</div>
+                <div class="toast-body">
+                    <div class="toast-title">产量超限：设备 ${escapeHtml(warning.device_id)}</div>
+                    <div class="toast-detail">${escapeHtml(warning.mold_code||"")} 已生产 ${showValue(warning.total_output)} 模，超过设定上限 ${showValue(warning.max_output)} 模</div>
+                </div>
+                <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
         } else {
             toast.innerHTML=`
                 <div class="toast-icon">⚠</div>
@@ -1804,6 +1857,16 @@ let currentPage = "dashboard";
                 <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="cleaning" type="button">清除</button>`}</td>
             </tr>`;
         }
+        if(r.warning_type==="output"){
+            return `<tr class="warning-row" data-id="${r.id}" data-warning-type="output" data-mold="${r.mold_id}">
+                <td>${formatTime(r.detected_at)}</td>
+                <td>${escapeHtml(r.device_id)}</td>
+                <td>🏭 ${escapeHtml(r.mold_code||"")} 超过最大产量</td>
+                <td>已生产 ${showValue(r.total_output)} 模</td>
+                <td class="changelog-new-value">上限 ${showValue(r.max_output)} 模</td>
+                <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="output" type="button">清除</button>`}</td>
+            </tr>`;
+        }
         return `<tr class="warning-row" data-id="${r.id}" data-warning-type="parameter"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="parameter" type="button">清除</button>`}</td></tr>`;
     }
 
@@ -1817,6 +1880,7 @@ let currentPage = "dashboard";
             row.addEventListener("click",event=>{
                 if(event.target.closest(".warning-clear-button")) return;
                 if(row.dataset.warningType==="cleaning") openDeviceDetail(row.dataset.device,{tab:"uptime"});
+                else if(row.dataset.warningType==="output") openMoldEdit(Number(row.dataset.mold));
                 else openChangelogDetail(row.dataset.id);
             });
         });
@@ -1826,6 +1890,8 @@ let currentPage = "dashboard";
                 try {
                     const endpoint = button.dataset.warningType==="cleaning"
                         ? `/api/warnings/cleaning/${encodeURIComponent(button.dataset.id)}/clear`
+                        : button.dataset.warningType==="output"
+                        ? `/api/warnings/output/${encodeURIComponent(button.dataset.id)}/clear`
                         : `/api/warnings/${encodeURIComponent(button.dataset.id)}/clear`;
                     await requestJson(endpoint,{method:"POST"});
                     seenWarningIds.delete(`${button.dataset.warningType}-${button.dataset.id}`);
