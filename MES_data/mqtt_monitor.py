@@ -435,14 +435,6 @@ def on_message(client, userdata, message):
         if not isinstance(payload, dict):
             raise ValueError("JSON 根节点不是对象")
 
-        device_id = payload.get("devId")
-        if device_id in _deleted_devices:
-            # Device was deleted via the web UI -- drop the message
-            # instead of re-inserting it (this is what a retained
-            # message, or a machine that's still publishing, would
-            # otherwise silently "resurrect").
-            return
-
         record_id = insert_message(
             message,
             payload,
