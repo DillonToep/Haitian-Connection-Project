@@ -217,7 +217,10 @@
     <div id="day-detail-body"></div>
 </dialog>
 <dialog id="mold-assign-dialog">
-    <h3>分配模具</h3>
+    <div class="day-detail-header">
+        <h3>分配模具</h3>
+        <button id="mold-assign-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
+    </div>
     <div class="field"><label>选择模具</label><select id="mold-assign-select"></select></div>
     <div class="field"><label>备注</label><input id="mold-assign-remark" maxlength="500"></div>
     <div class="actions">

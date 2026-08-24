@@ -334,6 +334,9 @@ let currentPage = "dashboard";
         try { await openMoldAssignDialog(); } catch (error) { alert(error.message); }
     });
     document.getElementById("mold-assign-cancel").addEventListener("click", () => document.getElementById("mold-assign-dialog").close());
+    document.getElementById("mold-assign-close-x").addEventListener("click", () => {
+        document.getElementById("mold-assign-dialog").close();
+    });
     document.getElementById("mold-assign-confirm").addEventListener("click", async () => {
         const moldId = document.getElementById("mold-assign-select").value;
         if (!moldId) return;
