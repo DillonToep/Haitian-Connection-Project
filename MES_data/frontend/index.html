@@ -105,8 +105,17 @@
                         <form id="mold-form" class="form-grid">
                             <div class="field"><label>项目名称</label><input name="mold_name" required maxlength="200"></div>
                             <div class="field"><label>项目编号</label><input name="mold_code" required maxlength="100"></div>
-                            <div class="field"><label>模穴数</label><input id="mold-cavities" name="cavities" type="number" min="1" value="1" required></div>
-                            <div class="field full"><label>备注</label><textarea name="remark" maxlength="500"></textarea></div>
+
+                            <div class="field full">
+                                <label>项目图片（至少 1 张，选择一张作为封面）</label>
+                                <input id="mold-images-input" type="file" accept="image/*" multiple>
+                                <div id="mold-image-previews" class="mold-image-previews"></div>
+                            </div>
+
+                            <div class="field">
+                                <label>最大产量（模，留空为不限）</label>
+                                <input id="mold-max-output" type="number" min="1" step="1">
+                            </div>
 
                             <div class="field full">
                                 <label class="cleaning-checkbox-label" style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text);">
@@ -122,16 +131,9 @@
                                 <input id="mold-cleaning-duration" type="number" min="0" step="1">
                             </div>
 
-                            <div class="field">
-                                <label>最大产量（模，留空为不限）</label>
-                                <input id="mold-max-output" type="number" min="1" step="1">
-                            </div>
+                            <div class="field full"><label>备注</label><textarea name="remark" maxlength="500"></textarea></div>
 
-                            <div class="field full">
-                                <label>项目图片（至少 1 张，选择一张作为封面）</label>
-                                <input id="mold-images-input" type="file" accept="image/*" multiple>
-                                <div id="mold-image-previews" class="mold-image-previews"></div>
-                            </div>
+                            <div class="field"><label>模穴数</label><input id="mold-cavities" name="cavities" type="number" min="1" value="1" required></div>
 
                             <div class="field full">
                                 <label>模穴温度表</label>
@@ -244,10 +246,18 @@
     <form id="mold-edit-form" class="form-grid">
         <div class="field"><label>项目名称</label><input id="edit-mold-name" required maxlength="200"></div>
         <div class="field"><label>项目编号</label><input id="edit-mold-code" required maxlength="100"></div>
-        <div class="field"><label>模穴数</label><input id="mold-edit-cavities" type="number" min="1" required></div>
-        <div class="field"><label>状态</label><select id="edit-mold-active"><option value="1">启用</option><option value="0">停用</option></select></div>
-        <div class="field full"><label>备注</label><textarea id="edit-mold-remark" maxlength="500"></textarea></div>
-        
+
+        <div class="field full">
+            <label>项目图片</label>
+            <input id="mold-edit-images-input" type="file" accept="image/*" multiple>
+            <div id="mold-edit-image-previews" class="mold-image-previews"></div>
+        </div>
+
+        <div class="field">
+            <label>最大产量</label>
+            <input id="mold-edit-max-output" type="number" min="1" step="1">
+        </div>
+
         <div class="field full">
             <label class="cleaning-checkbox-label" style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text);">
                 <input type="checkbox" id="mold-edit-requires-cleaning" style="width:auto;margin:0;"> 该项目生产时需要定期清洗机台
@@ -262,16 +272,10 @@
             <input id="mold-edit-cleaning-duration" type="number" min="0" step="1">
         </div>
 
-        <div class="field">
-            <label>最大产量</label>
-            <input id="mold-edit-max-output" type="number" min="1" step="1">
-        </div>
+        <div class="field full"><label>备注</label><textarea id="edit-mold-remark" maxlength="500"></textarea></div>
 
-        <div class="field full">
-            <label>项目图片</label>
-            <input id="mold-edit-images-input" type="file" accept="image/*" multiple>
-            <div id="mold-edit-image-previews" class="mold-image-previews"></div>
-        </div>
+        <div class="field"><label>模穴数</label><input id="mold-edit-cavities" type="number" min="1" required></div>
+        <div class="field"><label>状态</label><select id="edit-mold-active"><option value="1">启用</option><option value="0">停用</option></select></div>
 
         <div class="field full">
             <label>模穴温度表</label>
