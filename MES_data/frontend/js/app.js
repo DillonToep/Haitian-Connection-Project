@@ -441,7 +441,18 @@ let currentPage = "dashboard";
 
     async function loadMolds() {
         molds = await requestJson("/api/molds");
-        document.getElementById("mold-list").innerHTML = molds.length ? molds.map(m => {
+        renderMoldList();
+    }
+
+    function renderMoldList() {
+        const term = (document.getElementById("mold-search-input")?.value || "").trim().toLowerCase();
+        const filtered = term
+            ? molds.filter(m =>
+                (m.mold_name || "").toLowerCase().includes(term) ||
+                (m.mold_code || "").toLowerCase().includes(term))
+            : molds;
+
+        document.getElementById("mold-list").innerHTML = filtered.length ? filtered.map(m => {
             const face = m.face_image_url
                 ? `<img class="mold-card-face" src="${escapeHtml(m.face_image_url)}" alt="${escapeHtml(m.mold_name)}">`
                 : `<div class="mold-card-face-empty">暂无图片</div>`;
@@ -456,7 +467,8 @@ let currentPage = "dashboard";
                     <div class="mold-card-meta">模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}　产量：${showValue(m.total_output)}${m.max_output != null ? `/${m.max_output}` : ""}</div>
                 </div>
             </div>`;
-        }).join("") : '<div class="empty">尚未建立模具档案</div>';
+        }).join("") : `<div class="empty">${term ? "未找到匹配的模具" : "尚未建立模具档案"}</div>`;
+
         document.querySelectorAll("#mold-list .mold-item").forEach(item => item.addEventListener("click", () => {
             openMoldEdit(Number(item.dataset.moldId));
         }));
@@ -684,6 +696,7 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
+    document.getElementById("mold-search-input")?.addEventListener("input", () => renderMoldList());
     document.getElementById("mold-defaults-button").addEventListener("click", async () => {
         document.getElementById("mold-defaults-dialog").showModal();
         if (moldDefaultsLoaded) return;
