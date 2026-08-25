@@ -16,7 +16,9 @@ from ..schemas import (
     MoldAssignmentRequest,
     MoldParametersUpdateRequest,
     MoldUpdateRequest,
+    MoldExtendedInfoRequest
 )
+
 
 
 router = APIRouter(prefix="/api", tags=["molds"])
@@ -302,6 +304,66 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
             }
         )
     return {"mold_id": mold_id, "parameters": parameters}
+
+
+
+
+@router.get("/molds/{mold_id}/extended")
+def get_mold_extended_info(mold_id: int, user: dict = Depends(require_user)):
+    """The free-form 注塑成型条件参数表 fields (header/material/weight/
+    hot-runner/water-mold-temp/injection-method/residual-position/cycle
+    totals/operation setup) that don't have dedicated columns -- see
+    setup_mold_extended_info.sql. Returns {} if nothing has been saved
+    for this mold yet."""
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+            row = cursor.execute(
+                "SELECT info_json FROM dbo.mold_extended_info WHERE mold_id = ?", mold_id
+            ).fetchone()
+            fields = json.loads(row.info_json) if row and row.info_json else {}
+            return {"mold_id": mold_id, "fields": fields}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.put("/molds/{mold_id}/extended")
+def update_mold_extended_info(
+    mold_id: int,
+    data: MoldExtendedInfoRequest,
+    user: dict = Depends(require_user),
+):
+    require_editor(user)
+    payload = json.dumps(data.fields, ensure_ascii=False)
+    sql = """
+        MERGE dbo.mold_extended_info AS target
+        USING (SELECT ? AS mold_id) AS src
+        ON target.mold_id = src.mold_id
+        WHEN MATCHED THEN
+            UPDATE SET info_json = ?, updated_at = SYSUTCDATETIME(), updated_by = ?
+        WHEN NOT MATCHED THEN
+            INSERT (mold_id, info_json, updated_by)
+            VALUES (src.mold_id, ?, ?);
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+            cursor.execute(sql, mold_id, payload, user["id"], payload, user["id"])
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 @router.get("/molds/{mold_id}/output")
 def get_mold_output(

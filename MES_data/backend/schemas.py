@@ -35,3 +35,6 @@ class MoldUpdateRequest(BaseModel):
 class MoldAssignmentRequest(BaseModel):
     mold_id: int = Field(gt=0)
     remark: str | None = Field(default=None, max_length=500)
+
+class MoldExtendedInfoRequest(BaseModel):
+    fields: dict[str, str | float | int | bool | None] = {}

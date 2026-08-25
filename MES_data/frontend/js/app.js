@@ -81,7 +81,7 @@ let currentPage = "dashboard";
             if (deviceId.startsWith("H")) return "/static/img/haitianMars.png";
             if (deviceId.startsWith("T")) return "/static/img/toshiba.png";
         }
-        return "/static/img/haitianMars.png"; // default when no rule matches
+        return "/static/img/haitianMars.png";
     }
 
     function machineVisual(deviceId) {
@@ -313,6 +313,7 @@ let currentPage = "dashboard";
         document.getElementById("mold-edit-reset-output-button").disabled = readOnly;
 
         moldAdvancedLoaded = false;
+        moldExtendedFields = {};
         document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-advanced-groups").innerHTML = "";
         document.getElementById("mold-advanced-summary").textContent = "";
@@ -738,6 +739,166 @@ let currentPage = "dashboard";
         },
     ];
 
+
+    let moldExtendedFields = {};
+    const EXTENDED_INFO_SECTIONS = [
+        {
+            title: "客户信息",
+            rows: [
+                { cols: [
+                    { key: "customer_name", label: "客户名称" },
+                    { key: "customer_machine_no", label: "注塑机编号" },
+                    { key: "machine_model", label: "机型" },
+                    { key: "machine_maker", label: "机台厂商" },
+                    { key: "form_date", label: "日期", type: "date" },
+                ]},
+            ],
+        },
+        {
+            title: "模具尺寸 / 文件版本",
+            rows: [
+                { cols: [
+                    { key: "mold_dimensions", label: "模具尺寸(MM)" },
+                    { key: "fit_tonnage", label: "适合机台吨位(T)" },
+                    { key: "file_version", label: "文件版本" },
+                ]},
+            ],
+        },
+        {
+            title: "原料信息",
+            rows: [
+                { cols: [
+                    { key: "material_name", label: "原料名称" },
+                    { key: "material_origin", label: "原料产地" },
+                    { key: "color_code", label: "色种编号" },
+                    { key: "color", label: "颜色" },
+                    { key: "material_color_ratio", label: "原料:色粉比例" },
+                    { key: "drying_time", label: "烘料时间" },
+                    { key: "oven_temperature", label: "焗炉温度" },
+                ]},
+                { cols: [
+                    { key: "supplied_by_factory", label: "本厂提供", type: "checkbox" },
+                    { key: "supplied_by_customer", label: "客户提供", type: "checkbox" },
+                ]},
+            ],
+        },
+        {
+            title: "产品重量",
+            rows: [
+                { cols: [
+                    { key: "gross_weight", label: "毛重(g)" },
+                    { key: "net_weight", label: "净重(g)" },
+                    { key: "runner_weight", label: "水口重(g)" },
+                ]},
+            ],
+            note: "0-10g 不可超出净重±3%，11-50g 不可超出净重±2%，50g 以上不可超出净重±1%",
+        },
+        {
+            title: "热流道温度设定 ±10℃",
+            rows: [
+                { cols: Array.from({length:5},(_,i)=>({ key:`hot_runner_t${i+1}`, label:`${i+1}段` })) },
+                { cols: Array.from({length:5},(_,i)=>({ key:`hot_runner_t${i+6}`, label:`${i+6}段` })) },
+            ],
+        },
+        {
+            title: "射胶方式 / 残余料量位置",
+            rows: [
+                { cols: [
+                    { key: "injection_mode_position", label: "位置方式", type: "checkbox" },
+                    { key: "injection_mode_time", label: "时间方式", type: "checkbox" },
+                    { key: "residual_material_position", label: "残余料量位置(MM)" },
+                ]},
+            ],
+        },
+        {
+            title: "运水 / 模温",
+            rows: [
+                { cols: [
+                    { key: "water_circuit_type", label: "运水类别" },
+                    { key: "water_temp_machine", label: "机水(℃)" },
+                    { key: "water_temp_hot_water", label: "热水(℃)" },
+                    { key: "water_temp_hot_oil", label: "热油(℃)" },
+                    { key: "water_temp_cold_water", label: "冷水(℃)" },
+                ]},
+                { cols: [
+                    { key: "water_plate_a", label: "A板(℃)" },
+                    { key: "water_plate_b", label: "B板(℃)" },
+                    { key: "water_ref_setting", label: "运水设定(Ref)" },
+                    { key: "water_standard_temp", label: "标准温度±5℃" },
+                    { key: "water_measured_temp", label: "实测模温±5℃" },
+                ]},
+                { cols: [
+                    { key: "core_pull_detail", label: "抽芯明细" },
+                    { key: "ejector_stall_seconds", label: "停留时间(秒)" },
+                    { key: "ejector_count", label: "顶出次数" },
+                    { key: "ejector_position", label: "顶针位置" },
+                ]},
+            ],
+        },
+        {
+            title: "周期设定",
+            rows: [
+                { cols: [
+                    { key: "cycle_injection_total", label: "射胶总时间(秒)" },
+                    { key: "cycle_cooling_total", label: "冷却总时间(秒)" },
+                    { key: "cycle_suction_total", label: "抽呵时间(秒)" },
+                    { key: "cycle_grand_total", label: "全程总时间(秒)" },
+                ]},
+            ],
+        },
+        {
+            title: "操作设定",
+            rows: [
+                { cols: [
+                    { key: "op_manual", label: "手动", type: "checkbox" },
+                    { key: "op_semi_auto", label: "半自动", type: "checkbox" },
+                    { key: "op_full_auto", label: "全自动", type: "checkbox" },
+                    { key: "op_robot", label: "机械手", type: "checkbox" },
+                    { key: "op_headcount", label: "需用人数(个)" },
+                ]},
+            ],
+        },
+    ];
+
+    function extendedFieldCellHtml(field) {
+        const value = moldExtendedFields[field.key];
+        if (field.type === "checkbox") {
+            return `<td class="excel-param-cell excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
+                <div class="excel-extended-label">${escapeHtml(field.label)}</div>
+                <input class="excel-extended-checkbox" type="checkbox" ${value ? "checked" : ""}>
+            </td>`;
+        }
+        return `<td class="excel-param-cell excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
+            <div class="excel-extended-label">${escapeHtml(field.label)}</div>
+            <input class="excel-extended-input" type="${field.type === "date" ? "date" : "text"}" value="${value != null ? escapeHtml(value) : ""}">
+        </td>`;
+    }
+
+    function renderExtendedInfoSections() {
+        return EXTENDED_INFO_SECTIONS.map(section => {
+            const bodyRows = section.rows.map(row => `<tr>${row.cols.map(extendedFieldCellHtml).join("")}</tr>`).join("");
+            const noteHtml = section.note ? `<div class="excel-extended-note">${escapeHtml(section.note)}</div>` : "";
+            return `<div class="excel-extended-section">
+                <div class="excel-section-title">${escapeHtml(section.title)}</div>
+                <table class="excel-style-table excel-extended-table"><tbody>${bodyRows}</tbody></table>
+                ${noteHtml}
+            </div>`;
+        }).join("");
+    }
+
+    function collectExtendedFields(containerId) {
+        const result = {};
+        document.querySelectorAll(`#${containerId} .excel-extended-cell`).forEach(cell => {
+            const key = cell.dataset.extendedKey;
+            const checkbox = cell.querySelector(".excel-extended-checkbox");
+            if (checkbox) { result[key] = checkbox.checked; return; }
+            const input = cell.querySelector(".excel-extended-input");
+            result[key] = input && input.value !== "" ? input.value : null;
+        });
+        return result;
+    }
+
+
     function excelParamCell(paramById, tag) {
         const p = paramById.get(tag);
         if (!p) return '<td class="excel-cell-missing">--</td>';
@@ -811,11 +972,10 @@ let currentPage = "dashboard";
 
         document.getElementById("mold-advanced-groups").innerHTML = `
             ${excelInfoStripHtml()}
+            <div id="mold-advanced-extended">${renderExtendedInfoSections()}</div>
             <div class="excel-sections-wrap">${blocksHtml}</div>
             <div id="mold-advanced-leftover"></div>`;
 
-        // Leftover tags (中子/座台/吹气/misc) keep the original collapsible
-        // category-card layout, same as before.
         renderParameterGroupsInto("mold-advanced-leftover", leftover, readOnly);
 
         if (readOnly) {
@@ -836,7 +996,11 @@ let currentPage = "dashboard";
         if (moldAdvancedLoaded) return;
         document.getElementById("mold-advanced-summary").textContent = "正在读取……";
         try {
-            const result = await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`);
+            const [result, extended] = await Promise.all([
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`),
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/extended`),
+            ]);
+            moldExtendedFields = extended.fields || {};
             renderMoldAdvancedGroups(result.parameters);
             document.getElementById("mold-advanced-summary").textContent = "";
             moldAdvancedLoaded = true;
@@ -844,14 +1008,22 @@ let currentPage = "dashboard";
             document.getElementById("mold-advanced-summary").textContent = `读取失败：${error.message}`;
         }
     });
+
     document.getElementById("mold-advanced-close").addEventListener("click", () => document.getElementById("mold-advanced-dialog").close());
 
     document.getElementById("mold-advanced-save").addEventListener("click", async () => {
         const parameters = collectParameterRows("mold-advanced-groups");
+        const extended = collectExtendedFields("mold-advanced-groups");
         try {
-            await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {
-                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
-            });
+            await Promise.all([
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {
+                    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
+                }),
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/extended`, {
+                    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: extended }),
+                }),
+            ]);
+            moldExtendedFields = extended;
             alert("高级参数已保存");
         } catch (error) { alert(error.message); }
     });
