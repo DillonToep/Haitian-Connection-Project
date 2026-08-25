@@ -106,11 +106,7 @@ def get_dashboard(user: dict = Depends(require_user)):
             r.alarm_status, r.operation_mode,
             r.operation_time AS oil_temperature, r.machine_status,
             s.cycle_time,
-            CASE
-                WHEN s.cycle_number IS NULL THEN NULL
-                WHEN s.cycle_number - ISNULL(c.reset_cycle_number, 0) < 0 THEN 0
-                ELSE s.cycle_number - ISNULL(c.reset_cycle_number, 0)
-            END AS cycle_count_display,
+            s.cycle_number,
             m.id AS mold_id, m.mold_code, m.mold_name,
             m.product_code, m.cavities, a.mounted_at
         FROM devices AS d

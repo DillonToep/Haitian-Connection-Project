@@ -1186,7 +1186,7 @@ let currentPage = "dashboard";
                 <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
                 <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.data_time)}</span></span></div>
-                <div class="device-metrics">模次：${showValue(machine.cycle_count_display)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
+                <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
             </div>`;
     }
 
@@ -1277,13 +1277,7 @@ let currentPage = "dashboard";
         ].join("");
         const temperatureTiles=[1,2,3,4,5,6,7].map(i=>metric(`温度 T${i}`,m[`temperature_${i}`]," ℃")).join("");
         const readOnly = currentUser.role === "viewer";
-        const cycleTile = `<div class="metric primary metric-with-action">
-                <div class="metric-label">模次${m.cycle_reset_at?`　<span class="muted">(重置于 ${formatTime(m.cycle_reset_at)})</span>`:""}</div>
-                <div class="metric-value-row">
-                    <div class="metric-value">${showValue(m.cycle_count_display)}</div>
-                    <button type="button" class="metric-reset-button" id="cycle-count-reset-button" title="重置模次显示及当前模具的产量统计，不影响机台原始 CYCN 计数"${readOnly?" disabled":""}>重置</button>
-                </div>
-            </div>`;
+        const cycleTile = metric("模次", m.cycle_number, "", true);
         document.getElementById("detail-tab-realtime").innerHTML=`
             <article class="detail-card">
                 <div class="detail-header"><div class="detail-title">实时状态</div><div class="muted">数据时间：${formatTime(m.data_time)}</div></div>
