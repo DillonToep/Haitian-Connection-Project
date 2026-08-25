@@ -651,7 +651,7 @@ let currentPage = "dashboard";
     }
 
     function collectParameterRows(containerId) {
-        return [...document.querySelectorAll(`#${containerId} .mold-param-row`)].map(row => {
+        return [...document.querySelectorAll(`#${containerId} .mold-param-row, #${containerId} .excel-param-cell`)].map(row => {
             const valueInput = row.querySelector(".mold-param-value");
             const value = valueInput ? valueInput.value.trim() : "";
             const mode = row.querySelector(".mold-param-tolerance-mode").value;
@@ -753,7 +753,7 @@ let currentPage = "dashboard";
         if (!p) return '<td class="excel-cell-missing">--</td>';
         const mode = p.tolerance_mode || "percent";
         const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
-        return `<td class="mold-param-row excel-param-cell" data-parameter="${escapeHtml(tag)}">
+        return `<td class="excel-param-cell" data-parameter="${escapeHtml(tag)}">
             <input class="mold-param-value excel-value-input" type="text" placeholder="实际值"
                 value="${p.value != null ? escapeHtml(p.value) : ""}">
             <div class="excel-tolerance-row">
