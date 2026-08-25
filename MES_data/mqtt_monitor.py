@@ -307,6 +307,12 @@ def insert_message(message, payload, raw_payload):
     """将一条 MQTT 消息写入 SQL Server，并在同一事务中检测/记录 工艺参数 变更。"""
     global sql_connection
 
+    device_id = payload.get("devId")
+    if device_id in _deleted_devices:
+        return None
+
+    data = payload.get("Data")
+
     data = payload.get("Data")
 
     data_json = json.dumps(
