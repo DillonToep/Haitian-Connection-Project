@@ -113,6 +113,7 @@
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 2px 0; color: #46505c;
         }
+        .badge.changing { background: var(--purple); }
         .page-buttons { display: flex; align-items: center; gap: 6px; }
         .page-buttons button { min-width: 32px; height: 32px; border: 1px solid #d6dde5; background: white; }
         .page-buttons button.active { color: white; border-color: var(--blue); background: var(--blue); }
@@ -416,6 +417,12 @@
             .detail-tabs { overflow-x: auto; }
             .tab-button { padding: 10px 14px; white-space: nowrap; }
             .tech-groups-grid { grid-template-columns: 1fr; }
+        }
+        :root {
+            --blue: #5cab81; --blue-soft: #e8f5ec; --green: #19b58a;
+            --orange: #eea12d; --purple: #8a6fdb; --gray: #96999d; --red: #ef4444;
+            --bg: #f2f5f8; --panel: #fff; --line: #dde3ea;
+            --text: #202631; --muted: #788391; --sidebar: 202px;
         }
 
         html[data-theme="dark"] {

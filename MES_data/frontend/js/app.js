@@ -38,6 +38,8 @@ let currentPage = "dashboard";
     let moldDefaultsLoaded = false; 
     let compareSelectedDevices = new Set();
     const COMPARE_COLORS = ["#6BAB90","#5b8def","#fa843f","#c98a3c","#5E4C5A","#c2555c","#8a6fdb","#FFD400"];
+    const CHANGING_MOLDS_STALL_MS = 60000;
+    const RECENT_PARAM_CHANGE_MS = 60000;
 
     const spcFields = {
         cycle_number:["模数",""],
@@ -1110,13 +1112,28 @@ let currentPage = "dashboard";
     }
 
     function statusOf(machine) {
-        if(!machine.data_time) return "offline";
-        const age=Date.now()-new Date(machine.data_time).getTime();
-        if(!Number.isFinite(age)||age>120000) return "offline";
-        return Number(machine.machine_status)===2 ? "production" : "waiting";
+        if (!machine.data_time) return "offline";
+        const age = Date.now() - new Date(machine.data_time).getTime();
+        if (!Number.isFinite(age) || age > 120000) return "offline";
+        if (Number(machine.machine_status) === 2) return "production";
+
+        const cycleAge = machine.cycle_data_time
+            ? Date.now() - new Date(machine.cycle_data_time).getTime()
+            : Infinity; // no SPC row ever seen -- treat as "stalled"
+        const changeAge = machine.last_change_at
+            ? Date.now() - new Date(machine.last_change_at).getTime()
+            : Infinity;
+
+        if (cycleAge > CHANGING_MOLDS_STALL_MS && changeAge <= RECENT_PARAM_CHANGE_MS) return "changing";
+        return "waiting";
     }
     
-    function statusMeta(status) { return status==="production"?["生产","production"]:status==="waiting"?["待机","waiting"]:["离线","offline"]; }
+    function statusMeta(status) {
+    if (status === "production") return ["生产", "production"];
+    if (status === "changing") return ["换模中", "changing"];
+    if (status === "waiting") return ["待机", "waiting"];
+    return ["离线", "offline"];
+}
 
     function daySegmentMeta(status) {
         if (status === "active") return ["生产", "production"];
@@ -1191,11 +1208,12 @@ let currentPage = "dashboard";
     }
 
     function renderDashboard() {
-        const totals={production:0,waiting:0,offline:0};
-        dashboardMachines.forEach(m=>totals[statusOf(m)]++);
-        document.getElementById("production-count").textContent=totals.production;
-        document.getElementById("waiting-count").textContent=totals.waiting;
-        document.getElementById("offline-count").textContent=totals.offline;
+        const totals = { production: 0, waiting: 0, changing: 0, offline: 0 };
+        dashboardMachines.forEach(m => totals[statusOf(m)]++);
+        document.getElementById("production-count").textContent = totals.production;
+        document.getElementById("waiting-count").textContent = totals.waiting;
+        document.getElementById("changing-count").textContent = totals.changing;
+        document.getElementById("offline-count").textContent = totals.offline;
         const filtered=filteredMachines(),pages=Math.max(1,Math.ceil(filtered.length/pageSize));
         dashboardPage=Math.min(dashboardPage,pages);
         const start=(dashboardPage-1)*pageSize,current=filtered.slice(start,start+pageSize);

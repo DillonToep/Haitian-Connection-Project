@@ -100,6 +100,15 @@ def get_dashboard(user: dict = Depends(require_user)):
                 ORDER BY data_time DESC, raw_message_id DESC
             ) AS row_number
             FROM dbo.vw_machine_spc
+        ),
+        latest_changelog AS
+        (
+            -- Most recent 工艺参数 change per device, regardless of
+            -- acknowledged/tolerance status -- just "is someone touching
+            -- specs right now" for the 换模中 dashboard heuristic.
+            SELECT device_id, MAX(detected_at) AS last_change_at
+            FROM dbo.tech_parameter_changelog
+            GROUP BY device_id
         )
         SELECT
             d.device_id, r.data_time, r.received_at,
@@ -107,6 +116,8 @@ def get_dashboard(user: dict = Depends(require_user)):
             r.operation_time AS oil_temperature, r.machine_status,
             s.cycle_time,
             s.cycle_number,
+            s.data_time AS cycle_data_time,
+            lc.last_change_at,
             m.id AS mold_id, m.mold_code, m.mold_name,
             m.product_code, m.cavities, a.mounted_at
         FROM devices AS d
@@ -114,6 +125,8 @@ def get_dashboard(user: dict = Depends(require_user)):
             ON r.device_id = d.device_id AND r.row_number = 1
         LEFT JOIN latest_spc AS s
             ON s.device_id = d.device_id AND s.row_number = 1
+        LEFT JOIN latest_changelog AS lc
+            ON lc.device_id = d.device_id
         LEFT JOIN dbo.device_cycle_resets AS c
             ON c.device_id = d.device_id
         LEFT JOIN dbo.device_mold_assignments AS a
@@ -121,6 +134,7 @@ def get_dashboard(user: dict = Depends(require_user)):
         LEFT JOIN dbo.molds AS m ON m.id = a.mold_id
         ORDER BY d.device_id
     """
+    
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
