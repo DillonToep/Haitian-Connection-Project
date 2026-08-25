@@ -666,19 +666,15 @@ let currentPage = "dashboard";
             };
         });
     }
-
-    
-    const EXCEL_SECTIONS = [
+    const EXCEL_BLOCKS = [
         {
-            title: "料温设定 (℃)",
-            colPrefix: "",
+            title: "温度设定 ±10℃",
             colLabels: ["射嘴", "1段", "2段", "3段", "4段", "5段", "6段"],
             rows: [{ label: "温度", tags: ["TS1", "TS2", "TS3", "TS4", "TS5", "TS6", "TS7"] }],
         },
         {
-            title: "射胶设定",
-            colPrefix: "",
-            colLabels: ["1级", "2级", "3级", "4级", "5级"],
+            title: "射胶设定 ±10%",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段"],
             rows: [
                 { label: "速度", tags: ["IV1", "IV2", "IV3", "IV4", "IV5", "IV6"] },
                 { label: "压力", tags: ["IP1", "IP2", "IP3", "IP4", "IP5", "IP6"] },
@@ -686,9 +682,8 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "保压设定",
-            colPrefix: "",
-            colLabels: ["1级", "2级", "3级", "4级", "5级", "6级"],
+            title: "保压设定 ±10%",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段"],
             rows: [
                 { label: "速度", tags: ["PV1", "PV2", "PV3", "PV4", "PV5", "PV6"] },
                 { label: "压力", tags: ["PP1", "PP2", "PP3", "PP4", "PP5", "PP6"] },
@@ -696,28 +691,7 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "锁模设定 ±10%",
-            colPrefix: "",
-            colLabels: ["1段", "2段", "3段", "4段", "高压(5段)"],
-            rows: [
-                { label: "速度", tags: ["MCV1", "MCV2", "MCV3", "MCV4", "MCV5"] },
-                { label: "压力", tags: ["MCP1", "MCP2", "MCP3", "MCP4", "MCP5"] },
-                { label: "位置", tags: ["MCS1", "MCS2", "MCS3", "MCS4", "MCS5"] },
-            ],
-        },
-        {
-            title: "开模设定 ±10%",
-            colPrefix: "",
-            colLabels: ["1段", "2段", "3段", "4段", "5段"],
-            rows: [
-                { label: "速度", tags: ["MOV1", "MOV2", "MOV3", "MOV4", "MOV5"] },
-                { label: "压力", tags: ["MOP1", "MOP2", "MOP3", "MOP4", "MOP5"] },
-                { label: "位置", tags: ["MOS1", "MOS2", "MOS3", "MOS4", "MOS5"] },
-            ],
-        },
-        {
             title: "熔胶设定",
-            colPrefix: "",
             colLabels: ["1段", "2段", "3段", "4段", "5段"],
             rows: [
                 { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", "PLV5"] },
@@ -727,8 +701,25 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "顶出 · 顶进",
-            colPrefix: "",
+            title: "锁模设定 ±10%",
+            colLabels: ["1段", "2段", "3段", "4段", "高压(5段)"],
+            rows: [
+                { label: "速度", tags: ["MCV1", "MCV2", "MCV3", "MCV4", "MCV5"] },
+                { label: "压力", tags: ["MCP1", "MCP2", "MCP3", "MCP4", "MCP5"] },
+                { label: "位置", tags: ["MCS1", "MCS2", "MCS3", "MCS4", "MCS5"] },
+            ],
+        },
+        {
+            title: "开模设定 ±10%",
+            colLabels: ["1段", "2段", "3段", "4段", "终止"],
+            rows: [
+                { label: "速度", tags: ["MOV1", "MOV2", "MOV3", "MOV4", "MOV5"] },
+                { label: "压力", tags: ["MOP1", "MOP2", "MOP3", "MOP4", "MOP5"] },
+                { label: "位置", tags: ["MOS1", "MOS2", "MOS3", "MOS4", "MOS5"] },
+            ],
+        },
+        {
+            title: "顶针设定 ±10% · 顶进",
             colLabels: ["1", "2", "3"],
             rows: [
                 { label: "压力", tags: ["EFP1", "EFP2"] },
@@ -737,8 +728,7 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "顶出 · 顶退",
-            colPrefix: "",
+            title: "顶针设定 ±10% · 顶退",
             colLabels: ["1", "2"],
             rows: [
                 { label: "压力", tags: ["EBP1", "EBP2"] },
@@ -747,6 +737,99 @@ let currentPage = "dashboard";
             ],
         },
     ];
+
+    function excelParamCell(paramById, tag) {
+        const p = paramById.get(tag);
+        if (!p) return '<td class="excel-cell-missing">--</td>';
+        const mode = p.tolerance_mode || "percent";
+        const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
+        return `<td class="excel-param-cell" data-parameter="${escapeHtml(tag)}">
+            <input class="mold-param-value excel-value-input" type="text" placeholder="实际值"
+                value="${p.value != null ? escapeHtml(p.value) : ""}">
+            <div class="excel-tolerance-row">
+                <select class="mold-param-tolerance-mode excel-tolerance-mode">
+                    <option value="percent"${mode === "percent" ? " selected" : ""}>%</option>
+                    <option value="flat"${mode === "flat" ? " selected" : ""}>固定</option>
+                </select>
+                <input class="mold-param-tolerance excel-tolerance-input" type="number" step="0.1" min="0"
+                    placeholder="公差" value="${toleranceValue != null ? toleranceValue : ""}">
+            </div>
+        </td>`;
+    }
+
+    // Renders one block as a table with block.title occupying a single
+    // rowspan-ed left cell, matching the sheet's "block label spans the
+    // whole section" layout instead of a title bar sitting above the table.
+    function excelBlockTableHtml(block, paramById, usedTags) {
+        const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
+        const bodyRows = block.rows.map((row, i) => {
+            const cells = row.tags.map(tag => {
+                usedTags.add(tag);
+                return excelParamCell(paramById, tag);
+            }).join("");
+            const pad = "<td></td>".repeat(Math.max(0, block.colLabels.length - row.tags.length));
+            const labelCell = i === 0
+                ? `<th class="excel-block-label" rowspan="${block.rows.length}">${escapeHtml(block.title)}</th>`
+                : "";
+            return `<tr>${labelCell}<th>${escapeHtml(row.label)}</th>${cells}${pad}</tr>`;
+        }).join("");
+        return `<table class="excel-style-table excel-block-table">
+            <thead><tr><th></th><th></th>${headerCells}</tr></thead>
+            <tbody>${bodyRows}</tbody>
+        </table>`;
+    }
+
+    // Small header strip mimicking the sheet's top info rows
+    // (模具编号/产品名称/产品编号/模穴数/装机设备), pulled from the same
+    // `molds` data already loaded for the mold list -- no new API call.
+    function excelInfoStripHtml() {
+        const m = molds.find(x => x.id === editMoldId);
+        if (!m) return "";
+        const cell = (label, value) => `<div class="excel-info-cell">
+            <div class="excel-info-label">${escapeHtml(label)}</div>
+            <div class="excel-info-value">${showValue(value)}</div>
+        </div>`;
+        return `<div class="excel-info-strip">
+            ${cell("模具编号", m.mold_code)}
+            ${cell("产品名称", m.mold_name)}
+            ${cell("产品编号", m.product_code)}
+            ${cell("模穴数", m.cavities)}
+            ${cell("装机设备", m.mounted_device_id)}
+        </div>`;
+    }
+
+    function renderMoldAdvancedGroups(parameters) {
+        const readOnly = currentUser.role === "viewer";
+        const paramById = new Map(parameters.map(p => [p.parameter_id, p]));
+        const usedTags = new Set();
+
+        const blocksHtml = EXCEL_BLOCKS
+            .map(block => excelBlockTableHtml(block, paramById, usedTags))
+            .join("");
+
+        const leftover = parameters.filter(p => !usedTags.has(p.parameter_id));
+
+        document.getElementById("mold-advanced-groups").innerHTML = `
+            ${excelInfoStripHtml()}
+            <div class="excel-sections-wrap">${blocksHtml}</div>
+            <div id="mold-advanced-leftover"></div>`;
+
+        // Leftover tags (中子/座台/吹气/misc) keep the original collapsible
+        // category-card layout, same as before.
+        renderParameterGroupsInto("mold-advanced-leftover", leftover, readOnly);
+
+        if (readOnly) {
+            document.querySelectorAll("#mold-advanced-groups .excel-param-cell input, #mold-advanced-groups .excel-param-cell select")
+                .forEach(el => { el.disabled = true; });
+        }
+
+        document.querySelectorAll("#mold-advanced-groups .excel-tolerance-mode").forEach(select => {
+            select.addEventListener("change", e => {
+                const input = e.target.closest(".excel-param-cell").querySelector(".excel-tolerance-input");
+                input.placeholder = e.target.value === "flat" ? "公差" : "公差%";
+            });
+        });
+    }
 
     function excelParamCell(paramById, tag) {
         const p = paramById.get(tag);
