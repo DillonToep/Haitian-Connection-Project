@@ -1884,16 +1884,8 @@ let currentPage = "dashboard";
         select.innerHTML=devices.map(d=>`<option value="${escapeHtml(d.device_id)}">设备 ${escapeHtml(d.device_id)}</option>`).join("");
         if(devices.some(d=>d.device_id===previous)) select.value=previous;
     }
-    function updateFilterSelect(id,values,label) {
-        const select=document.getElementById(id),previous=select.value;
-        const unique=[...new Set(values.filter(Boolean))].sort();
-        select.innerHTML=`<option value="">${label}</option>`+unique.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
-        if(unique.includes(previous)) select.value=previous;
-    }
     async function loadDashboard() {
         dashboardMachines=await requestJson("/api/dashboard");
-        updateFilterSelect("filter-device",dashboardMachines.map(m=>m.device_id),"全部设备编号");
-        updateFilterSelect("filter-product",dashboardMachines.map(m=>m.mold_code),"全部产品编号");
         renderDashboard();
     }
     function locationOf(deviceId) {
@@ -1901,13 +1893,9 @@ let currentPage = "dashboard";
     }
     function filteredMachines() {
         const location=document.getElementById("filter-location").value;
-        const device=document.getElementById("filter-device").value;
-        const product=document.getElementById("filter-product").value;
         const statuses=new Set([...document.querySelectorAll(".status-filter:checked")].map(input=>input.value));
         return dashboardMachines.filter(m=>
             (!location||locationOf(m.device_id)===location)
-            &&(!device||m.device_id===device)
-            &&(!product||m.mold_code===product)
             &&statuses.has(statusOf(m))
         );
     }
@@ -2793,10 +2781,8 @@ let currentPage = "dashboard";
     document.querySelectorAll("#device-detail-page > .detail-tabs > .tab-button").forEach(button=>button.addEventListener("click",()=>switchDetailTab(button.dataset.tab)));
     document.getElementById("device-select").addEventListener("change",refreshPage);
     document.querySelectorAll(".status-filter").forEach(input=>input.addEventListener("change",()=>{dashboardPage=1;renderDashboard();}));
-    document.getElementById("filter-device").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
-    document.getElementById("filter-product").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
-    document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
     document.getElementById("filter-location").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
+    document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
     document.getElementById("clear-all-warnings").addEventListener("click",async()=>{
         if(!confirm("确认清除全部预警？"))return;
         try {
