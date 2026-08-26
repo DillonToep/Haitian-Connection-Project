@@ -48,6 +48,52 @@ END;
 GO
 
 -- ---------------------------------------------------------------------
+-- 1b. Drop any legacy mold_id -> dbo.molds(id) FK on
+--     mold_parameter_targets / mold_extended_info, if one exists.
+--
+--     Why: dbo.molds already cascades to these two tables via their
+--     original mold_id column. Once we add a SECOND cascade path below
+--     (molds -> mold_machine_types -> mold_parameter_targets /
+--     mold_extended_info, both ON DELETE CASCADE), SQL Server refuses to
+--     create it ("may cause cycles or multiple cascade paths", error
+--     1785) because a single DELETE on dbo.molds could then try to
+--     cascade-delete the same child row via two different routes.
+--
+--     mold_id on these two tables is being retired as the lookup key in
+--     favor of machine_type_id (see section 6 below) -- the column and
+--     its data are kept as inert legacy baggage, it just no longer needs
+--     a live FK/cascade of its own. Dropping the constraint only removes
+--     the constraint, not the column or any data.
+-- ---------------------------------------------------------------------
+DECLARE @fk_name NVARCHAR(200);
+
+SELECT @fk_name = fk.name
+FROM sys.foreign_keys AS fk
+INNER JOIN sys.foreign_key_columns AS fkc ON fkc.constraint_object_id = fk.object_id
+INNER JOIN sys.columns AS c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
+WHERE fk.parent_object_id = OBJECT_ID(N'dbo.mold_parameter_targets')
+  AND fk.referenced_object_id = OBJECT_ID(N'dbo.molds')
+  AND c.name = 'mold_id';
+
+IF @fk_name IS NOT NULL
+    EXEC('ALTER TABLE dbo.mold_parameter_targets DROP CONSTRAINT ' + @fk_name);
+GO
+
+DECLARE @fk_name2 NVARCHAR(200);
+
+SELECT @fk_name2 = fk.name
+FROM sys.foreign_keys AS fk
+INNER JOIN sys.foreign_key_columns AS fkc ON fkc.constraint_object_id = fk.object_id
+INNER JOIN sys.columns AS c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
+WHERE fk.parent_object_id = OBJECT_ID(N'dbo.mold_extended_info')
+  AND fk.referenced_object_id = OBJECT_ID(N'dbo.molds')
+  AND c.name = 'mold_id';
+
+IF @fk_name2 IS NOT NULL
+    EXEC('ALTER TABLE dbo.mold_extended_info DROP CONSTRAINT ' + @fk_name2);
+GO
+
+-- ---------------------------------------------------------------------
 -- 2. Re-key dbo.mold_parameter_targets: mold_id -> machine_type_id
 --    mold_id is relaxed to NULL-able: new rows are written keyed only by
 --    machine_type_id (see molds.py), and the FK to mold_machine_types is
@@ -199,5 +245,6 @@ GO
 -- 6. Old mold_id columns on both tables are kept (not dropped) for
 --    backward-compatible reads/rollback safety, but are no longer the
 --    lookup key going forward -- backend code now filters/writes by
---    machine_type_id exclusively. Left as NULL-able, unindexed baggage.
+--    machine_type_id exclusively. Left as NULL-able, unindexed baggage,
+--    and (as of step 1b above) no longer FK-constrained either.
 -- ---------------------------------------------------------------------
