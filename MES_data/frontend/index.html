@@ -50,7 +50,15 @@
                 <label class="summary-card"><span class="summary-dot" style="background:var(--purple)"></span><span>换模中 <strong id="changing-count">0</strong> 台</span><input class="status-filter" type="checkbox" value="changing" checked></label>
                 <label class="summary-card"><span class="summary-dot" style="background:var(--gray)"></span><span>离线 <strong id="offline-count">0</strong> 台</span><input class="status-filter" type="checkbox" value="offline" checked></label>
             </div>
-
+            <div class="dashboard-filters">
+                <select id="filter-location">
+                    <option value="">全部地点</option>
+                    <option value="S">深圳</option>
+                    <option value="H">河源</option>
+                </select>
+                <select id="filter-device"><option value="">全部设备编号</option></select>
+                <select id="filter-product"><option value="">全部产品编号</option></select>
+            </div>
             <div class="dashboard-filters">
                 <select id="filter-device"><option value="">全部设备编号</option></select>
                 <select id="filter-product"><option value="">全部产品编号</option></select>

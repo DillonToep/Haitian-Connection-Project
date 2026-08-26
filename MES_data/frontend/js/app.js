@@ -80,9 +80,10 @@ let currentPage = "dashboard";
     };
 
     function machineImageForPrefix(deviceId) {
-        if (typeof deviceId === "string") {
-            if (deviceId.startsWith("H")) return "/static/img/haitianMars.png";
-            if (deviceId.startsWith("T")) return "/static/img/toshiba.png";
+        if (typeof deviceId === "string" && deviceId.length >= 4 && deviceId[2] === "-") {
+            const typeChar = deviceId[3];
+            if (typeChar === "T") return "/static/img/toshiba.png";
+            if (typeChar === "H") return "/static/img/haitianMars.png";
         }
         return "/static/img/haitianMars.png";
     }
@@ -1895,13 +1896,21 @@ let currentPage = "dashboard";
         updateFilterSelect("filter-product",dashboardMachines.map(m=>m.mold_code),"全部产品编号");
         renderDashboard();
     }
+    function locationOf(deviceId) {
+        return typeof deviceId === "string" ? deviceId[0] : null;
+    }
     function filteredMachines() {
+        const location=document.getElementById("filter-location").value;
         const device=document.getElementById("filter-device").value;
         const product=document.getElementById("filter-product").value;
         const statuses=new Set([...document.querySelectorAll(".status-filter:checked")].map(input=>input.value));
-        return dashboardMachines.filter(m=>(!device||m.device_id===device)&&(!product||m.mold_code===product)&&statuses.has(statusOf(m)));
+        return dashboardMachines.filter(m=>
+            (!location||locationOf(m.device_id)===location)
+            &&(!device||m.device_id===device)
+            &&(!product||m.mold_code===product)
+            &&statuses.has(statusOf(m))
+        );
     }
-
     function machineVisualHtml(machine) {
         return `<div class="machine-visual"><div class="device-name">${escapeHtml(machine.device_id)}</div>${machineVisual(machine.device_id)}</div>`;
     }
@@ -2787,6 +2796,7 @@ let currentPage = "dashboard";
     document.getElementById("filter-device").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
     document.getElementById("filter-product").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
     document.getElementById("logout-button").addEventListener("click",async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.replace("/login");});
+    document.getElementById("filter-location").addEventListener("change",()=>{dashboardPage=1;renderDashboard();});
     document.getElementById("clear-all-warnings").addEventListener("click",async()=>{
         if(!confirm("确认清除全部预警？"))return;
         try {
