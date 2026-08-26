@@ -485,6 +485,46 @@ def delete_mold_machine_type(mold_id: int, machine_type_id: int, user: dict = De
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
+@router.get("/molds/{mold_id}/machine-types/{machine_type_id}/parameters")
+def get_mold_machine_type_parameters(
+    mold_id: int,
+    machine_type_id: int,
+    user: dict = Depends(require_user),
+):
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+            cursor.execute(
+                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
+                "FROM dbo.mold_parameter_targets WHERE machine_type_id = ?",
+                machine_type_id,
+            )
+            saved = {row.parameter_id: row for row in cursor.fetchall()}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    parameters = []
+    for tag, meta in PARAMETER_LABELS.items():
+        if not meta["use"] or tag in EXCLUDED_FROM_TARGETS:
+            continue
+        row = saved.get(tag)
+        parameters.append(
+            {
+                "parameter_id": tag,
+                "label": meta["label"],
+                "category": categorize_tag(tag, meta["label"]),
+                "value": row.target_value if row else None,
+                "tolerance_mode": row.tolerance_mode if row else "percent",
+                "tolerance_percent": float(row.tolerance_percent) if row and row.tolerance_percent is not None else None,
+                "tolerance_flat": float(row.tolerance_flat) if row and row.tolerance_flat is not None else None,
+            }
+        )
+    return {"parameters": parameters}
+
 
 @router.put("/molds/{mold_id}/machine-types/{machine_type_id}/parameters")
 def update_mold_machine_type_parameters(
