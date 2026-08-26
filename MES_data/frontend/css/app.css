@@ -600,6 +600,7 @@ html[data-theme="dark"] .excel-cell-missing { color: #4a5260; }
 
 /* Mold-advanced dialog can be a little wider now that it holds real tables */
 #mold-advanced-dialog.mold-edit-dialog { width: min(1040px, calc(100% - 28px)); }
+#mold-defaults-dialog.mold-edit-dialog { width: min(1040px, calc(100% - 28px)); }
 
 /* Darker, thicker grid to read like a scanned paper form rather
    than a normal web table. */

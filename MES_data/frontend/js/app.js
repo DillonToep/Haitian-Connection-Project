@@ -37,7 +37,7 @@ let currentPage = "dashboard";
     let moldAdvancedLoaded = false;
     let moldDefaultsLoaded = false; 
     let compareSelectedDevices = new Set();
-    const COMPARE_COLORS = ["#6BAB90","#5b8def","#fa843f","#c98a3c","#5E4C5A","#c2555c","#8a6fdb","#FFD400"];
+    const COMPARE_COLORS = ["#6BAB90","#5b8def","#c98a3c","#5E4C5A","#c2555c","#8a6fdb","#FFD400"];
     const CHANGING_MOLDS_STALL_MS = 60000;
     const RECENT_PARAM_CHANGE_MS = 60000;
 
@@ -568,89 +568,6 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
-    function renderParameterGroupsInto(containerId, parameters, readOnly, enableBatchFill = false, includeValue = true) {
-        const groups = new Map();
-        parameters.forEach(p => { if (!groups.has(p.category)) groups.set(p.category, []); groups.get(p.category).push(p); });
-        const categoryOrder = ["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数"];
-        const ordered = [...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
-        document.getElementById(containerId).innerHTML = ordered.map(category => {
-            const rows = groups.get(category).map(p => {
-                const mode = p.tolerance_mode || "percent";
-                const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
-                const valueField = includeValue
-                    ? `<input class="mold-param-value" type="text" placeholder="实际值" value="${p.value!=null?escapeHtml(p.value):""}" ${readOnly?"disabled":""}>`
-                    : "";
-                return `
-                <div class="mold-param-row${includeValue?"":" no-value"}" data-parameter="${escapeHtml(p.parameter_id)}">
-                    <span class="mold-param-label">${escapeHtml(p.label)}</span>
-                    ${valueField}
-                    <select class="mold-param-tolerance-mode" ${readOnly?"disabled":""}>
-                        <option value="percent"${mode==="percent"?" selected":""}>百分比 %</option>
-                        <option value="flat"${mode==="flat"?" selected":""}>固定值</option>
-                    </select>
-                    <input class="mold-param-tolerance" type="number" step="0.1" min="0"
-                        placeholder="${mode==="flat"?"公差":"公差 %"}"
-                        value="${toleranceValue!=null?toleranceValue:""}" ${readOnly?"disabled":""}>
-                </div>`;
-            }).join("");
-
-            const batchFillHtml = (enableBatchFill && !readOnly) ? `
-                <div class="mold-param-batch-fill${includeValue?"":" no-value"}">
-                    ${includeValue ? `<input class="batch-fill-value" type="text" placeholder="统一设置实际值（留空则不改）">` : ""}
-                    <select class="batch-fill-tolerance-mode">
-                        <option value="">公差模式不变</option>
-                        <option value="percent">百分比 %</option>
-                        <option value="flat">固定值</option>
-                    </select>
-                    <input class="batch-fill-tolerance" type="number" step="0.1" min="0" placeholder="统一设置公差">
-                    <button type="button" class="secondary-button batch-fill-apply">应用到本组</button>
-                    <button type="button" class="secondary-button batch-fill-clear">恢复本组为空</button>
-                </div>` : "";
-
-            return `<details class="tech-group"><summary class="tech-group-title"><span class="tech-group-title-text">${escapeHtml(category)}</span><span class="tech-group-meta"><span class="tech-group-count">${groups.get(category).length}</span></span></summary>${batchFillHtml}<div class="parameter-grid">${rows}</div></details>`;
-        }).join("");
-
-        document.querySelectorAll(`#${containerId} .mold-param-tolerance-mode`).forEach(select => {
-            select.addEventListener("change", e => {
-                const input = e.target.closest(".mold-param-row").querySelector(".mold-param-tolerance");
-                input.placeholder = e.target.value === "flat" ? "公差" : "公差 %";
-            });
-        });
-
-        if (enableBatchFill) {
-            document.querySelectorAll(`#${containerId} .batch-fill-apply`).forEach(button => {
-                button.addEventListener("click", () => {
-                    const details = button.closest(".tech-group");
-                    const valueInput = details.querySelector(".batch-fill-value");
-                    const value = valueInput ? valueInput.value.trim() : "";
-                    const mode = details.querySelector(".batch-fill-tolerance-mode").value;
-                    const tolerance = details.querySelector(".batch-fill-tolerance").value.trim();
-                    if (!value && !mode && !tolerance) return;
-                    details.querySelectorAll(".mold-param-row").forEach(row => {
-                        const rowValueInput = row.querySelector(".mold-param-value");
-                        if (value !== "" && rowValueInput) rowValueInput.value = value;
-                        if (mode !== "") {
-                            const modeSelect = row.querySelector(".mold-param-tolerance-mode");
-                            modeSelect.value = mode;
-                            row.querySelector(".mold-param-tolerance").placeholder = mode === "flat" ? "公差" : "公差 %";
-                        }
-                        if (tolerance !== "") row.querySelector(".mold-param-tolerance").value = tolerance;
-                    });
-                });
-            });
-            document.querySelectorAll(`#${containerId} .batch-fill-clear`).forEach(button => {
-                button.addEventListener("click", () => {
-                    const details = button.closest(".tech-group");
-                    details.querySelectorAll(".mold-param-row").forEach(row => {
-                        const rowValueInput = row.querySelector(".mold-param-value");
-                        if (rowValueInput) rowValueInput.value = "";
-                        row.querySelector(".mold-param-tolerance").value = "";
-                    });
-                });
-            });
-        }
-    }
-
     function collectParameterRows(containerId) {
         return [...document.querySelectorAll(`#${containerId} .mold-param-row, #${containerId} .excel-param-cell`)].map(row => {
             const valueInput = row.querySelector(".mold-param-value");
@@ -899,14 +816,17 @@ let currentPage = "dashboard";
     }
 
 
-    function excelParamCell(paramById, tag) {
+    function excelParamCell(paramById, tag, includeValue = true) {
         const p = paramById.get(tag);
         if (!p) return '<td class="excel-cell-missing">--</td>';
         const mode = p.tolerance_mode || "percent";
         const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
+        const valueHtml = includeValue
+            ? `<input class="mold-param-value excel-value-input" type="text" placeholder="实际值"
+                value="${p.value != null ? escapeHtml(p.value) : ""}">`
+            : "";
         return `<td class="excel-param-cell" data-parameter="${escapeHtml(tag)}">
-            <input class="mold-param-value excel-value-input" type="text" placeholder="实际值"
-                value="${p.value != null ? escapeHtml(p.value) : ""}">
+            ${valueHtml}
             <div class="excel-tolerance-row">
                 <select class="mold-param-tolerance-mode excel-tolerance-mode">
                     <option value="percent"${mode === "percent" ? " selected" : ""}>%</option>
@@ -921,12 +841,12 @@ let currentPage = "dashboard";
     // Renders one block as a table with block.title occupying a single
     // rowspan-ed left cell, matching the sheet's "block label spans the
     // whole section" layout instead of a title bar sitting above the table.
-    function excelBlockTableHtml(block, paramById, usedTags) {
+    function excelBlockTableHtml(block, paramById, usedTags, includeValue = true) {
         const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
         const bodyRows = block.rows.map((row, i) => {
             const cells = row.tags.map(tag => {
                 usedTags.add(tag);
-                return excelParamCell(paramById, tag);
+                return excelParamCell(paramById, tag, includeValue);
             }).join("");
             const pad = "<td></td>".repeat(Math.max(0, block.colLabels.length - row.tags.length));
             const labelCell = i === 0
@@ -968,15 +888,10 @@ let currentPage = "dashboard";
             .map(block => excelBlockTableHtml(block, paramById, usedTags))
             .join("");
 
-        const leftover = parameters.filter(p => !usedTags.has(p.parameter_id));
-
         document.getElementById("mold-advanced-groups").innerHTML = `
             ${excelInfoStripHtml()}
             <div id="mold-advanced-extended">${renderExtendedInfoSections()}</div>
-            <div class="excel-sections-wrap">${blocksHtml}</div>
-            <div id="mold-advanced-leftover"></div>`;
-
-        renderParameterGroupsInto("mold-advanced-leftover", leftover, readOnly);
+            <div class="excel-sections-wrap">${blocksHtml}</div>`;
 
         if (readOnly) {
             document.querySelectorAll("#mold-advanced-groups .excel-param-cell input, #mold-advanced-groups .excel-param-cell select")
@@ -1028,6 +943,36 @@ let currentPage = "dashboard";
         } catch (error) { alert(error.message); }
     });
 
+    // Same Excel-grid rendering as the per-mold 高级工艺参数 dialog, but
+    // without a "实际值" input per cell -- defaults only ever seed a
+    // target value/tolerance template for brand-new molds (see
+    // MoldParameterInput.value handling on create_mold), so there's
+    // nothing meaningful to show as a live "actual value" here.
+    function renderMoldDefaultsGroups(parameters) {
+        const readOnly = currentUser.role === "viewer";
+        const paramById = new Map(parameters.map(p => [p.parameter_id, p]));
+        const usedTags = new Set();
+
+        const blocksHtml = EXCEL_BLOCKS
+            .map(block => excelBlockTableHtml(block, paramById, usedTags, false))
+            .join("");
+
+        document.getElementById("mold-defaults-groups").innerHTML =
+            `<div class="excel-sections-wrap">${blocksHtml}</div>`;
+
+        if (readOnly) {
+            document.querySelectorAll("#mold-defaults-groups .excel-param-cell input, #mold-defaults-groups .excel-param-cell select")
+                .forEach(el => { el.disabled = true; });
+        }
+
+        document.querySelectorAll("#mold-defaults-groups .excel-tolerance-mode").forEach(select => {
+            select.addEventListener("change", e => {
+                const input = e.target.closest(".excel-param-cell").querySelector(".excel-tolerance-input");
+                input.placeholder = e.target.value === "flat" ? "公差" : "公差%";
+            });
+        });
+    }
+
     document.getElementById("mold-search-input")?.addEventListener("input", () => renderMoldList());
     document.getElementById("mold-defaults-button").addEventListener("click", async () => {
         document.getElementById("mold-defaults-dialog").showModal();
@@ -1035,7 +980,7 @@ let currentPage = "dashboard";
         document.getElementById("mold-defaults-summary").textContent = "正在读取……";
         try {
             const result = await requestJson("/api/molds/parameter-defaults");
-            renderParameterGroupsInto("mold-defaults-groups", result.parameters, currentUser.role === "viewer", true, false);
+            renderMoldDefaultsGroups(result.parameters);
             document.getElementById("mold-defaults-summary").textContent = "";
             moldDefaultsLoaded = true;
         } catch (error) {
