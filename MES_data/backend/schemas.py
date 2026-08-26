@@ -38,3 +38,7 @@ class MoldAssignmentRequest(BaseModel):
 
 class MoldExtendedInfoRequest(BaseModel):
     fields: dict[str, str | float | int | bool | None] = {}
+
+
+class MachineTypeCreateRequest(BaseModel):
+    machine_type: str = Field(min_length=1, max_length=150)

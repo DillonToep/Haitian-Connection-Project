@@ -13,6 +13,7 @@ from ..database import get_connection, row_to_dict
 from ..security import require_editor, require_user
 from ..parameter_labels import PARAMETER_LABELS, EXCLUDED_FROM_TARGETS, categorize_tag
 from ..schemas import (
+    MachineTypeCreateRequest,
     MoldAssignmentRequest,
     MoldParametersUpdateRequest,
     MoldUpdateRequest,
@@ -267,8 +268,45 @@ def update_mold_parameter_defaults(
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-@router.get("/molds/{mold_id}/parameters")
-def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
+def _get_machine_type_or_404(cursor, mold_id: int, machine_type_id: int):
+    row = cursor.execute(
+        "SELECT id, mold_id, machine_type, is_main FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
+        machine_type_id, mold_id,
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="机型不存在")
+    return row
+
+
+def _seed_machine_type_from_defaults(cursor, machine_type_id: int):
+    """Seed a brand-new machine type's 高级工艺参数 from the global
+    defaults template (模具管理 -> 默认参数设置) -- same behavior create_mold
+    used to apply directly to a mold, now applied per machine type."""
+    cursor.execute(
+        "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
+        "FROM dbo.mold_parameter_defaults"
+    )
+    for default_row in cursor.fetchall():
+        cursor.execute(
+            """
+            INSERT INTO dbo.mold_parameter_targets
+                (mold_id, machine_type_id, parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
+            VALUES (NULL, ?, ?, ?, ?, ?, ?)
+            """,
+            machine_type_id,
+            default_row.parameter_id,
+            default_row.target_value,
+            default_row.tolerance_mode,
+            default_row.tolerance_percent,
+            default_row.tolerance_flat,
+        )
+
+
+@router.get("/molds/{mold_id}/machine-types")
+def get_mold_machine_types(mold_id: int, user: dict = Depends(require_user)):
+    """The 机型 list for a mold -- Mold -> Machine Type -> Specifications.
+    Each entry is its own independent specification record; is_main marks
+    the one machine type mqtt_monitor.py checks tolerances against."""
     del user
     try:
         with closing(get_connection()) as connection:
@@ -277,9 +315,140 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
             if mold is None:
                 raise HTTPException(status_code=404, detail="模具不存在")
             cursor.execute(
-                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
-                "FROM dbo.mold_parameter_targets WHERE mold_id = ?",
+                """
+                SELECT id, machine_type, is_main, created_at
+                FROM dbo.mold_machine_types
+                WHERE mold_id = ?
+                ORDER BY is_main DESC, created_at
+                """,
                 mold_id,
+            )
+            return {
+                "mold_id": mold_id,
+                "machine_types": [row_to_dict(cursor, row) for row in cursor.fetchall()],
+            }
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.post("/molds/{mold_id}/machine-types", status_code=201)
+def create_mold_machine_type(
+    mold_id: int,
+    data: MachineTypeCreateRequest,
+    user: dict = Depends(require_user),
+):
+    """'Add Machine' -- creates a new machine-specific specification
+    record for this mold under the given 机型. Does NOT register a
+    physical machine anywhere else in the system."""
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
+            if mold is None:
+                raise HTTPException(status_code=404, detail="模具不存在")
+
+            has_any = cursor.execute(
+                "SELECT TOP 1 1 FROM dbo.mold_machine_types WHERE mold_id = ?", mold_id
+            ).fetchone()
+            is_main = 0 if has_any else 1  # first machine type for a mold is main by default
+
+            machine_type_id = cursor.execute(
+                """
+                INSERT INTO dbo.mold_machine_types (mold_id, machine_type, is_main, created_by)
+                OUTPUT INSERTED.id
+                VALUES (?, ?, ?, ?)
+                """,
+                mold_id, data.machine_type.strip(), is_main, user["id"],
+            ).fetchone()[0]
+
+            _seed_machine_type_from_defaults(cursor, machine_type_id)
+
+            connection.commit()
+            return {"status": "ok", "id": machine_type_id, "is_main": bool(is_main)}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.post("/molds/{mold_id}/machine-types/{machine_type_id}/set-main")
+def set_main_machine_type(mold_id: int, machine_type_id: int, user: dict = Depends(require_user)):
+    """Marks this machine type as the mold's main one -- the specification
+    set mqtt_monitor.py checks tolerances against / raises warnings for
+    (see _fetch_mold_targets)."""
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+            cursor.execute(
+                "UPDATE dbo.mold_machine_types SET is_main = 0 WHERE mold_id = ? AND is_main = 1",
+                mold_id,
+            )
+            cursor.execute(
+                "UPDATE dbo.mold_machine_types SET is_main = 1 WHERE id = ?",
+                machine_type_id,
+            )
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.delete("/molds/{mold_id}/machine-types/{machine_type_id}")
+def delete_mold_machine_type(mold_id: int, machine_type_id: int, user: dict = Depends(require_user)):
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            row = _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+
+            remaining = cursor.execute(
+                "SELECT COUNT(*) FROM dbo.mold_machine_types WHERE mold_id = ?", mold_id
+            ).fetchone()[0]
+            if remaining <= 1:
+                raise HTTPException(status_code=400, detail="模具至少需要保留一个机型")
+
+            # FK ON DELETE CASCADE handles mold_parameter_targets /
+            # mold_extended_info rows tied to this machine type.
+            cursor.execute("DELETE FROM dbo.mold_machine_types WHERE id = ?", machine_type_id)
+
+            if row.is_main:
+                cursor.execute(
+                    """
+                    UPDATE dbo.mold_machine_types SET is_main = 1
+                    WHERE id = (
+                        SELECT TOP 1 id FROM dbo.mold_machine_types
+                        WHERE mold_id = ? ORDER BY created_at
+                    )
+                    """,
+                    mold_id,
+                )
+
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.get("/molds/{mold_id}/machine-types/{machine_type_id}/parameters")
+def get_mold_parameters(mold_id: int, machine_type_id: int, user: dict = Depends(require_user)):
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+            cursor.execute(
+                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
+                "FROM dbo.mold_parameter_targets WHERE machine_type_id = ?",
+                machine_type_id,
             )
             saved = {row.parameter_id: row for row in cursor.fetchall()}
     except HTTPException:
@@ -303,39 +472,39 @@ def get_mold_parameters(mold_id: int, user: dict = Depends(require_user)):
                 "tolerance_flat": float(row.tolerance_flat) if row and row.tolerance_flat is not None else None,
             }
         )
-    return {"mold_id": mold_id, "parameters": parameters}
+    return {"mold_id": mold_id, "machine_type_id": machine_type_id, "parameters": parameters}
 
 
 
 
-@router.get("/molds/{mold_id}/extended")
-def get_mold_extended_info(mold_id: int, user: dict = Depends(require_user)):
+@router.get("/molds/{mold_id}/machine-types/{machine_type_id}/extended")
+def get_mold_extended_info(mold_id: int, machine_type_id: int, user: dict = Depends(require_user)):
     """The free-form 注塑成型条件参数表 fields (header/material/weight/
     hot-runner/water-mold-temp/injection-method/residual-position/cycle
     totals/operation setup) that don't have dedicated columns -- see
-    setup_mold_extended_info.sql. Returns {} if nothing has been saved
-    for this mold yet."""
+    setup_mold_extended_info.sql / setup_mold_machine_types.sql. Scoped to
+    one Mold + Machine Type combination; returns {} if nothing has been
+    saved for it yet."""
     del user
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
-            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
-            if mold is None:
-                raise HTTPException(status_code=404, detail="模具不存在")
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
             row = cursor.execute(
-                "SELECT info_json FROM dbo.mold_extended_info WHERE mold_id = ?", mold_id
+                "SELECT info_json FROM dbo.mold_extended_info WHERE machine_type_id = ?", machine_type_id
             ).fetchone()
             fields = json.loads(row.info_json) if row and row.info_json else {}
-            return {"mold_id": mold_id, "fields": fields}
+            return {"mold_id": mold_id, "machine_type_id": machine_type_id, "fields": fields}
     except HTTPException:
         raise
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-@router.put("/molds/{mold_id}/extended")
+@router.put("/molds/{mold_id}/machine-types/{machine_type_id}/extended")
 def update_mold_extended_info(
     mold_id: int,
+    machine_type_id: int,
     data: MoldExtendedInfoRequest,
     user: dict = Depends(require_user),
 ):
@@ -343,21 +512,19 @@ def update_mold_extended_info(
     payload = json.dumps(data.fields, ensure_ascii=False)
     sql = """
         MERGE dbo.mold_extended_info AS target
-        USING (SELECT ? AS mold_id) AS src
-        ON target.mold_id = src.mold_id
+        USING (SELECT ? AS machine_type_id) AS src
+        ON target.machine_type_id = src.machine_type_id
         WHEN MATCHED THEN
             UPDATE SET info_json = ?, updated_at = SYSUTCDATETIME(), updated_by = ?
         WHEN NOT MATCHED THEN
-            INSERT (mold_id, info_json, updated_by)
-            VALUES (src.mold_id, ?, ?);
+            INSERT (mold_id, machine_type_id, info_json, updated_by)
+            VALUES (NULL, src.machine_type_id, ?, ?);
     """
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
-            mold = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
-            if mold is None:
-                raise HTTPException(status_code=404, detail="模具不存在")
-            cursor.execute(sql, mold_id, payload, user["id"], payload, user["id"])
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+            cursor.execute(sql, machine_type_id, payload, user["id"], payload, user["id"])
             connection.commit()
             return {"status": "ok"}
     except HTTPException:
@@ -604,27 +771,22 @@ async def create_mold(
                     sort_order,
                 )
 
-            # ---- seed 高级工艺参数 from the global defaults template, if
-            # any have been configured (模具管理 -> 默认参数设置). Only
-            # affects this brand-new mold; existing molds are untouched. ----
-            cursor.execute(
-                "SELECT parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat "
-                "FROM dbo.mold_parameter_defaults"
-            )
-            for default_row in cursor.fetchall():
-                cursor.execute(
-                    """
-                    INSERT INTO dbo.mold_parameter_targets
-                        (mold_id, parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    mold_id,
-                    default_row.parameter_id,
-                    default_row.target_value,
-                    default_row.tolerance_mode,
-                    default_row.tolerance_percent,
-                    default_row.tolerance_flat,
-                )
+            # ---- every mold needs at least one 机型 to hold its
+            # specifications against (Mold -> Machine Type ->
+            # Specifications). A brand-new mold gets one default machine
+            # type, auto-flagged as main, seeded from the global defaults
+            # template (模具管理 -> 默认参数设置) the same way a mold's specs
+            # used to be seeded directly. The user can rename/replace it
+            # or add more machine types afterwards. ----
+            default_machine_type_id = cursor.execute(
+                """
+                INSERT INTO dbo.mold_machine_types (mold_id, machine_type, is_main, created_by)
+                OUTPUT INSERTED.id
+                VALUES (?, ?, 1, ?)
+                """,
+                mold_id, "默认机型", user["id"],
+            ).fetchone()[0]
+            _seed_machine_type_from_defaults(cursor, default_machine_type_id)
 
             # ---- image files (runs once, not once-per-cavity) ----
             mold_dir = MOLD_UPLOAD_DIR / str(mold_id)
@@ -849,7 +1011,10 @@ def delete_mold(mold_id: int, user: dict = Depends(require_user)):
             if mounted:
                 raise HTTPException(status_code=400, detail="该模具当前已装机，请先卸载后再删除")
             cursor.execute("DELETE FROM dbo.device_mold_assignments WHERE mold_id = ?", mold_id)
-            cursor.execute("DELETE FROM dbo.mold_parameter_targets WHERE mold_id = ?", mold_id)
+            # Cascades to mold_parameter_targets / mold_extended_info rows
+            # for every machine type this mold has (see
+            # setup_mold_machine_types.sql ON DELETE CASCADE).
+            cursor.execute("DELETE FROM dbo.mold_machine_types WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.mold_output_alerts WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.mold_production_log WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.molds WHERE id = ?", mold_id)

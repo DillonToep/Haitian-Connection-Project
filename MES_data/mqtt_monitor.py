@@ -100,11 +100,17 @@ def _detect_parameter_changes(device_id, data):
     return changes
 
 def _fetch_mold_targets(cursor, device_id):
+    """Tolerance targets come from the mold's MAIN 机型 specification
+    record (Mold -> Machine Type -> Specifications). Each machine type
+    holds its own independent set of targets (see
+    setup_mold_machine_types.sql); is_main = 1 marks the one machine type
+    that drives notifications/tolerance checking for this mold."""
     cursor.execute(
         """
         SELECT t.parameter_id, t.target_value, t.tolerance_mode, t.tolerance_percent, t.tolerance_flat
         FROM dbo.device_mold_assignments AS a
-        INNER JOIN dbo.mold_parameter_targets AS t ON t.mold_id = a.mold_id
+        INNER JOIN dbo.mold_machine_types AS mt ON mt.mold_id = a.mold_id AND mt.is_main = 1
+        INNER JOIN dbo.mold_parameter_targets AS t ON t.machine_type_id = mt.id
         WHERE a.device_id = ? AND a.unmounted_at IS NULL
         """,
         device_id,

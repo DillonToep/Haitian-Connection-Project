@@ -35,7 +35,10 @@ let currentPage = "dashboard";
         "时间参数": " s"
     };
     let moldAdvancedLoaded = false;
-    let moldDefaultsLoaded = false; 
+    let moldDefaultsLoaded = false;
+    let currentMachineTypeId = null;
+    let currentMachineTypeName = "";
+    let machineTypesCache = [];
     let compareSelectedDevices = new Set();
     const COMPARE_COLORS = ["#6BAB90","#5b8def","#c98a3c","#5E4C5A","#c2555c","#8a6fdb","#FFD400"];
     const CHANGING_MOLDS_STALL_MS = 60000;
@@ -314,7 +317,10 @@ let currentPage = "dashboard";
 
         moldAdvancedLoaded = false;
         moldExtendedFields = {};
+        currentMachineTypeId = null;
+        currentMachineTypeName = "";
         document.getElementById("mold-advanced-dialog").close();
+        document.getElementById("mold-machine-types-dialog").close();
         document.getElementById("mold-advanced-groups").innerHTML = "";
         document.getElementById("mold-advanced-summary").textContent = "";
 
@@ -323,6 +329,7 @@ let currentPage = "dashboard";
 
     document.getElementById("mold-edit-cancel").addEventListener("click", () => {
         document.getElementById("mold-advanced-dialog").close();
+        document.getElementById("mold-machine-types-dialog").close();
         document.getElementById("mold-edit-dialog").close();
     });
     document.getElementById("mold-edit-delete-button").addEventListener("click", async () => {
@@ -391,6 +398,7 @@ let currentPage = "dashboard";
 
     document.getElementById("mold-edit-close-x").addEventListener("click", () => {
         document.getElementById("mold-advanced-dialog").close();
+        document.getElementById("mold-machine-types-dialog").close();
         document.getElementById("mold-edit-dialog").close();
     });
 
@@ -445,6 +453,34 @@ let currentPage = "dashboard";
         renderMoldList();
     }
 
+    // Static face-image markup for a mold card -- only ever built once per
+    // card. Kept separate from the badge/overlay builders below so a
+    // refresh never has to touch (and therefore never has to re-decode)
+    // the <img> itself.
+    function moldItemFaceHtml(m) {
+        return m.face_image_url
+            ? `<img class="mold-card-face" src="${escapeHtml(m.face_image_url)}" alt="${escapeHtml(m.mold_name)}">`
+            : `<div class="mold-card-face-empty">暂无图片</div>`;
+    }
+    function moldItemDeviceBadgeHtml(m) {
+        return m.mounted_device_id
+            ? `<div class="mold-card-device">设备 ${escapeHtml(m.mounted_device_id)}</div>`
+            : `<div class="mold-card-device mold-card-device-empty">未装机</div>`;
+    }
+    function moldItemOverlayHtml(m) {
+        return `<div class="mold-card-overlay">
+            <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
+            <div class="mold-card-meta">模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}　产量：${showValue(m.total_output)}${m.max_output != null ? `/${m.max_output}` : ""}</div>
+        </div>`;
+    }
+    function moldItemHtml(m) {
+        return `<div class="mold-item" data-mold-id="${m.id}">
+            ${moldItemFaceHtml(m)}
+            ${moldItemDeviceBadgeHtml(m)}
+            ${moldItemOverlayHtml(m)}
+        </div>`;
+    }
+
     function renderMoldList() {
         const term = (document.getElementById("mold-search-input")?.value || "").trim().toLowerCase();
         const filtered = term
@@ -453,24 +489,50 @@ let currentPage = "dashboard";
                 (m.mold_code || "").toLowerCase().includes(term))
             : molds;
 
-        document.getElementById("mold-list").innerHTML = filtered.length ? filtered.map(m => {
-            const face = m.face_image_url
-                ? `<img class="mold-card-face" src="${escapeHtml(m.face_image_url)}" alt="${escapeHtml(m.mold_name)}">`
-                : `<div class="mold-card-face-empty">暂无图片</div>`;
-            const deviceBadge = m.mounted_device_id
-                ? `<div class="mold-card-device">设备 ${escapeHtml(m.mounted_device_id)}</div>`
-                : `<div class="mold-card-device mold-card-device-empty">未装机</div>`;
-            return `<div class="mold-item" data-mold-id="${m.id}">
-                ${face}
-                ${deviceBadge}
-                <div class="mold-card-overlay">
-                    <div class="mold-card-title">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</div>
-                    <div class="mold-card-meta">模穴：${showValue(m.cavities)}${m.requires_cleaning ? `　清洁每 ${showValue(m.cleaning_interval_hours)}h` : ""}　产量：${showValue(m.total_output)}${m.max_output != null ? `/${m.max_output}` : ""}</div>
-                </div>
-            </div>`;
-        }).join("") : `<div class="empty">${term ? "未找到匹配的模具" : "尚未建立模具档案"}</div>`;
+        const container = document.getElementById("mold-list");
 
-        document.querySelectorAll("#mold-list .mold-item").forEach(item => item.addEventListener("click", () => {
+        if (!filtered.length) {
+            container.innerHTML = `<div class="empty">${term ? "未找到匹配的模具" : "尚未建立模具档案"}</div>`;
+            return;
+        }
+
+        const existingItems = [...container.querySelectorAll(".mold-item")];
+        const existingIds = existingItems.map(item => Number(item.dataset.moldId));
+        const currentIds = filtered.map(m => m.id);
+        const sameLayout = existingIds.length === currentIds.length && existingIds.every((id, i) => id === currentIds[i]);
+
+        if (sameLayout) {
+            // Same set of molds, same order (the common case on the 2s
+            // auto-refresh) -- patch the device badge and overlay text in
+            // place, and only touch the face <img> if its URL actually
+            // changed, instead of rebuilding every card from scratch
+            // (which is what made the images flash on every refresh).
+            filtered.forEach((m, i) => {
+                const item = existingItems[i];
+
+                const badgeEl = item.querySelector(".mold-card-device");
+                if (badgeEl) badgeEl.outerHTML = moldItemDeviceBadgeHtml(m);
+
+                const overlayEl = item.querySelector(".mold-card-overlay");
+                if (overlayEl) overlayEl.outerHTML = moldItemOverlayHtml(m);
+
+                const imgEl = item.querySelector(".mold-card-face");
+                const emptyEl = item.querySelector(".mold-card-face-empty");
+                if (m.face_image_url) {
+                    if (imgEl) {
+                        if (imgEl.getAttribute("src") !== m.face_image_url) imgEl.setAttribute("src", m.face_image_url);
+                    } else if (emptyEl) {
+                        emptyEl.outerHTML = `<img class="mold-card-face" src="${escapeHtml(m.face_image_url)}" alt="${escapeHtml(m.mold_name)}">`;
+                    }
+                } else if (imgEl) {
+                    imgEl.outerHTML = `<div class="mold-card-face-empty">暂无图片</div>`;
+                }
+            });
+            return;
+        }
+
+        container.innerHTML = filtered.map(moldItemHtml).join("");
+        container.querySelectorAll(".mold-item").forEach(item => item.addEventListener("click", () => {
             openMoldEdit(Number(item.dataset.moldId));
         }));
     }
@@ -1022,14 +1084,111 @@ let currentPage = "dashboard";
         });
     }
 
+    // ---- Mold -> Machine Type (机型) -> Specifications --------------
+    // 编辑模具型号's "机型 / 高级参数" button now opens the machine-type
+    // list first; picking a machine type (or adding a new one) is what
+    // opens the existing 高级工艺参数 dialog, scoped to that
+    // Mold + Machine Type combination via currentMachineTypeId.
+
     document.getElementById("mold-edit-advanced-button").addEventListener("click", async () => {
+        document.getElementById("machine-types-mold-title").textContent = molds.find(x => x.id === editMoldId)?.mold_code || "";
+        document.getElementById("mold-machine-types-dialog").showModal();
+        await loadMachineTypesList();
+    });
+
+    async function loadMachineTypesList() {
+        const listEl = document.getElementById("machine-types-list");
+        listEl.innerHTML = '<div class="empty">正在读取……</div>';
+        try {
+            const result = await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types`);
+            machineTypesCache = result.machine_types || [];
+            renderMachineTypesList();
+        } catch (error) {
+            listEl.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    function renderMachineTypesList() {
+        const listEl = document.getElementById("machine-types-list");
+        const readOnly = currentUser.role === "viewer";
+        listEl.innerHTML = machineTypesCache.length ? machineTypesCache.map(mt => `
+            <div class="detail-card" data-machine-type-id="${mt.id}" style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                <div>
+                    <strong>${escapeHtml(mt.machine_type)}</strong>
+                    ${mt.is_main ? '<span class="badge production" style="margin-left:8px;">主要机型</span>' : ""}
+                </div>
+                <div class="actions" style="margin:0;">
+                    ${mt.is_main ? "" : `<button type="button" class="secondary-button set-main-button" data-id="${mt.id}" ${readOnly?"disabled":""}>设为主要</button>`}
+                    <button type="button" class="danger-button delete-machine-type-button" data-id="${mt.id}" ${readOnly || machineTypesCache.length<=1 ?"disabled":""}>删除</button>
+                </div>
+            </div>`).join("") : '<div class="empty">该模具尚未配置机型</div>';
+
+        listEl.querySelectorAll("[data-machine-type-id]").forEach(card => {
+            card.addEventListener("click", event => {
+                if (event.target.closest("button")) return;
+                const mt = machineTypesCache.find(x => x.id === Number(card.dataset.machineTypeId));
+                openMachineTypeSpecs(mt.id, mt.machine_type);
+            });
+        });
+        listEl.querySelectorAll(".set-main-button").forEach(button => {
+            button.addEventListener("click", async () => {
+                try {
+                    await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(button.dataset.id)}/set-main`, { method: "POST" });
+                    await loadMachineTypesList();
+                } catch (error) { alert(error.message); }
+            });
+        });
+        listEl.querySelectorAll(".delete-machine-type-button").forEach(button => {
+            button.addEventListener("click", async () => {
+                if (!confirm("确认删除该机型？其对应的高级参数将一并删除，此操作不可恢复。")) return;
+                try {
+                    await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
+                    await loadMachineTypesList();
+                } catch (error) { alert(error.message); }
+            });
+        });
+    }
+
+    document.getElementById("machine-types-close").addEventListener("click", () => {
+        document.getElementById("mold-machine-types-dialog").close();
+    });
+
+    document.getElementById("machine-type-add-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const input = document.getElementById("machine-type-add-input");
+        const machineType = input.value.trim();
+        if (!machineType) return;
+        try {
+            await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ machine_type: machineType }),
+            });
+            input.value = "";
+            await loadMachineTypesList();
+        } catch (error) { alert(error.message); }
+    });
+
+    function openMachineTypeSpecs(machineTypeId, machineTypeName) {
+        currentMachineTypeId = machineTypeId;
+        currentMachineTypeName = machineTypeName;
+        moldAdvancedLoaded = false;
+        moldExtendedFields = {};
+        document.getElementById("mold-advanced-machine-type-title").textContent = machineTypeName;
+        document.getElementById("mold-advanced-groups").innerHTML = "";
+        document.getElementById("mold-advanced-summary").textContent = "";
+        document.getElementById("mold-machine-types-dialog").close();
         document.getElementById("mold-advanced-dialog").showModal();
-        if (moldAdvancedLoaded) return;
+        loadMoldAdvancedForMachineType();
+    }
+
+    async function loadMoldAdvancedForMachineType() {
+        if (moldAdvancedLoaded || !currentMachineTypeId) return;
         document.getElementById("mold-advanced-summary").textContent = "正在读取……";
         try {
             const [result, extended] = await Promise.all([
-                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`),
-                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/extended`),
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/parameters`),
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/extended`),
             ]);
             moldExtendedFields = extended.fields || {};
             renderMoldAdvancedGroups(result.parameters);
@@ -1038,20 +1197,25 @@ let currentPage = "dashboard";
         } catch (error) {
             document.getElementById("mold-advanced-summary").textContent = `读取失败：${error.message}`;
         }
+    }
+
+    document.getElementById("mold-advanced-close").addEventListener("click", () => {
+        document.getElementById("mold-advanced-dialog").close();
+        document.getElementById("mold-machine-types-dialog").showModal();
+        loadMachineTypesList();
     });
 
-    document.getElementById("mold-advanced-close").addEventListener("click", () => document.getElementById("mold-advanced-dialog").close());
-
     document.getElementById("mold-advanced-save").addEventListener("click", async () => {
+        if (!currentMachineTypeId) { alert("请先选择机型"); return; }
         const parameters = collectParameterRows("mold-advanced-groups");
         const extended = collectExtendedFields("mold-advanced-groups");
         try {
             await saveMoldBasicFieldsFromAdvanced();
             await Promise.all([
-                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/parameters`, {
                     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
                 }),
-                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/extended`, {
+                requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/extended`, {
                     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: extended }),
                 }),
             ]);
@@ -1618,15 +1782,21 @@ let currentPage = "dashboard";
         return dashboardMachines.filter(m=>(!device||m.device_id===device)&&(!product||m.mold_code===product)&&statuses.has(statusOf(m)));
     }
 
-    function deviceCardInnerHtml(machine) {
+    function machineVisualHtml(machine) {
+        return `<div class="machine-visual"><div class="device-name">${escapeHtml(machine.device_id)}</div>${machineVisual(machine.device_id)}</div>`;
+    }
+    function deviceInfoHtml(machine) {
         const status=statusOf(machine),meta=statusMeta(status);
-        return `<div class="machine-visual"><div class="device-name">${escapeHtml(machine.device_id)}</div>${machineVisual(machine.device_id)}</div><div class="device-info">
+        return `<div class="device-info">
                 <div class="info-row"><span class="info-label">设备编号</span><span>${showValue(machine.device_id)}</span></div>
                 <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
                 <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.data_time)}</span></span></div>
                 <div class="device-metrics">模次：${showValue(machine.cycle_number)}<br>周期时间：${showValue(machine.cycle_time," s")}<br>操作模式：${showValue(machine.operation_mode_label)}　油温：${showValue(machine.oil_temperature," ℃")}</div>
             </div>`;
+    }
+    function deviceCardInnerHtml(machine) {
+        return machineVisualHtml(machine) + deviceInfoHtml(machine);
     }
 
     function renderDashboard() {
@@ -1649,8 +1819,12 @@ let currentPage = "dashboard";
             const currentIds=current.map(m=>m.device_id);
             const sameLayout=existingIds.length===currentIds.length && existingIds.every((id,i)=>id===currentIds[i]);
 
-            if (sameLayout) {
-                current.forEach((machine,i)=>{ existingCards[i].innerHTML=deviceCardInnerHtml(machine); });
+        if (sameLayout) {
+            current.forEach((machine,i)=>{
+                const infoEl = existingCards[i].querySelector(".device-info");
+                if (infoEl) infoEl.outerHTML = deviceInfoHtml(machine);
+                else existingCards[i].innerHTML = deviceCardInnerHtml(machine); // fallback, shouldn't normally happen
+            });
             } else {
                 grid.innerHTML=current.map(machine=>
                     `<article class="device-card" data-device="${escapeHtml(machine.device_id)}">${deviceCardInnerHtml(machine)}</article>`

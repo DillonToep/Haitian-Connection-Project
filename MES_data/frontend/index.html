@@ -236,7 +236,7 @@
     <div class="day-detail-header">
         <h3>编辑模具型号</h3>
         <div class="detail-header-actions">
-            <button id="mold-edit-advanced-button" class="secondary-button" type="button">编辑高级参数</button>
+            <button id="mold-edit-advanced-button" class="secondary-button" type="button">机型 / 高级参数</button>
             <button id="mold-edit-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
         </div>
     </div>
@@ -298,9 +298,24 @@
         </div>
         </form>
     </dialog>
+    <dialog id="mold-machine-types-dialog" class="mold-edit-dialog">
+        <div class="day-detail-header">
+            <h3>机型 · <span id="machine-types-mold-title"></span></h3>
+            <button id="machine-types-close" class="secondary-button" type="button">X</button>
+        </div>
+        <p class="muted">同一模具在不同机型上使用时，工艺参数可能不同，因此每个机型都有独立的一套高级参数。点击某个机型进入其参数设置；"主要机型" 决定预警通知使用哪一套公差。</p>
+        <div id="machine-types-list" class="mold-list" style="grid-template-columns:1fr;"></div>
+        <form id="machine-type-add-form" class="form-grid" style="margin-top:14px;">
+            <div class="field full">
+                <label>新增机型（机型名称）</label>
+                <input id="machine-type-add-input" maxlength="150" placeholder="例如：MA5300/3200GIII" required>
+            </div>
+            <div class="field full"><button class="primary-button" type="submit">+ 添加机型</button></div>
+        </form>
+    </dialog>
     <dialog id="mold-advanced-dialog" class="mold-edit-dialog">
         <div class="day-detail-header">
-            <h3>高级工艺参数（实际值 / 公差 %）</h3>
+            <h3>高级工艺参数（实际值 / 公差 %）· <span id="mold-advanced-machine-type-title" class="muted"></span></h3>
             <button id="mold-advanced-close" class="secondary-button" type="button">X</button>
         </div>
         <div class="muted" id="mold-advanced-summary"></div>
