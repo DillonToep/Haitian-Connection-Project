@@ -609,18 +609,17 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "熔胶设定",
-            colLabels: ["1段", "2段", "3段", "4段", "5段"],
+            title: "储料设定 ±10%",
+            colLabels: ["1段", "2段", "3段", "抽胶", "背压", "螺杆位置"],
             rows: [
-                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", "PLV5"] },
-                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLP5"] },
-                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", "PLS5"] },
-                { label: "背压", tags: ["PLBP1", "PLBP2", "PLBP3", "PLBP4", "PLBP5"] },
+                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", null, null] },
+                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLBP1", "PLS5"] },
+                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", null, null] },
             ],
         },
         {
             title: "锁模设定 ±10%",
-            colLabels: ["1段", "2段", "3段", "4段", "高压(5段)"],
+            colLabels: ["1段", "2段", "3段", "4段", "高压"],
             rows: [
                 { label: "速度", tags: ["MCV1", "MCV2", "MCV3", "MCV4", "MCV5"] },
                 { label: "压力", tags: ["MCP1", "MCP2", "MCP3", "MCP4", "MCP5"] },
@@ -637,21 +636,13 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "顶针设定 ±10% · 顶进",
-            colLabels: ["1", "2", "3"],
+            title: "顶针设定 ±10%",
+            colLabels: ["顶进", "顶退"],
             rows: [
-                { label: "压力", tags: ["EFP1", "EFP2"] },
-                { label: "速度", tags: ["EFV1", "EFV2", "EFV3"] },
-                { label: "位置", tags: ["EFS1", "EFS2", "EFS3"] },
-            ],
-        },
-        {
-            title: "顶针设定 ±10% · 顶退",
-            colLabels: ["1", "2"],
-            rows: [
-                { label: "压力", tags: ["EBP1", "EBP2"] },
-                { label: "速度", tags: ["EBV1", "EBV2"] },
-                { label: "位置", tags: ["EBS1", "EBS2"] },
+                { label: "速度", tags: ["EFV1", "EBV1"] },
+                { label: "压力", tags: ["EFP1", "EBP1"] },
+                { label: "位置", tags: ["EFS1", "EBS1"] },
+                { label: "时间(S)", tags: ["EFDT", "EBDT"] },
             ],
         },
     ];
@@ -731,11 +722,11 @@ let currentPage = "dashboard";
             title: "运水 / 模温",
             rows: [
                 { cols: [
-                    { key: "water_circuit_type", label: "运水类别" },
-                    { key: "water_temp_machine", label: "机水(℃)" },
-                    { key: "water_temp_hot_water", label: "热水(℃)" },
-                    { key: "water_temp_hot_oil", label: "热油(℃)" },
-                    { key: "water_temp_cold_water", label: "冷水(℃)" },
+                    { label: "运水类别", type: "label" },
+                    { key: "water_temp_machine", label: "机水(℃)", type: "checkbox" },
+                    { key: "water_temp_hot_water", label: "热水(℃)", type: "checkbox" },
+                    { key: "water_temp_hot_oil", label: "热油(℃)", type: "checkbox" },
+                    { key: "water_temp_cold_water", label: "冷水(℃)", type: "checkbox" },
                 ]},
                 { cols: [
                     { key: "water_plate_a", label: "A板(℃)" },
@@ -778,6 +769,11 @@ let currentPage = "dashboard";
     ];
 
     function extendedFieldCellHtml(field) {
+        if (field.type === "label") {
+            return `<td class="excel-extended-cell excel-extended-cell-heading">
+                <div class="excel-extended-label">${escapeHtml(field.label)}</div>
+            </td>`;
+        }
         const value = moldExtendedFields[field.key];
         if (field.type === "checkbox") {
             return `<td class="excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
@@ -807,6 +803,7 @@ let currentPage = "dashboard";
         const result = {};
         document.querySelectorAll(`#${containerId} .excel-extended-cell`).forEach(cell => {
             const key = cell.dataset.extendedKey;
+            if (!key) return; // heading-only cell (e.g. 运水类别 label), nothing to save
             const checkbox = cell.querySelector(".excel-extended-checkbox");
             if (checkbox) { result[key] = checkbox.checked; return; }
             const input = cell.querySelector(".excel-extended-input");
@@ -817,6 +814,7 @@ let currentPage = "dashboard";
 
 
     function excelParamCell(paramById, tag, includeValue = true) {
+        if (!tag) return '<td></td>';
         const p = paramById.get(tag);
         if (!p) return '<td class="excel-cell-missing">--</td>';
         const mode = p.tolerance_mode || "percent";
@@ -845,7 +843,7 @@ let currentPage = "dashboard";
         const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
         const bodyRows = block.rows.map((row, i) => {
             const cells = row.tags.map(tag => {
-                usedTags.add(tag);
+                if (tag) usedTags.add(tag);
                 return excelParamCell(paramById, tag, includeValue);
             }).join("");
             const pad = "<td></td>".repeat(Math.max(0, block.colLabels.length - row.tags.length));
