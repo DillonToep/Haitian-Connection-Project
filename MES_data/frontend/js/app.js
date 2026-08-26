@@ -811,8 +811,8 @@ let currentPage = "dashboard";
         const spanHeaderHtml = grid.spanColumn ? `<th>${escapeHtml(grid.spanColumn.label)}</th>` : "";
         const spanCellHtml = grid.spanColumn ? (() => {
             const value = moldExtendedFields[grid.spanColumn.key];
-            return `<td class="excel-extended-cell excel-extended-grid-cell" data-extended-key="${escapeHtml(grid.spanColumn.key)}" rowspan="${grid.rows.length}">
-                <input class="excel-extended-input" type="text" value="${value != null ? escapeHtml(value) : ""}">
+            return `<td class="excel-extended-cell excel-extended-grid-span-cell" data-extended-key="${escapeHtml(grid.spanColumn.key)}" rowspan="${grid.rows.length}">
+                <textarea class="excel-extended-input excel-extended-span-input">${value != null ? escapeHtml(value) : ""}</textarea>
             </td>`;
         })() : "";
         const bodyRows = grid.rows.map((row, i) => {

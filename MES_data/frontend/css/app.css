@@ -685,6 +685,25 @@ html[data-theme="dark"] .excel-info-strip { background: #1a1f27; }
 }
 .excel-extended-grid-table .excel-extended-input { margin-bottom: 0; text-align: center; }
 
+.excel-extended-grid-span-cell {
+    position: relative;
+    padding: 4px !important;
+}
+.excel-extended-span-input {
+    position: absolute;
+    inset: 4px;
+    width: calc(100% - 8px);
+    height: calc(100% - 8px);
+    padding: 4px 6px;
+    border: 1px solid #d5dce5;
+    border-radius: 3px;
+    resize: none;
+    text-align: center;
+    font-size: 12.5px;
+    font-family: inherit;
+}
+
+html[data-theme="dark"] .excel-extended-span-input { border-color: #313a46; background: #1a1f27; color: var(--text); }
 html[data-theme="dark"] .excel-extended-grid-table { border-color: #4a5260; }
 html[data-theme="dark"] .excel-extended-grid-table th,
 html[data-theme="dark"] .excel-extended-grid-table td { border-color: #4a5260; }
