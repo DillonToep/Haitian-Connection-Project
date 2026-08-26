@@ -728,15 +728,22 @@ let currentPage = "dashboard";
                     { key: "water_temp_hot_oil", label: "热油(℃)", type: "checkbox" },
                     { key: "water_temp_cold_water", label: "冷水(℃)", type: "checkbox" },
                 ]},
+            ],
+            // A real row-label x column-header grid: 运水设定(Ref) /
+            // 标准温度±5℃ / 实测模温±5℃ down the left side, A板 / B板 /
+            // 行呵 / 抽芯明细 across the top -- 12 independent cells,
+            // replacing the old layout where all five were separate
+            // single fields crammed into one row.
+            grid: {
+                colLabels: ["A板", "B板", "行呵", "抽芯明细"],
+                rows: [
+                    { label: "运水设定(Ref)", keys: ["water_ref_a", "water_ref_b", "water_ref_c", "water_ref_d"] },
+                    { label: "标准温度±5℃", keys: ["water_std_a", "water_std_b", "water_std_c", "water_std_d"] },
+                    { label: "实测模温±5℃", keys: ["water_measured_a", "water_measured_b", "water_measured_c", "water_measured_d"] },
+                ],
+            },
+            rows2: [
                 { cols: [
-                    { key: "water_plate_a", label: "A板(℃)" },
-                    { key: "water_plate_b", label: "B板(℃)" },
-                    { key: "water_ref_setting", label: "运水设定(Ref)" },
-                    { key: "water_standard_temp", label: "标准温度±5℃" },
-                    { key: "water_measured_temp", label: "实测模温±5℃" },
-                ]},
-                { cols: [
-                    { key: "core_pull_detail", label: "抽芯明细" },
                     { key: "ejector_stall_seconds", label: "停留时间(秒)" },
                     { key: "ejector_count", label: "顶出次数" },
                     { key: "ejector_position", label: "顶针位置" },
@@ -787,13 +794,44 @@ let currentPage = "dashboard";
         </td>`;
     }
 
+    // One cell inside a row-label x column-header grid (see the 运水/模温
+    // section's `grid` above). Reuses the excel-extended-cell/-input
+    // classes so collectExtendedFields() picks these up automatically --
+    // no separate collection logic needed.
+    function extendedGridCellHtml(key) {
+        const value = moldExtendedFields[key];
+        return `<td class="excel-extended-cell excel-extended-grid-cell" data-extended-key="${escapeHtml(key)}">
+            <input class="excel-extended-input" type="text" value="${value != null ? escapeHtml(value) : ""}">
+        </td>`;
+    }
+
+    function extendedGridHtml(grid) {
+        const headerCells = grid.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
+        const bodyRows = grid.rows.map(row => {
+            const cells = row.keys.map(extendedGridCellHtml).join("");
+            return `<tr><th class="excel-extended-grid-label">${escapeHtml(row.label)}</th>${cells}</tr>`;
+        }).join("");
+        return `<table class="excel-style-table excel-extended-grid-table">
+            <thead><tr><th></th>${headerCells}</tr></thead>
+            <tbody>${bodyRows}</tbody>
+        </table>`;
+    }
+
     function renderExtendedInfoSections() {
         return EXTENDED_INFO_SECTIONS.map(section => {
-            const bodyRows = section.rows.map(row => `<tr>${row.cols.map(extendedFieldCellHtml).join("")}</tr>`).join("");
+            const mainTableHtml = (section.rows && section.rows.length)
+                ? `<table class="excel-style-table excel-extended-table"><tbody>${section.rows.map(row => `<tr>${row.cols.map(extendedFieldCellHtml).join("")}</tr>`).join("")}</tbody></table>`
+                : "";
+            const gridHtml = section.grid ? extendedGridHtml(section.grid) : "";
+            const secondTableHtml = (section.rows2 && section.rows2.length)
+                ? `<table class="excel-style-table excel-extended-table" style="margin-top:8px;"><tbody>${section.rows2.map(row => `<tr>${row.cols.map(extendedFieldCellHtml).join("")}</tr>`).join("")}</tbody></table>`
+                : "";
             const noteHtml = section.note ? `<div class="excel-extended-note">${escapeHtml(section.note)}</div>` : "";
             return `<div class="excel-extended-section">
                 <div class="excel-section-title">${escapeHtml(section.title)}</div>
-                <table class="excel-style-table excel-extended-table"><tbody>${bodyRows}</tbody></table>
+                ${mainTableHtml}
+                ${gridHtml}
+                ${secondTableHtml}
                 ${noteHtml}
             </div>`;
         }).join("");

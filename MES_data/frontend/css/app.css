@@ -146,20 +146,12 @@ html[data-theme="dark"] .metric-reset-button:hover:not(:disabled) { border-color
 .parameter { display: flex; justify-content: space-between; align-items: baseline; gap: 9px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; }
 .parameter span:first-child { min-width: 58px; color: var(--muted); }
 .parameter span:last-child { margin-left: auto; font-weight: 650; text-align: right; }
-/* Grouped row for numbered variants of the same parameter, e.g.
-   中子1进压力..中子4进压力 collapse into one 中子进压力 row with each
-   numbered value shown as a chip, right-aligned as a unified block. */
 .parameter-group { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 10px; border: 1px solid #e9edf2; background: #f8fafc; flex-wrap: wrap; }
 .parameter-group-label { flex: 0 0 auto; color: var(--muted); }
 .parameter-group-values { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 16px; margin-left: auto; }
 .parameter-chip { display: flex; align-items: baseline; gap: 6px; }
 .chip-index { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; padding: 0 4px; border-radius: 9px; background: var(--line); color: var(--muted); font-size: 11px; font-weight: 700; }
 .chip-value { font-weight: 650; }
-/* Two-column layout for the 工艺参数 categories: categories are split
-   into two fixed lists in JS (alternating), each rendered into its
-   own independent-height grid column. Unlike CSS multi-column flow,
-   a section never jumps to the other column when a sibling
-   expands or collapses -- its column assignment is permanent. */
 .tech-groups-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .tech-groups-column { display: flex; flex-direction: column; gap: 14px; }
 .tech-group { display: block; }
@@ -174,9 +166,6 @@ html[data-theme="dark"] .metric-reset-button:hover:not(:disabled) { border-color
 .tech-group-count { color: var(--muted); font-size: 12px; font-weight: 600; }
 .chevron { display: inline-block; color: var(--muted); font-size: 11px; transition: transform .15s ease; }
 details.tech-group[open] .chevron { transform: rotate(90deg); }
-/* 工艺参数 changelog: the row/chip for the parameter a changelog
-   entry points at, and the summary banner shown above the card
-   when the 工艺参数 tab was opened from a changelog click. */
 .parameter.parameter-changed {
     border: 1px solid var(--red); background: #fdecec;
     box-shadow: 0 0 0 2px rgba(239,68,68,.15);
@@ -225,15 +214,6 @@ details.tech-group[open] .chevron { transform: rotate(90deg); }
 .uptime-compare-legend .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
 html[data-theme="dark"] .uptime-compare-device-label { border-color:#313a46; background:#1a1f27; color:#d3d8de; }
 html[data-theme="dark"] .uptime-compare-overview-label { border-color:#57caa0; background:#142b20; color:#57caa0; }
-
-/* Bars and the trend line/dots render at their real, final size by
-   default -- no CSS here controls a "collapsed" state. Animating
-   them in on a fresh tab/page entry is handled explicitly in JS
-   via element.animate() (see playUtilEntranceAnimation in app.js),
-   which always starts from its own first keyframe regardless of
-   what's currently painted -- unlike toggling CSS classes across
-   animation frames, this can't race with the browser's paint
-   timing and show the finished state first. */
 
 .day-detail-dialog { width: min(640px, calc(100% - 28px)); padding: 22px; border: 0; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
 .day-detail-dialog::backdrop { background: rgba(15,23,42,.5); }
@@ -668,6 +648,49 @@ html[data-theme="dark"] .excel-info-strip { background: #1a1f27; }
 }
 .excel-extended-checkbox { width: 16px; height: 16px; accent-color: var(--blue); }
 .excel-extended-note { margin-top: 4px; font-size: 11px; color: var(--muted); }
+
+/* Row-label x column-header grids inside an extended-info section (e.g.
+   运水/模温's 运水设定(Ref)/标准温度±5℃/实测模温±5℃ x A板/B板/行呵/抽芯明细
+   grid) -- a real table with one label column on the left and one value
+   column per header, instead of independent single fields. */
+.excel-extended-grid-table {
+    margin-top: 8px;
+    table-layout: auto;
+    border: 1.5px solid #444b57;
+}
+.excel-extended-grid-table th, .excel-extended-grid-table td {
+    border: 1px solid #444b57;
+}
+.excel-extended-grid-table thead th {
+    background: #eef1f4;
+    color: #3f4854;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 6px 4px;
+}
+.excel-extended-grid-label {
+    padding: 6px 10px !important;
+    background: #f8fafc;
+    color: var(--muted);
+    font-weight: 650;
+    font-size: 12px;
+    text-align: left;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.excel-extended-grid-table .excel-extended-grid-cell {
+    min-width: 90px;
+    padding: 4px !important;
+    text-align: center;
+}
+.excel-extended-grid-table .excel-extended-input { margin-bottom: 0; text-align: center; }
+
+html[data-theme="dark"] .excel-extended-grid-table { border-color: #4a5260; }
+html[data-theme="dark"] .excel-extended-grid-table th,
+html[data-theme="dark"] .excel-extended-grid-table td { border-color: #4a5260; }
+html[data-theme="dark"] .excel-extended-grid-table thead th { background: #20262f; color: #d3d8de; }
+html[data-theme="dark"] .excel-extended-grid-label { background: #171b21; color: #8b95a3; }
+
 .excel-info-input {
     width: 100%;
     height: 30px;
