@@ -336,6 +336,21 @@
         <div id="mold-defaults-groups"></div>
         <div class="actions"><button id="mold-defaults-save" class="primary-button" type="button">保存默认值</button></div>
     </dialog>
+    <dialog id="machine-type-mismatch-dialog">
+        <div class="day-detail-header">
+            <h3>机型不一致</h3>
+            <button id="mismatch-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
+        </div>
+        <p>设备机型与规格表机型不一致，请确认是否仍要应用：</p>
+        <div class="metric-grid" style="margin-bottom:16px;">
+            <div class="metric"><div class="metric-label">设备机型</div><div class="metric-value" id="mismatch-device-type"></div></div>
+            <div class="metric"><div class="metric-label">规格表机型</div><div class="metric-value" id="mismatch-sheet-type"></div></div>
+        </div>
+        <div class="actions">
+            <button id="mismatch-force-button" class="danger-button" type="button">强制应用</button>
+            <button id="mismatch-cancel-button" class="secondary-button" type="button">取消</button>
+        </div>
+    </dialog>
     <div id="toast-container" class="toast-container"></div>
     <script src="/static/js/app.js"></script>
 </body>

@@ -36,13 +36,22 @@ class MoldAssignmentRequest(BaseModel):
     mold_id: int = Field(gt=0)
     machine_type_id: int = Field(gt=0)
     remark: str | None = Field(default=None, max_length=500)
+    force: bool = False
 
 
 class MachineTypeAssignmentRequest(BaseModel):
     machine_type_id: int = Field(gt=0)
+    force: bool = False
 
 class MoldExtendedInfoRequest(BaseModel):
     fields: dict[str, str | float | int | bool | None] = {}
+
+
+class DeviceMachineTypeRequest(BaseModel):
+    """The physical machine's own 机型 (device model), edited from the
+    dashboard card. Distinct from mold_machine_types, which is a
+    specification sheet's 机型 name."""
+    machine_type: str | None = Field(default=None, max_length=150)
 
 
 class MachineTypeCreateRequest(BaseModel):
@@ -51,3 +60,7 @@ class MachineTypeCreateRequest(BaseModel):
 
 class MachineTypeRenameRequest(BaseModel):
     machine_type: str = Field(min_length=1, max_length=150)
+
+class DeviceMachineTypeNameRequest(BaseModel):
+    machine_type: str = Field(default="", max_length=150)
+

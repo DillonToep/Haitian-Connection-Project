@@ -28,6 +28,33 @@ router = APIRouter(prefix="/api", tags=["molds"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
+def _check_machine_type_match(cursor, device_id: str, sheet_machine_type: str | None, force: bool) -> None:
+    """Compares a mold specification sheet's machine type name (机型)
+    against the physical device's own 机型 (dbo.device_profiles.machine_type,
+    set from the dashboard card). If both are set and don't match, this
+    is presumably the wrong sheet for this machine -- raise a 409 with
+    both names so the frontend can warn the user and offer a forced
+    override (force=True). If either side has no name set, there's
+    nothing to compare against, so it's always allowed."""
+    if force:
+        return
+    row = cursor.execute(
+        "SELECT machine_type FROM dbo.device_profiles WHERE device_id = ?", device_id
+    ).fetchone()
+    device_machine_type = row.machine_type if row else None
+    if not device_machine_type or not sheet_machine_type:
+        return
+    if device_machine_type.strip().casefold() != sheet_machine_type.strip().casefold():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "machine_type_mismatch",
+                "device_machine_type": device_machine_type,
+                "sheet_machine_type": sheet_machine_type,
+                "message": f"设备机型「{device_machine_type}」与规格表机型「{sheet_machine_type}」不一致，是否仍要应用？",
+            },
+        )
+
 
 def _cavity_rows_for(cavities: int) -> list[str]:
     """['1', '2', ..., str(cavities)] -- one temperature entry per item."""
@@ -1265,11 +1292,13 @@ def update_device_machine_type(
                 raise HTTPException(status_code=404, detail="该设备当前未装模")
 
             machine_type = cursor.execute(
-                "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
-                data.machine_type_id, current.mold_id,
+                "SELECT id, machine_type FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
+                data.machine_type_id, data.mold_id,
             ).fetchone()
             if machine_type is None:
-                raise HTTPException(status_code=400, detail="所选机型不属于当前装机模具")
+                raise HTTPException(status_code=400, detail="所选机型不属于该模具")
+
+            _check_machine_type_match(cursor, device_id, machine_type.machine_type, data.force)
 
             cursor.execute(
                 "UPDATE dbo.device_mold_assignments SET machine_type_id = ? WHERE id = ?",

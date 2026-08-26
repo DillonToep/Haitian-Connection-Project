@@ -361,13 +361,14 @@ let currentPage = "dashboard";
         const moldId = Number(e.target.value);
         if (moldId) populateAssignMachineTypeSelect(moldId, null);
     });
+
     document.getElementById("mold-assign-confirm").addEventListener("click", async () => {
         const moldId = document.getElementById("mold-assign-select").value;
         const machineTypeId = document.getElementById("mold-assign-machine-type-select").value;
         if (!moldId) return;
         if (!machineTypeId) { alert("请选择机型"); return; }
         try {
-            await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/mold`, {
+            const result = await requestJsonWithMismatch(`/api/devices/${encodeURIComponent(detailDeviceId)}/mold`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -376,28 +377,29 @@ let currentPage = "dashboard";
                     remark: document.getElementById("mold-assign-remark").value || null,
                 }),
             });
+            if (result === null) return;
             document.getElementById("mold-assign-dialog").close();
             await loadDeviceMoldCard(detailDeviceId);
             await loadDevices();
         } catch (error) { alert(error.message); }
     });
-    // Quick machine-type switch inside the "当前模具" card -- changes
-    // which Machine Type's specifications this device's notifications use
-    // without unmounting/remounting the mold itself.
+
     document.getElementById("device-mold-info").addEventListener("click", async event => {
         if (!event.target.closest("#device-machine-type-apply")) return;
         const select = document.getElementById("device-machine-type-select");
         const machineTypeId = select ? select.value : "";
         if (!machineTypeId) { alert("请选择机型"); return; }
         try {
-            await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/machine-type`, {
+            const result = await requestJsonWithMismatch(`/api/devices/${encodeURIComponent(detailDeviceId)}/machine-type`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ machine_type_id: Number(machineTypeId) }),
             });
+            if (result === null) return;
             alert("机型已切换，后续预警将按新机型的规格判断");
         } catch (error) { alert(error.message); }
     });
+    
     document.getElementById("device-mold-unmount-button").addEventListener("click", async () => {
         if (!confirm("确认卸载当前模具？")) return;
         try {
@@ -1803,6 +1805,55 @@ let currentPage = "dashboard";
         if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
         return body;
     }
+
+        function showMachineTypeMismatchDialog(deviceType, sheetType) {
+        return new Promise(resolve => {
+            document.getElementById("mismatch-device-type").textContent = deviceType || "（未设置）";
+            document.getElementById("mismatch-sheet-type").textContent = sheetType || "（未命名）";
+            const dialog = document.getElementById("machine-type-mismatch-dialog");
+            const confirmBtn = document.getElementById("mismatch-force-button");
+            const cancelBtn = document.getElementById("mismatch-cancel-button");
+            const closeBtn = document.getElementById("mismatch-close-x");
+            function cleanup(result) {
+                dialog.close();
+                confirmBtn.removeEventListener("click", onConfirm);
+                cancelBtn.removeEventListener("click", onCancel);
+                closeBtn.removeEventListener("click", onCancel);
+                resolve(result);
+            }
+            function onConfirm() { cleanup(true); }
+            function onCancel() { cleanup(false); }
+            confirmBtn.addEventListener("click", onConfirm);
+            cancelBtn.addEventListener("click", onCancel);
+            closeBtn.addEventListener("click", onCancel);
+            dialog.showModal();
+        });
+    }
+
+    async function requestJsonWithMismatch(url, options = {}) {
+        let response = await fetch(url, { cache: "no-store", ...options });
+        if (response.status === 409) {
+            const body = await response.json().catch(() => ({}));
+            const detail = body.detail;
+            if (detail && typeof detail === "object" && detail.error === "machine_type_mismatch") {
+                const proceed = await showMachineTypeMismatchDialog(detail.device_machine_type, detail.sheet_machine_type);
+                if (!proceed) return null;
+                const payload = options.body ? JSON.parse(options.body) : {};
+                payload.force = true;
+                response = await fetch(url, { ...options, cache: "no-store", body: JSON.stringify(payload) });
+            } else {
+                throw new Error((detail && detail.message) || detail || `HTTP ${response.status}`);
+            }
+        }
+        if (response.status === 401) { window.location.replace("/login"); throw new Error("登录已失效"); }
+        const resultBody = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const detail = resultBody.detail;
+            throw new Error((detail && detail.message) || detail || `HTTP ${response.status}`);
+        }
+        return resultBody;
+    }
+
     async function loadChangelogFieldTree() {
         if (changelogFieldTree) return changelogFieldTree;
         changelogFieldTree = await requestJson("/api/changelog/filters");
@@ -1904,8 +1955,10 @@ let currentPage = "dashboard";
     }
     function deviceInfoHtml(machine) {
         const status=statusOf(machine),meta=statusMeta(status);
+        const readOnly = !currentUser || currentUser.role === "viewer";
         return `<div class="device-info">
                 <div class="info-row"><span class="info-label">设备编号</span><span>${showValue(machine.device_id)}</span></div>
+                <div class="info-row"><span class="info-label">机型</span><span class="device-type-row"><span class="device-type-value">${showValue(machine.machine_type)}</span>${readOnly?"":`<button type="button" class="device-type-edit-btn" data-device="${escapeHtml(machine.device_id)}" title="编辑机型">✎</button>`}</span></div>
                 <div class="info-row"><span class="info-label">产品编号</span><strong>${showValue(machine.mold_code)}</strong></div>
                 <div class="info-row"><span class="info-label">模具名称</span><span>${showValue(machine.mold_name)}</span></div>
                 <div class="info-row"><span class="info-label">设备状态</span><span class="status-line"><span class="badge ${meta[1]}">${meta[0]}</span><span class="age">${ageText(machine.data_time)}</span></span></div>
@@ -2830,9 +2883,31 @@ let currentPage = "dashboard";
     document.getElementById("password-cancel").addEventListener("click",()=>passwordDialog.close());
     document.getElementById("password-form").addEventListener("submit",async event=>{event.preventDefault();const f=new FormData(event.target);try{await requestJson("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:f.get("current_password"),new_password:f.get("new_password")})});event.target.reset();passwordDialog.close();alert("密码修改成功");}catch(error){alert(error.message);}});
         document.getElementById("device-grid").addEventListener("click", event => {
+        const editButton = event.target.closest(".device-type-edit-btn");
+        if (editButton) {
+            event.stopPropagation();
+            editDeviceMachineType(editButton.dataset.device);
+            return;
+        }
         const card = event.target.closest(".device-card");
         if (card) openDeviceDetail(card.dataset.device);
     });
+
+    async function editDeviceMachineType(deviceId) {
+        if (currentUser.role === "viewer") return;
+        const machine = dashboardMachines.find(m => m.device_id === deviceId);
+        const current = machine ? (machine.machine_type || "") : "";
+        const next = prompt(`设置设备 ${deviceId} 的机型：`, current);
+        if (next === null) return;
+        try {
+            await requestJson(`/api/devices/${encodeURIComponent(deviceId)}/type`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ machine_type: next.trim() || null }),
+            });
+            await loadDashboard();
+        } catch (error) { alert(error.message); }
+    }
     
     let refreshChain = Promise.resolve();
 

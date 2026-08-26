@@ -2,7 +2,7 @@ from contextlib import closing
 
 import pyodbc
 from fastapi import APIRouter, Depends, HTTPException
-
+from ..schemas import DeviceMachineTypeRequest
 from ..database import get_connection, row_to_dict
 from ..parameter_labels import (
     PARAMETER_LABELS,
@@ -55,10 +55,11 @@ def get_devices(user: dict = Depends(require_user)):
             WHERE device_id IS NOT NULL AND device_id <> N''
         )
         SELECT
-            d.device_id, a.id AS assignment_id, a.mounted_at,
+            d.device_id, p.machine_type, a.id AS assignment_id, a.mounted_at,
             m.id AS mold_id, m.mold_code, m.mold_name,
             m.product_code, m.cavities
         FROM devices AS d
+        LEFT JOIN dbo.device_profiles AS p ON p.device_id = d.device_id
         LEFT JOIN dbo.device_mold_assignments AS a
             ON a.device_id = d.device_id AND a.unmounted_at IS NULL
         LEFT JOIN dbo.molds AS m ON m.id = a.mold_id
@@ -110,8 +111,8 @@ def get_dashboard(user: dict = Depends(require_user)):
             FROM dbo.tech_parameter_changelog
             GROUP BY device_id
         )
-        SELECT
-            d.device_id, r.data_time, r.received_at,
+            SELECT
+            d.device_id, p.machine_type, r.data_time, r.received_at,
             r.alarm_status, r.operation_mode,
             r.operation_time AS oil_temperature, r.machine_status,
             s.cycle_time,
@@ -121,6 +122,7 @@ def get_dashboard(user: dict = Depends(require_user)):
             m.id AS mold_id, m.mold_code, m.mold_name,
             m.product_code, m.cavities, a.mounted_at
         FROM devices AS d
+        LEFT JOIN dbo.device_profiles AS p ON p.device_id = d.device_id
         LEFT JOIN latest_realtime AS r
             ON r.device_id = d.device_id AND r.row_number = 1
         LEFT JOIN latest_spc AS s
@@ -140,6 +142,39 @@ def get_dashboard(user: dict = Depends(require_user)):
             cursor = connection.cursor()
             cursor.execute(sql)
             return [_decorate_status_labels(row_to_dict(cursor, row)) for row in cursor.fetchall()]
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+@router.put("/devices/{device_id}/type")
+def update_device_type(
+    device_id: str,
+    data: DeviceMachineTypeRequest,
+    user: dict = Depends(require_user),
+):
+    """Sets this physical machine's own 机型 (device model), shown on the
+    dashboard card and used to sanity-check mold specification sheets
+    assigned to it (see _check_machine_type_match in molds.py). This is
+    independent from dbo.mold_machine_types -- that's the machine type a
+    *mold's specification sheet* is written for; this is what machine
+    model this *physical device* actually is."""
+    require_editor(user)
+    machine_type = data.machine_type.strip() if data.machine_type else None
+    sql = """
+        MERGE dbo.device_profiles AS target
+        USING (SELECT ? AS device_id) AS src
+        ON target.device_id = src.device_id
+        WHEN MATCHED THEN
+            UPDATE SET machine_type = ?, updated_at = SYSUTCDATETIME(), updated_by = ?
+        WHEN NOT MATCHED THEN
+            INSERT (device_id, machine_type, updated_by)
+            VALUES (src.device_id, ?, ?);
+    """
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql, device_id, machine_type, user["id"], machine_type, user["id"])
+            connection.commit()
+            return {"status": "ok", "machine_type": machine_type}
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
@@ -408,6 +443,10 @@ def delete_device(device_id: str, user: dict = Depends(require_user)):
 
             cursor.execute(
                 "DELETE FROM dbo.tech_parameter_changelog WHERE device_id = ?",
+                device_id,
+            )
+            cursor.execute(
+                "DELETE FROM dbo.device_profiles WHERE device_id = ?",
                 device_id,
             )
             cursor.execute(
