@@ -100,18 +100,31 @@ def _detect_parameter_changes(device_id, data):
     return changes
 
 def _fetch_mold_targets(cursor, device_id):
-    """Tolerance targets come from the mold's MAIN 机型 specification
-    record (Mold -> Machine Type -> Specifications). Each machine type
-    holds its own independent set of targets (see
-    setup_mold_machine_types.sql); is_main = 1 marks the one machine type
-    that drives notifications/tolerance checking for this mold."""
+    """Tolerance targets come from whichever Machine Type is actively
+    assigned to *this physical machine's* currently mounted mold --
+    Physical Machine -> Mold -> Machine Type -> Specifications (see
+    dbo.device_mold_assignments.machine_type_id, added in
+    setup_device_machine_type.sql). This is set/changed via
+    POST /api/devices/{device_id}/mold and
+    PUT /api/devices/{device_id}/machine-type in molds.py.
+
+    This intentionally no longer looks at dbo.mold_machine_types.is_main
+    ("主要机型") -- that flag still exists and still controls which
+    machine type seeds a mold's defaults, but it no longer determines
+    which specifications any device's notifications use. Two devices
+    running the same mold can now be assigned different machine types and
+    get independently correct tolerance checks. If a device has no
+    machine_type_id assigned yet (e.g. an old assignment never migrated,
+    or a machine type was deleted out from under it), this returns no
+    targets and no tolerance warnings are raised for it -- same
+    fail-quiet behavior as before when no main machine type existed.
+    """
     cursor.execute(
         """
         SELECT t.parameter_id, t.target_value, t.tolerance_mode, t.tolerance_percent, t.tolerance_flat
         FROM dbo.device_mold_assignments AS a
-        INNER JOIN dbo.mold_machine_types AS mt ON mt.mold_id = a.mold_id AND mt.is_main = 1
-        INNER JOIN dbo.mold_parameter_targets AS t ON t.machine_type_id = mt.id
-        WHERE a.device_id = ? AND a.unmounted_at IS NULL
+        INNER JOIN dbo.mold_parameter_targets AS t ON t.machine_type_id = a.machine_type_id
+        WHERE a.device_id = ? AND a.unmounted_at IS NULL AND a.machine_type_id IS NOT NULL
         """,
         device_id,
     )

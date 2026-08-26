@@ -356,21 +356,45 @@ let currentPage = "dashboard";
     document.getElementById("mold-assign-close-x").addEventListener("click", () => {
         document.getElementById("mold-assign-dialog").close();
     });
+    document.getElementById("mold-assign-select").addEventListener("change", e => {
+        const moldId = Number(e.target.value);
+        if (moldId) populateAssignMachineTypeSelect(moldId, null);
+    });
     document.getElementById("mold-assign-confirm").addEventListener("click", async () => {
         const moldId = document.getElementById("mold-assign-select").value;
+        const machineTypeId = document.getElementById("mold-assign-machine-type-select").value;
         if (!moldId) return;
+        if (!machineTypeId) { alert("请选择机型"); return; }
         try {
             await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/mold`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     mold_id: Number(moldId),
+                    machine_type_id: Number(machineTypeId),
                     remark: document.getElementById("mold-assign-remark").value || null,
                 }),
             });
             document.getElementById("mold-assign-dialog").close();
             await loadDeviceMoldCard(detailDeviceId);
             await loadDevices();
+        } catch (error) { alert(error.message); }
+    });
+    // Quick machine-type switch inside the "当前模具" card -- changes
+    // which Machine Type's specifications this device's notifications use
+    // without unmounting/remounting the mold itself.
+    document.getElementById("device-mold-info").addEventListener("click", async event => {
+        if (!event.target.closest("#device-machine-type-apply")) return;
+        const select = document.getElementById("device-machine-type-select");
+        const machineTypeId = select ? select.value : "";
+        if (!machineTypeId) { alert("请选择机型"); return; }
+        try {
+            await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/machine-type`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ machine_type_id: Number(machineTypeId) }),
+            });
+            alert("机型已切换，后续预警将按新机型的规格判断");
         } catch (error) { alert(error.message); }
     });
     document.getElementById("device-mold-unmount-button").addEventListener("click", async () => {
@@ -563,12 +587,71 @@ let currentPage = "dashboard";
                     <div class="mold-code">${escapeHtml(current.mold_code)}</div>
                     <div>${escapeHtml(current.mold_name)}</div>
                     <div class="muted">模穴：${showValue(current.cavities)}</div>${current.requires_cleaning ? `<div class="muted">清洗周期：每 ${showValue(current.cleaning_interval_hours)} 小时 · 约 ${showValue(current.cleaning_duration_minutes)} 分钟</div>` : ""}
+                    <div class="device-machine-type-row" style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                        <span class="muted" style="flex:0 0 auto;">机型（决定预警规格）</span>
+                        <select id="device-machine-type-select" style="flex:1 1 auto;min-width:0;"></select>
+                        <button id="device-machine-type-apply" class="secondary-button" type="button">应用</button>
+                    </div>
                 </div>
                 <div class="metric-grid" id="device-mold-output" style="margin-top:10px;"></div>`;
             unmountButton.classList.remove("hidden");
+            populateDeviceMachineTypeSelect(current.mold_id, current.machine_type_id);
         } else {
             container.innerHTML = '<div class="empty">该设备当前未分配模具</div>';
             unmountButton.classList.add("hidden");
+        }
+    }
+
+    // Machine-type dropdowns share this: load the machine types configured
+    // for a mold (same endpoint the 模具管理 -> 机型 list uses).
+    async function loadMachineTypesFor(moldId) {
+        const result = await requestJson(`/api/molds/${encodeURIComponent(moldId)}/machine-types`);
+        return result.machine_types || [];
+    }
+
+    // Populates the quick-switch select inside the 当前模具 card for
+    // whichever mold is currently mounted, preselecting the device's
+    // actual current machine type.
+    async function populateDeviceMachineTypeSelect(moldId, currentMachineTypeId) {
+        const select = document.getElementById("device-machine-type-select");
+        const applyButton = document.getElementById("device-machine-type-apply");
+        if (!select) return;
+        select.innerHTML = '<option value="">正在读取……</option>';
+        try {
+            const types = await loadMachineTypesFor(moldId);
+            select.innerHTML = types.length
+                ? types.map(mt => `<option value="${mt.id}"${mt.id === currentMachineTypeId ? " selected" : ""}>${escapeHtml(mt.machine_type)}${mt.is_main ? "（主要）" : ""}</option>`).join("")
+                : '<option value="">该模具尚未配置机型</option>';
+        } catch (error) {
+            select.innerHTML = `<option value="">读取失败：${escapeHtml(error.message)}</option>`;
+        }
+        const readOnly = currentUser.role === "viewer";
+        select.disabled = readOnly;
+        if (applyButton) applyButton.disabled = readOnly;
+    }
+
+    // Populates the machine-type select inside the 分配模具 dialog for
+    // whichever mold is currently chosen there. preferredId (if it
+    // belongs to this mold) is preselected; otherwise the main machine
+    // type (or the first one) is used.
+    async function populateAssignMachineTypeSelect(moldId, preferredId) {
+        const select = document.getElementById("mold-assign-machine-type-select");
+        select.innerHTML = '<option value="">正在读取机型……</option>';
+        try {
+            const types = await loadMachineTypesFor(moldId);
+            if (!types.length) {
+                select.innerHTML = '<option value="">该模具尚未配置机型</option>';
+                return;
+            }
+            select.innerHTML = types.map(mt =>
+                `<option value="${mt.id}">${escapeHtml(mt.machine_type)}${mt.is_main ? "（主要）" : ""}</option>`
+            ).join("");
+            const toSelect = (preferredId != null && types.some(mt => mt.id === preferredId))
+                ? preferredId
+                : (types.find(mt => mt.is_main) || types[0]).id;
+            select.value = String(toSelect);
+        } catch (error) {
+            select.innerHTML = `<option value="">读取失败：${escapeHtml(error.message)}</option>`;
         }
     }
 
@@ -596,6 +679,23 @@ let currentPage = "dashboard";
             return `<option value="${m.id}">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}${elsewhere}</option>`;
         }).join("");
         document.getElementById("mold-assign-remark").value = "";
+
+        // Default to whatever's currently mounted on this device (mold +
+        // machine type), so re-opening the dialog just to switch machine
+        // type doesn't also force picking the mold again.
+        let currentMoldId = null;
+        let currentMachineTypeId = null;
+        try {
+            const current = await requestJson(`/api/devices/${encodeURIComponent(detailDeviceId)}/mold`);
+            if (current && active.some(m => m.id === current.mold_id)) {
+                currentMoldId = current.mold_id;
+                currentMachineTypeId = current.machine_type_id;
+            }
+        } catch (error) { /* no current assignment -- fall back to first mold in list */ }
+
+        if (currentMoldId != null) select.value = String(currentMoldId);
+        if (select.value) await populateAssignMachineTypeSelect(Number(select.value), currentMachineTypeId);
+
         document.getElementById("mold-assign-dialog").showModal();
     }
 

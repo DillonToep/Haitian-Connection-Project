@@ -226,6 +226,7 @@
         <button id="mold-assign-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
     </div>
     <div class="field"><label>选择模具</label><select id="mold-assign-select"></select></div>
+    <div class="field"><label>选择机型</label><select id="mold-assign-machine-type-select"></select></div>
     <div class="field"><label>备注</label><input id="mold-assign-remark" maxlength="500"></div>
     <div class="actions">
         <button id="mold-assign-confirm" class="primary-button" type="button">确认分配</button>
@@ -308,7 +309,7 @@
         <form id="machine-type-add-form" class="form-grid" style="margin-top:14px;">
             <div class="field full">
                 <label>新增机型（机型名称）</label>
-                <input id="machine-type-add-input" maxlength="150" placeholder="例如：MA5300/3200GIII" required>
+                <input id="machine-type-add-input" maxlength="150" placeholder="例如：EC100S" required>
             </div>
             <div class="field full"><button class="primary-button" type="submit">+ 添加机型</button></div>
         </form>

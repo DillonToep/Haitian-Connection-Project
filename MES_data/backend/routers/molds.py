@@ -13,6 +13,7 @@ from ..database import get_connection, row_to_dict
 from ..security import require_editor, require_user
 from ..parameter_labels import PARAMETER_LABELS, EXCLUDED_FROM_TARGETS, categorize_tag
 from ..schemas import (
+    MachineTypeAssignmentRequest,
     MachineTypeCreateRequest,
     MoldAssignmentRequest,
     MoldParametersUpdateRequest,
@@ -413,6 +414,19 @@ def delete_mold_machine_type(mold_id: int, machine_type_id: int, user: dict = De
             ).fetchone()[0]
             if remaining <= 1:
                 raise HTTPException(status_code=400, detail="模具至少需要保留一个机型")
+
+            in_use = cursor.execute(
+                """
+                SELECT TOP 1 device_id FROM dbo.device_mold_assignments
+                WHERE machine_type_id = ? AND unmounted_at IS NULL
+                """,
+                machine_type_id,
+            ).fetchone()
+            if in_use:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"设备 {in_use.device_id} 正在使用该机型，请先为该设备切换机型后再删除",
+                )
 
             # FK ON DELETE CASCADE handles mold_parameter_targets /
             # mold_extended_info rows tied to this machine type.
@@ -1037,11 +1051,13 @@ def get_current_mold(device_id: str, user: dict = Depends(require_user)):
     sql = """
         SELECT TOP 1
             a.id AS assignment_id, a.mounted_at, a.remark,
+            a.machine_type_id, mt.machine_type AS machine_type_name,
             m.id AS mold_id, m.mold_code, m.mold_name,
             m.product_code, m.cavities,
             m.requires_cleaning, m.cleaning_interval_hours, m.cleaning_duration_minutes
         FROM dbo.device_mold_assignments AS a
         INNER JOIN dbo.molds AS m ON m.id = a.mold_id
+        LEFT JOIN dbo.mold_machine_types AS mt ON mt.id = a.machine_type_id
         WHERE a.device_id = ? AND a.unmounted_at IS NULL
         ORDER BY a.mounted_at DESC
     """
@@ -1061,14 +1077,21 @@ def assign_mold(
     data: MoldAssignmentRequest,
     user: dict = Depends(require_user),
 ):
-    """Assign (mount) a mold onto a device. Since dbo.device_mold_assignments
-    only allows one active row per device AND one active row per mold
-    (see UX_device_mold_active_device / UX_device_mold_active_mold in
-    setup_web_database.sql), this both:
+    """Assign (mount) a mold + Machine Type onto a device. Since
+    dbo.device_mold_assignments only allows one active row per device AND
+    one active row per mold (see UX_device_mold_active_device /
+    UX_device_mold_active_mold in setup_web_database.sql), this both:
       1) unmounts whatever is currently on this device, and
       2) unmounts this mold from wherever else it's currently active --
          effectively "transferring" it here, rather than erroring, since
          moving a mold between machines is a normal shop-floor operation.
+
+    machine_type_id must belong to the mold being assigned -- this is
+    what tolerance/production notifications for this device will resolve
+    specifications through from now on (Physical Machine -> Mold ->
+    Machine Type -> Specifications; see _fetch_mold_targets in
+    mqtt_monitor.py). No specification values are copied anywhere -- only
+    this pointer is stored.
     """
     require_editor(user)
     try:
@@ -1081,6 +1104,13 @@ def assign_mold(
                 raise HTTPException(status_code=404, detail="模具不存在")
             if not mold.is_active:
                 raise HTTPException(status_code=400, detail="该模具已停用，无法分配")
+
+            machine_type = cursor.execute(
+                "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
+                data.machine_type_id, data.mold_id,
+            ).fetchone()
+            if machine_type is None:
+                raise HTTPException(status_code=400, detail="所选机型不属于该模具")
 
             cursor.execute(
                 """
@@ -1101,13 +1131,57 @@ def assign_mold(
             cursor.execute(
                 """
                 INSERT INTO dbo.device_mold_assignments
-                    (device_id, mold_id, operator_user_id, remark)
-                VALUES (?, ?, ?, ?)
+                    (device_id, mold_id, machine_type_id, operator_user_id, remark)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 device_id,
                 data.mold_id,
+                data.machine_type_id,
                 user["id"],
                 data.remark.strip() if data.remark else None,
+            )
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@router.put("/devices/{device_id}/machine-type")
+def update_device_machine_type(
+    device_id: str,
+    data: MachineTypeAssignmentRequest,
+    user: dict = Depends(require_user),
+):
+    """Switch which Machine Type's specifications the device's *currently
+    mounted* mold uses for tolerance/production notifications, without
+    unmounting/remounting -- mounted_at, production-log attribution, etc.
+    on the active assignment are untouched; only its machine_type_id
+    pointer changes. The new machine type must belong to the same mold
+    that's already mounted (use POST /api/devices/{device_id}/mold to
+    change the mold itself)."""
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            current = cursor.execute(
+                "SELECT id, mold_id FROM dbo.device_mold_assignments WHERE device_id = ? AND unmounted_at IS NULL",
+                device_id,
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="该设备当前未装模")
+
+            machine_type = cursor.execute(
+                "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
+                data.machine_type_id, current.mold_id,
+            ).fetchone()
+            if machine_type is None:
+                raise HTTPException(status_code=400, detail="所选机型不属于当前装机模具")
+
+            cursor.execute(
+                "UPDATE dbo.device_mold_assignments SET machine_type_id = ? WHERE id = ?",
+                data.machine_type_id, current.id,
             )
             connection.commit()
             return {"status": "ok"}

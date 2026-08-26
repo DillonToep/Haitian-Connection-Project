@@ -1,250 +1,78 @@
--- Adds a "机型" (machine type) layer between a mold and its specifications:
---   Mold -> Machine Type -> Specifications
+-- Adds a Machine Type link to a device's active mold assignment:
+--   Physical Machine -> Mold -> Machine Type -> Specifications
 --
--- Previously dbo.mold_parameter_targets / dbo.mold_extended_info were keyed
--- directly by mold_id (one specification set per mold). This migration
--- introduces dbo.mold_machine_types and re-keys both tables to
--- machine_type_id, so the same mold can hold one independent specification
--- set per 机型.
+-- Previously, tolerance/production notifications for a device resolved
+-- specifications via the mold's is_main machine type
+-- (dbo.mold_machine_types.is_main -- see setup_mold_machine_types.sql).
+-- That meant every device running the same mold shared one machine type,
+-- and switching "main" affected every device with that mold mounted.
 --
--- Existing data is preserved: every mold that already has parameter
--- targets and/or extended info gets one auto-created "默认机型" machine
--- type (flagged as the mold's main machine type), and all of its existing
--- rows are backfilled to point at that new machine type. Nothing is
--- deleted or overwritten.
+-- This migration adds dbo.device_mold_assignments.machine_type_id, so
+-- each physical machine's *own* active assignment says exactly which of
+-- the mold's machine types it should use. is_main is left completely
+-- intact (still used to seed new machine types' defaults, still shown as
+-- "主要机型" in 模具管理), it just no longer drives notification lookups --
+-- see the rewritten _fetch_mold_targets in mqtt_monitor.py.
+--
+-- Nothing is copied: device_mold_assignments.machine_type_id is only a
+-- pointer to the existing dbo.mold_parameter_targets /
+-- dbo.mold_extended_info rows already keyed by machine_type_id.
 
 USE MES_MQTT;
 GO
 
--- ---------------------------------------------------------------------
--- 1. dbo.mold_machine_types
--- ---------------------------------------------------------------------
-IF OBJECT_ID(N'dbo.mold_machine_types', N'U') IS NULL
-BEGIN
-    CREATE TABLE dbo.mold_machine_types
-    (
-        id              BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
-        mold_id         BIGINT NOT NULL,
-        machine_type    NVARCHAR(150) NOT NULL,   -- 机型, e.g. "MA5300/3200GIII"
-        is_main         BIT NOT NULL DEFAULT 0,   -- drives notification/tolerance hookup
-        created_at      DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),
-        created_by      INT NULL,
-
-        CONSTRAINT FK_mold_machine_types_mold
-            FOREIGN KEY (mold_id) REFERENCES dbo.molds(id) ON DELETE CASCADE,
-        CONSTRAINT FK_mold_machine_types_created_by
-            FOREIGN KEY (created_by) REFERENCES dbo.app_users(id)
-    );
-
-    CREATE INDEX IX_mold_machine_types_mold
-        ON dbo.mold_machine_types(mold_id);
-
-    -- At most one "main" machine type per mold -- this is the one
-    -- mqtt_monitor.py checks tolerances against / raises warnings for.
-    CREATE UNIQUE INDEX UX_mold_machine_types_main
-        ON dbo.mold_machine_types(mold_id)
-        WHERE is_main = 1;
-END;
-GO
-
--- ---------------------------------------------------------------------
--- 1b. Drop any legacy mold_id -> dbo.molds(id) FK on
---     mold_parameter_targets / mold_extended_info, if one exists.
---
---     Why: dbo.molds already cascades to these two tables via their
---     original mold_id column. Once we add a SECOND cascade path below
---     (molds -> mold_machine_types -> mold_parameter_targets /
---     mold_extended_info, both ON DELETE CASCADE), SQL Server refuses to
---     create it ("may cause cycles or multiple cascade paths", error
---     1785) because a single DELETE on dbo.molds could then try to
---     cascade-delete the same child row via two different routes.
---
---     mold_id on these two tables is being retired as the lookup key in
---     favor of machine_type_id (see section 6 below) -- the column and
---     its data are kept as inert legacy baggage, it just no longer needs
---     a live FK/cascade of its own. Dropping the constraint only removes
---     the constraint, not the column or any data.
--- ---------------------------------------------------------------------
-DECLARE @fk_name NVARCHAR(200);
-
-SELECT @fk_name = fk.name
-FROM sys.foreign_keys AS fk
-INNER JOIN sys.foreign_key_columns AS fkc ON fkc.constraint_object_id = fk.object_id
-INNER JOIN sys.columns AS c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
-WHERE fk.parent_object_id = OBJECT_ID(N'dbo.mold_parameter_targets')
-  AND fk.referenced_object_id = OBJECT_ID(N'dbo.molds')
-  AND c.name = 'mold_id';
-
-IF @fk_name IS NOT NULL
-    EXEC('ALTER TABLE dbo.mold_parameter_targets DROP CONSTRAINT ' + @fk_name);
-GO
-
-DECLARE @fk_name2 NVARCHAR(200);
-
-SELECT @fk_name2 = fk.name
-FROM sys.foreign_keys AS fk
-INNER JOIN sys.foreign_key_columns AS fkc ON fkc.constraint_object_id = fk.object_id
-INNER JOIN sys.columns AS c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
-WHERE fk.parent_object_id = OBJECT_ID(N'dbo.mold_extended_info')
-  AND fk.referenced_object_id = OBJECT_ID(N'dbo.molds')
-  AND c.name = 'mold_id';
-
-IF @fk_name2 IS NOT NULL
-    EXEC('ALTER TABLE dbo.mold_extended_info DROP CONSTRAINT ' + @fk_name2);
-GO
-
--- ---------------------------------------------------------------------
--- 2. Re-key dbo.mold_parameter_targets: mold_id -> machine_type_id
---    mold_id is relaxed to NULL-able: new rows are written keyed only by
---    machine_type_id (see molds.py), and the FK to mold_machine_types is
---    what enforces the mold relationship going forward.
--- ---------------------------------------------------------------------
-IF EXISTS (
-    SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'dbo.mold_parameter_targets') AND name = 'mold_id' AND is_nullable = 0
-)
-BEGIN
-    ALTER TABLE dbo.mold_parameter_targets ALTER COLUMN mold_id BIGINT NULL;
-END;
-GO
-
 IF NOT EXISTS (
     SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'dbo.mold_parameter_targets') AND name = 'machine_type_id'
+    WHERE object_id = OBJECT_ID(N'dbo.device_mold_assignments') AND name = 'machine_type_id'
 )
 BEGIN
-    ALTER TABLE dbo.mold_parameter_targets ADD machine_type_id BIGINT NULL;
+    ALTER TABLE dbo.device_mold_assignments ADD machine_type_id BIGINT NULL;
 END;
 GO
 
+-- ON DELETE SET NULL (not CASCADE, not a blocking FK): deleting a machine
+-- type that's still referenced by a *historical* (already-unmounted)
+-- assignment row should not be blocked by that old record, and deleting
+-- a mold (which cascades to its machine types) should not fail because
+-- of an old device_mold_assignments row pointing at one of them. Deleting
+-- a machine type that's still *actively* assigned to a device is blocked
+-- separately, at the application layer (see delete_mold_machine_type in
+-- molds.py), which gives a clear "in use" error instead of a raw FK
+-- failure.
 IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_mold_parameter_targets_machine_type'
+    SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_device_mold_assignments_machine_type'
 )
 BEGIN
-    ALTER TABLE dbo.mold_parameter_targets
-        ADD CONSTRAINT FK_mold_parameter_targets_machine_type
-            FOREIGN KEY (machine_type_id) REFERENCES dbo.mold_machine_types(id) ON DELETE CASCADE;
+    ALTER TABLE dbo.device_mold_assignments
+        ADD CONSTRAINT FK_device_mold_assignments_machine_type
+            FOREIGN KEY (machine_type_id)
+            REFERENCES dbo.mold_machine_types(id)
+            ON DELETE SET NULL;
 END;
 GO
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes
-    WHERE name = N'IX_mold_parameter_targets_machine_type'
-      AND object_id = OBJECT_ID(N'dbo.mold_parameter_targets')
+    WHERE name = N'IX_device_mold_assignments_machine_type'
+      AND object_id = OBJECT_ID(N'dbo.device_mold_assignments')
 )
 BEGIN
-    CREATE INDEX IX_mold_parameter_targets_machine_type
-        ON dbo.mold_parameter_targets(machine_type_id);
+    CREATE INDEX IX_device_mold_assignments_machine_type
+        ON dbo.device_mold_assignments(machine_type_id);
 END;
 GO
 
--- ---------------------------------------------------------------------
--- 3. Re-key dbo.mold_extended_info: mold_id (PK) -> machine_type_id
---    mold_id was NOT NULL PRIMARY KEY; relaxed to NULL-able once the PK
---    is dropped below, since new rows are keyed only by machine_type_id.
--- ---------------------------------------------------------------------
-IF NOT EXISTS (
-    SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'dbo.mold_extended_info') AND name = 'machine_type_id'
-)
-BEGIN
-    ALTER TABLE dbo.mold_extended_info ADD machine_type_id BIGINT NULL;
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_mold_extended_info_machine_type'
-)
-BEGIN
-    ALTER TABLE dbo.mold_extended_info
-        ADD CONSTRAINT FK_mold_extended_info_machine_type
-            FOREIGN KEY (machine_type_id) REFERENCES dbo.mold_machine_types(id) ON DELETE CASCADE;
-END;
-GO
-
--- ---------------------------------------------------------------------
--- 4. Backfill: give every mold that already has data a default 机型
---    ("默认机型"), mark it main, and repoint existing rows at it.
--- ---------------------------------------------------------------------
-INSERT INTO dbo.mold_machine_types (mold_id, machine_type, is_main)
-SELECT DISTINCT m.id, N'默认机型', 1
-FROM dbo.molds AS m
-WHERE (
-        EXISTS (SELECT 1 FROM dbo.mold_parameter_targets AS t WHERE t.mold_id = m.id AND t.machine_type_id IS NULL)
-        OR EXISTS (SELECT 1 FROM dbo.mold_extended_info AS e WHERE e.mold_id = m.id AND e.machine_type_id IS NULL)
-      )
-  AND NOT EXISTS (SELECT 1 FROM dbo.mold_machine_types AS mt WHERE mt.mold_id = m.id);
-GO
-
--- Every mold still has no machine type at all (e.g. brand-new molds with
--- no specs yet) also gets a default main machine type, so the frontend
--- always has at least one entry to show/select.
-INSERT INTO dbo.mold_machine_types (mold_id, machine_type, is_main)
-SELECT m.id, N'默认机型', 1
-FROM dbo.molds AS m
-WHERE NOT EXISTS (SELECT 1 FROM dbo.mold_machine_types AS mt WHERE mt.mold_id = m.id);
-GO
-
-UPDATE t
-SET t.machine_type_id = mt.id
-FROM dbo.mold_parameter_targets AS t
+-- Backfill: every device that already has a mold mounted gets that
+-- mold's current is_main machine type as its starting machine_type_id,
+-- so nothing silently stops getting notifications the moment this
+-- migration runs. From here on, is_main no longer matters for this --
+-- changing a device's machine type is done explicitly via
+-- POST /api/devices/{device_id}/mold or
+-- PUT /api/devices/{device_id}/machine-type.
+UPDATE a
+SET a.machine_type_id = mt.id
+FROM dbo.device_mold_assignments AS a
 INNER JOIN dbo.mold_machine_types AS mt
-    ON mt.mold_id = t.mold_id AND mt.is_main = 1
-WHERE t.machine_type_id IS NULL;
+    ON mt.mold_id = a.mold_id AND mt.is_main = 1
+WHERE a.machine_type_id IS NULL;
 GO
-
-UPDATE e
-SET e.machine_type_id = mt.id
-FROM dbo.mold_extended_info AS e
-INNER JOIN dbo.mold_machine_types AS mt
-    ON mt.mold_id = e.mold_id AND mt.is_main = 1
-WHERE e.machine_type_id IS NULL;
-GO
-
--- ---------------------------------------------------------------------
--- 5. mold_extended_info's PK was mold_id alone (one row per mold) --
---    now it must be one row per (mold_id, machine_type_id). Drop the old
---    PK and use machine_type_id (already unique per row after backfill,
---    since each mold only had one row) as the new PK.
--- ---------------------------------------------------------------------
-IF EXISTS (
-    SELECT 1 FROM sys.key_constraints
-    WHERE type = 'PK' AND parent_object_id = OBJECT_ID(N'dbo.mold_extended_info')
-      AND name != N'PK_mold_extended_info_machine_type'
-)
-BEGIN
-    DECLARE @pk_name NVARCHAR(200);
-    SELECT @pk_name = name FROM sys.key_constraints
-    WHERE type = 'PK' AND parent_object_id = OBJECT_ID(N'dbo.mold_extended_info');
-    EXEC('ALTER TABLE dbo.mold_extended_info DROP CONSTRAINT ' + @pk_name);
-END;
-GO
-
-IF EXISTS (
-    SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'dbo.mold_extended_info') AND name = 'mold_id' AND is_nullable = 0
-)
-BEGIN
-    ALTER TABLE dbo.mold_extended_info ALTER COLUMN mold_id BIGINT NULL;
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes
-    WHERE name = N'UX_mold_extended_info_machine_type'
-      AND object_id = OBJECT_ID(N'dbo.mold_extended_info')
-)
-BEGIN
-    CREATE UNIQUE INDEX UX_mold_extended_info_machine_type
-        ON dbo.mold_extended_info(machine_type_id)
-        WHERE machine_type_id IS NOT NULL;
-END;
-GO
-
--- ---------------------------------------------------------------------
--- 6. Old mold_id columns on both tables are kept (not dropped) for
---    backward-compatible reads/rollback safety, but are no longer the
---    lookup key going forward -- backend code now filters/writes by
---    machine_type_id exclusively. Left as NULL-able, unindexed baggage,
---    and (as of step 1b above) no longer FK-constrained either.
--- ---------------------------------------------------------------------

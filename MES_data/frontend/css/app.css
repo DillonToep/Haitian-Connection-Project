@@ -345,7 +345,7 @@ dialog input { width: 100%; margin: 5px 0 12px; }
 html[data-theme="dark"] .mold-param-batch-fill { border-color: #57caa0; background: #142b20; }
 #mold-assign-dialog {
     width: min(480px, calc(100% - 28px));
-    min-height: 320px;
+    min-height: 380px;
 }
 #mold-assign-dialog[open] {
     display: flex;
