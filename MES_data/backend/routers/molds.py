@@ -15,6 +15,7 @@ from ..parameter_labels import PARAMETER_LABELS, EXCLUDED_FROM_TARGETS, categori
 from ..schemas import (
     MachineTypeAssignmentRequest,
     MachineTypeCreateRequest,
+    MachineTypeRenameRequest,
     MoldAssignmentRequest,
     MoldParametersUpdateRequest,
     MoldUpdateRequest,
@@ -375,11 +376,45 @@ def create_mold_machine_type(
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
+@router.put("/molds/{mold_id}/machine-types/{machine_type_id}")
+def rename_mold_machine_type(
+    mold_id: int,
+    machine_type_id: int,
+    data: MachineTypeRenameRequest,
+    user: dict = Depends(require_user),
+):
+    """Renames a machine type in place -- its specifications, is_main
+    flag, and any devices currently pointed at it (see
+    dbo.device_mold_assignments.machine_type_id) are untouched; only the
+    display name changes. This is how the auto-created "默认机型" a brand
+    new mold starts with (see create_mold) gets renamed to something
+    meaningful."""
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+            cursor.execute(
+                "UPDATE dbo.mold_machine_types SET machine_type = ? WHERE id = ?",
+                data.machine_type.strip(),
+                machine_type_id,
+            )
+            connection.commit()
+            return {"status": "ok"}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
 @router.post("/molds/{mold_id}/machine-types/{machine_type_id}/set-main")
 def set_main_machine_type(mold_id: int, machine_type_id: int, user: dict = Depends(require_user)):
-    """Marks this machine type as the mold's main one -- the specification
-    set mqtt_monitor.py checks tolerances against / raises warnings for
-    (see _fetch_mold_targets)."""
+    """Marks this machine type as the mold's main one -- this only
+    controls which machine type seeds a *new* mold's/machine type's
+    default specs and which one is labeled "主要机型" in 模具管理. It no
+    longer determines which specifications any device's notifications
+    use -- that's driven per-device by dbo.device_mold_assignments.
+    machine_type_id (see _fetch_mold_targets in mqtt_monitor.py)."""
     require_editor(user)
     try:
         with closing(get_connection()) as connection:

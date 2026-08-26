@@ -1218,6 +1218,7 @@ let currentPage = "dashboard";
                     ${mt.is_main ? '<span class="badge production" style="margin-left:8px;">主要机型</span>' : ""}
                 </div>
                 <div class="actions" style="margin:0;">
+                    <button type="button" class="secondary-button rename-machine-type-button" data-id="${mt.id}" data-name="${escapeHtml(mt.machine_type)}" ${readOnly?"disabled":""}>重命名</button>
                     ${mt.is_main ? "" : `<button type="button" class="secondary-button set-main-button" data-id="${mt.id}" ${readOnly?"disabled":""}>设为主要</button>`}
                     <button type="button" class="danger-button delete-machine-type-button" data-id="${mt.id}" ${readOnly || machineTypesCache.length<=1 ?"disabled":""}>删除</button>
                 </div>
@@ -1230,8 +1231,24 @@ let currentPage = "dashboard";
                 openMachineTypeSpecs(mt.id, mt.machine_type);
             });
         });
+        listEl.querySelectorAll(".rename-machine-type-button").forEach(button => {
+            button.addEventListener("click", async event => {
+                event.stopPropagation();
+                const nextName = (prompt("机型名称：", button.dataset.name) || "").trim();
+                if (!nextName || nextName === button.dataset.name) return;
+                try {
+                    await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(button.dataset.id)}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ machine_type: nextName }),
+                    });
+                    await loadMachineTypesList();
+                } catch (error) { alert(error.message); }
+            });
+        });
         listEl.querySelectorAll(".set-main-button").forEach(button => {
-            button.addEventListener("click", async () => {
+            button.addEventListener("click", async event => {
+                event.stopPropagation();
                 try {
                     await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(button.dataset.id)}/set-main`, { method: "POST" });
                     await loadMachineTypesList();
@@ -1239,7 +1256,8 @@ let currentPage = "dashboard";
             });
         });
         listEl.querySelectorAll(".delete-machine-type-button").forEach(button => {
-            button.addEventListener("click", async () => {
+            button.addEventListener("click", async event => {
+                event.stopPropagation();
                 if (!confirm("确认删除该机型？其对应的高级参数将一并删除，此操作不可恢复。")) return;
                 try {
                     await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
