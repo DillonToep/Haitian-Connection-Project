@@ -737,11 +737,11 @@ let currentPage = "dashboard";
             grid: {
                 colLabels: ["A板", "B板", "行呵"],
                 rows: [
-                    { label: "运水设定(Ref)", keys: ["water_ref_a", "water_ref_b", "water_ref_c", "water_ref_d"] },
-                    { label: "标准温度±5℃", keys: ["water_std_a", "water_std_b", "water_std_c", "water_std_d"] },
-                    { label: "实测模温±5℃", keys: ["water_measured_a", "water_measured_b", "water_measured_c", "water_measured_d"] },
+                    { label: "运水设定(Ref)", keys: ["water_ref_a", "water_ref_b", "water_ref_c"] },
+                    { label: "标准温度±5℃", keys: ["water_std_a", "water_std_b", "water_std_c"] },
+                    { label: "实测模温±5℃", keys: ["water_measured_a", "water_measured_b", "water_measured_c"] },
                 ],
-                    spanColumn: { label: "抽芯明细", key: "water_cavity_detail" },
+                spanColumn: { label: "抽芯明细", key: "water_cavity_detail" },
             },
             rows2: [
                 { cols: [
