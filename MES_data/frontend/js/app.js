@@ -76,7 +76,7 @@ let currentPage = "dashboard";
 
     const deviceMachineImages = {
         "C02": "/static/img/haitianMars.png",
-        "T29": "/static/img/toshiba.png"
+        "H2-T4": "/static/img/toshiba.png"
     };
 
     function machineImageForPrefix(deviceId) {
