@@ -341,9 +341,6 @@ def create_mold_machine_type(
     data: MachineTypeCreateRequest,
     user: dict = Depends(require_user),
 ):
-    """'Add Machine' -- creates a new machine-specific specification
-    record for this mold under the given 机型. Does NOT register a
-    physical machine anywhere else in the system."""
     require_editor(user)
     try:
         with closing(get_connection()) as connection:
@@ -352,10 +349,12 @@ def create_mold_machine_type(
             if mold is None:
                 raise HTTPException(status_code=404, detail="模具不存在")
 
-            has_any = cursor.execute(
-                "SELECT TOP 1 1 FROM dbo.mold_machine_types WHERE mold_id = ?", mold_id
-            ).fetchone()
-            is_main = 0 if has_any else 1  # first machine type for a mold is main by default
+            existing_count = cursor.execute(
+                "SELECT COUNT(*) FROM dbo.mold_machine_types WHERE mold_id = ?", mold_id
+            ).fetchone()[0]
+            is_main = 0 if existing_count else 1
+
+            name = (data.machine_type or "").strip() or f"新机型{existing_count + 1}"
 
             machine_type_id = cursor.execute(
                 """
@@ -363,7 +362,7 @@ def create_mold_machine_type(
                 OUTPUT INSERTED.id
                 VALUES (?, ?, ?, ?)
                 """,
-                mold_id, data.machine_type.strip(), is_main, user["id"],
+                mold_id, name, is_main, user["id"],
             ).fetchone()[0]
 
             _seed_machine_type_from_defaults(cursor, machine_type_id)
@@ -574,6 +573,14 @@ def update_mold_extended_info(
             cursor = connection.cursor()
             _get_machine_type_or_404(cursor, mold_id, machine_type_id)
             cursor.execute(sql, machine_type_id, payload, user["id"], payload, user["id"])
+
+            machine_model = data.fields.get("machine_model")
+            if isinstance(machine_model, str) and machine_model.strip():
+                cursor.execute(
+                    "UPDATE dbo.mold_machine_types SET machine_type = ? WHERE id = ?",
+                    machine_model.strip(), machine_type_id,
+                )
+
             connection.commit()
             return {"status": "ok"}
     except HTTPException:

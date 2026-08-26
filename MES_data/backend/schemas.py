@@ -46,7 +46,7 @@ class MoldExtendedInfoRequest(BaseModel):
 
 
 class MachineTypeCreateRequest(BaseModel):
-    machine_type: str = Field(min_length=1, max_length=150)
+    machine_type: str | None = Field(default=None, max_length=150)
 
 
 class MachineTypeRenameRequest(BaseModel):

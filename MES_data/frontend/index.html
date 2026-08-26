@@ -308,8 +308,9 @@
         <div id="machine-types-list" class="mold-list" style="grid-template-columns:1fr;"></div>
         <form id="machine-type-add-form" class="form-grid" style="margin-top:14px;">
             <div class="field full">
-                <label>新增机型（机型名称）</label>
-                <input id="machine-type-add-input" maxlength="150" placeholder="例如：EC100S" required>
+                <label>新增机型</label>
+                <p class="muted" style="margin:0 0 8px;">名称会自动使用该机型「客户信息」中的“机型”字段，这里无需填写（可留空，稍后在机型详情里填写）。</p>
+                <input id="machine-type-add-input" maxlength="150" placeholder="可选，留空自动命名">
             </div>
             <div class="field full"><button class="primary-button" type="submit">+ 添加机型</button></div>
         </form>

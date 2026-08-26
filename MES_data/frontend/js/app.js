@@ -1275,12 +1275,11 @@ let currentPage = "dashboard";
         event.preventDefault();
         const input = document.getElementById("machine-type-add-input");
         const machineType = input.value.trim();
-        if (!machineType) return;
         try {
             await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ machine_type: machineType }),
+                body: JSON.stringify({ machine_type: machineType || null }),
             });
             input.value = "";
             await loadMachineTypesList();
@@ -1338,10 +1337,13 @@ let currentPage = "dashboard";
                 }),
             ]);
             moldExtendedFields = extended;
-            await loadMolds();
+            const newName = (extended.machine_model || "").trim();
+            if (newName && newName !== currentMachineTypeName) {
+                currentMachineTypeName = newName;
+                document.getElementById("mold-advanced-machine-type-title").textContent = newName;
+            }
 
-            // Keep the underlying 编辑模具型号 dialog (still open behind
-            // this one) in sync in case 模具编号/产品名称/模穴数 changed here.
+            await loadMolds();
             const m = molds.find(x => x.id === editMoldId);
             if (m) {
                 document.getElementById("edit-mold-code").value = m.mold_code;
