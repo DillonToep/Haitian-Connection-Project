@@ -780,12 +780,12 @@ let currentPage = "dashboard";
     function extendedFieldCellHtml(field) {
         const value = moldExtendedFields[field.key];
         if (field.type === "checkbox") {
-            return `<td class="excel-param-cell excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
+            return `<td class="excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
                 <div class="excel-extended-label">${escapeHtml(field.label)}</div>
                 <input class="excel-extended-checkbox" type="checkbox" ${value ? "checked" : ""}>
             </td>`;
         }
-        return `<td class="excel-param-cell excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
+        return `<td class="excel-extended-cell" data-extended-key="${escapeHtml(field.key)}">
             <div class="excel-extended-label">${escapeHtml(field.label)}</div>
             <input class="excel-extended-input" type="${field.type === "date" ? "date" : "text"}" value="${value != null ? escapeHtml(value) : ""}">
         </td>`;
@@ -863,20 +863,91 @@ let currentPage = "dashboard";
     // Small header strip mimicking the sheet's top info rows
     // (模具编号/产品名称/产品编号/模穴数/装机设备), pulled from the same
     // `molds` data already loaded for the mold list -- no new API call.
+    // 模具编号/产品名称/模穴数 are editable here (saved alongside the
+    // advanced parameters -- see saveMoldBasicFieldsFromAdvanced).
+    // 产品编号 has no backing form field anywhere in this app (create/edit
+    // mold forms never set it either) and 装机设备 is assignment state
+    // managed from the device-detail page, so both stay read-only.
     function excelInfoStripHtml() {
         const m = molds.find(x => x.id === editMoldId);
         if (!m) return "";
-        const cell = (label, value) => `<div class="excel-info-cell">
+        const readOnly = currentUser.role === "viewer";
+        const cell = (label, innerHtml) => `<div class="excel-info-cell">
             <div class="excel-info-label">${escapeHtml(label)}</div>
-            <div class="excel-info-value">${showValue(value)}</div>
+            ${innerHtml}
         </div>`;
+        const staticValue = value => `<div class="excel-info-value">${showValue(value)}</div>`;
+        const textInput = (id, value) =>
+            `<input id="${id}" class="excel-info-input" type="text" value="${value != null ? escapeHtml(value) : ""}" ${readOnly ? "disabled" : ""}>`;
+        const numberInput = (id, value) =>
+            `<input id="${id}" class="excel-info-input" type="number" min="1" step="1" value="${value != null ? escapeHtml(value) : ""}" ${readOnly ? "disabled" : ""}>`;
         return `<div class="excel-info-strip">
-            ${cell("模具编号", m.mold_code)}
-            ${cell("产品名称", m.mold_name)}
-            ${cell("产品编号", m.product_code)}
-            ${cell("模穴数", m.cavities)}
-            ${cell("装机设备", m.mounted_device_id)}
+            ${cell("模具编号", textInput("excel-info-mold-code", m.mold_code))}
+            ${cell("产品名称", textInput("excel-info-mold-name", m.mold_name))}
+            ${cell("产品编号", staticValue(m.product_code))}
+            ${cell("模穴数", numberInput("excel-info-cavities", m.cavities))}
+            ${cell("装机设备", staticValue(m.mounted_device_id))}
         </div>`;
+    }
+
+    // Recomputes the 模穴温度 map for a (possibly changed) cavity count,
+    // carrying over existing per-cavity values for labels that still
+    // exist and leaving new labels blank -- same shape the create/edit
+    // mold forms send as `cavity_temperatures`.
+    function buildCavityTemperaturesForCount(mold, cavities) {
+        const existing = {};
+        (mold.cavity_temperatures || []).forEach(t => { existing[t.cavity_label] = t; });
+        const result = {};
+        for (let i = 1; i <= cavities; i++) {
+            const label = String(i);
+            const entry = existing[label];
+            result[label] = {
+                temperature_c: entry && entry.temperature_c != null ? entry.temperature_c : null,
+                tolerance_pct: entry && entry.tolerance_pct != null ? entry.tolerance_pct : null,
+            };
+        }
+        return result;
+    }
+
+    // Persists edits made to 模具编号/产品名称/模穴数 directly from the
+    // advanced-parameters dialog. There's no partial-update endpoint, so
+    // this builds a full multipart PUT /api/molds/{id} payload the same
+    // shape as the main edit form, filling every other field from the
+    // already-loaded mold record (m) so images, cleaning settings, etc.
+    // are resubmitted unchanged. No-ops if nothing actually changed.
+    async function saveMoldBasicFieldsFromAdvanced() {
+        const codeInput = document.getElementById("excel-info-mold-code");
+        const nameInput = document.getElementById("excel-info-mold-name");
+        const cavitiesInput = document.getElementById("excel-info-cavities");
+        if (!codeInput || !nameInput || !cavitiesInput) return; // strip wasn't rendered (no mold loaded)
+
+        const m = molds.find(x => x.id === editMoldId);
+        if (!m) return;
+
+        const moldCode = codeInput.value.trim();
+        const moldName = nameInput.value.trim();
+        const cavities = Math.max(1, Number(cavitiesInput.value) || 1);
+
+        if (moldCode === m.mold_code && moldName === m.mold_name && cavities === m.cavities) return;
+        if (!moldCode) throw new Error("模具编号不能为空");
+        if (!moldName) throw new Error("产品名称不能为空");
+
+        const body = new FormData();
+        body.set("mold_code", moldCode);
+        body.set("mold_name", moldName);
+        body.set("cavities", String(cavities));
+        body.set("remark", m.remark || "");
+        body.set("is_active", m.is_active ? "1" : "0");
+        body.set("cavity_temperatures", JSON.stringify(buildCavityTemperaturesForCount(m, cavities)));
+        body.set("requires_cleaning", m.requires_cleaning ? "1" : "0");
+        body.set("cleaning_interval_hours", m.cleaning_interval_hours ?? "");
+        body.set("cleaning_duration_minutes", m.cleaning_duration_minutes ?? "");
+        body.set("max_output", m.max_output ?? "");
+        body.set("keep_image_ids", JSON.stringify((m.images || []).map(img => img.id)));
+        const faceImage = (m.images || []).find(img => img.is_face);
+        if (faceImage) body.set("face_image_id", String(faceImage.id));
+
+        await requestJson(`/api/molds/${editMoldId}`, { method: "PUT", body });
     }
 
     function renderMoldAdvancedGroups(parameters) {
@@ -930,6 +1001,7 @@ let currentPage = "dashboard";
         const parameters = collectParameterRows("mold-advanced-groups");
         const extended = collectExtendedFields("mold-advanced-groups");
         try {
+            await saveMoldBasicFieldsFromAdvanced();
             await Promise.all([
                 requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/parameters`, {
                     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters }),
@@ -939,6 +1011,21 @@ let currentPage = "dashboard";
                 }),
             ]);
             moldExtendedFields = extended;
+            await loadMolds();
+
+            // Keep the underlying 编辑模具型号 dialog (still open behind
+            // this one) in sync in case 模具编号/产品名称/模穴数 changed here.
+            const m = molds.find(x => x.id === editMoldId);
+            if (m) {
+                document.getElementById("edit-mold-code").value = m.mold_code;
+                document.getElementById("edit-mold-name").value = m.mold_name;
+                document.getElementById("mold-edit-cavities").value = m.cavities;
+                document.getElementById("mold-edit-current-device").textContent =
+                    m.mounted_device_id ? `当前装机设备：${m.mounted_device_id}` : "当前未装机";
+                rebuildCavityTable("mold-edit-cavities", "mold-edit-cavity-table");
+                applyCavityTemperatures("mold-edit-cavity-table", m.cavity_temperatures);
+            }
+
             alert("高级参数已保存");
         } catch (error) { alert(error.message); }
     });
