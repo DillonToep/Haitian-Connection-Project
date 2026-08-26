@@ -735,12 +735,13 @@ let currentPage = "dashboard";
             // replacing the old layout where all five were separate
             // single fields crammed into one row.
             grid: {
-                colLabels: ["A板", "B板", "行呵", "抽芯明细"],
+                colLabels: ["A板", "B板", "行呵"],
                 rows: [
                     { label: "运水设定(Ref)", keys: ["water_ref_a", "water_ref_b", "water_ref_c", "water_ref_d"] },
                     { label: "标准温度±5℃", keys: ["water_std_a", "water_std_b", "water_std_c", "water_std_d"] },
                     { label: "实测模温±5℃", keys: ["water_measured_a", "water_measured_b", "water_measured_c", "water_measured_d"] },
                 ],
+                    spanColumn: { label: "抽芯明细", key: "water_cavity_detail" },
             },
             rows2: [
                 { cols: [
@@ -807,12 +808,20 @@ let currentPage = "dashboard";
 
     function extendedGridHtml(grid) {
         const headerCells = grid.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
-        const bodyRows = grid.rows.map(row => {
+        const spanHeaderHtml = grid.spanColumn ? `<th>${escapeHtml(grid.spanColumn.label)}</th>` : "";
+        const spanCellHtml = grid.spanColumn ? (() => {
+            const value = moldExtendedFields[grid.spanColumn.key];
+            return `<td class="excel-extended-cell excel-extended-grid-cell" data-extended-key="${escapeHtml(grid.spanColumn.key)}" rowspan="${grid.rows.length}">
+                <input class="excel-extended-input" type="text" value="${value != null ? escapeHtml(value) : ""}">
+            </td>`;
+        })() : "";
+        const bodyRows = grid.rows.map((row, i) => {
             const cells = row.keys.map(extendedGridCellHtml).join("");
-            return `<tr><th class="excel-extended-grid-label">${escapeHtml(row.label)}</th>${cells}</tr>`;
+            const spanCell = i === 0 ? spanCellHtml : "";
+            return `<tr><th class="excel-extended-grid-label">${escapeHtml(row.label)}</th>${cells}${spanCell}</tr>`;
         }).join("");
         return `<table class="excel-style-table excel-extended-grid-table">
-            <thead><tr><th></th>${headerCells}</tr></thead>
+            <thead><tr><th></th>${headerCells}${spanHeaderHtml}</tr></thead>
             <tbody>${bodyRows}</tbody>
         </table>`;
     }
