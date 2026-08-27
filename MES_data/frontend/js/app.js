@@ -388,12 +388,16 @@ let currentPage = "dashboard";
         if (!event.target.closest("#device-machine-type-apply")) return;
         const select = document.getElementById("device-machine-type-select");
         const machineTypeId = select ? select.value : "";
+        const moldId = select ? select.dataset.moldId : "";
         if (!machineTypeId) { alert("请选择机型"); return; }
         try {
             const result = await requestJsonWithMismatch(`/api/devices/${encodeURIComponent(detailDeviceId)}/machine-type`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ machine_type_id: Number(machineTypeId) }),
+                body: JSON.stringify({
+                    mold_id: Number(moldId),
+                    machine_type_id: Number(machineTypeId),
+                }),
             });
             if (result === null) return;
             alert("机型已切换，后续预警将按新机型的规格判断");
@@ -619,6 +623,7 @@ let currentPage = "dashboard";
         const select = document.getElementById("device-machine-type-select");
         const applyButton = document.getElementById("device-machine-type-apply");
         if (!select) return;
+        select.dataset.moldId = moldId;
         select.innerHTML = '<option value="">正在读取……</option>';
         try {
             const types = await loadMachineTypesFor(moldId);

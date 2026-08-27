@@ -64,3 +64,8 @@ class MachineTypeRenameRequest(BaseModel):
 class DeviceMachineTypeNameRequest(BaseModel):
     machine_type: str = Field(default="", max_length=150)
 
+class MachineTypeAssignmentRequest(BaseModel):
+    mold_id: int = Field(gt=0)
+    machine_type_id: int = Field(gt=0)
+    force: bool = False
+
