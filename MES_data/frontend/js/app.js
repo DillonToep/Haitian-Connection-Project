@@ -1132,30 +1132,31 @@ let currentPage = "dashboard";
     // shape as the main edit form, filling every other field from the
     // already-loaded mold record (m) so images, cleaning settings, etc.
     // are resubmitted unchanged. No-ops if nothing actually changed.
-        const codeInput = document.getElementById("excel-info-mold-code");
-        const nameInput = document.getElementById("excel-info-mold-name");
-        const productCodeInput = document.getElementById("excel-info-product-code");
-        const cavitiesInput = document.getElementById("excel-info-cavities");
-        if (!codeInput || !nameInput || !productCodeInput || !cavitiesInput) return;
+    async function saveMoldBasicFieldsFromAdvanced() {
+    const codeInput = document.getElementById("excel-info-mold-code");
+    const nameInput = document.getElementById("excel-info-mold-name");
+    const productCodeInput = document.getElementById("excel-info-product-code");
+    const cavitiesInput = document.getElementById("excel-info-cavities");
+    if (!codeInput || !nameInput || !productCodeInput || !cavitiesInput) return;
 
-        const m = molds.find(x => x.id === editMoldId);
-        if (!m) return;
+    const m = molds.find(x => x.id === editMoldId);
+    if (!m) return;
 
-        const moldCode = codeInput.value.trim();
-        const moldName = nameInput.value.trim();
-        const productCode = productCodeInput.value.trim();
-        const cavities = Math.max(1, Number(cavitiesInput.value) || 1);
+    const moldCode = codeInput.value.trim();
+    const moldName = nameInput.value.trim();
+    const productCode = productCodeInput.value.trim();
+    const cavities = Math.max(1, Number(cavitiesInput.value) || 1);
 
-        if (moldCode === m.mold_code && moldName === m.mold_name
-            && productCode === (m.product_code || "") && cavities === m.cavities) return;
-        if (!moldCode) throw new Error("模具编号不能为空");
-        if (!moldName) throw new Error("产品名称不能为空");
+    if (moldCode === m.mold_code && moldName === m.mold_name
+        && productCode === (m.product_code || "") && cavities === m.cavities) return;
+    if (!moldCode) throw new Error("模具编号不能为空");
+    if (!moldName) throw new Error("产品名称不能为空");
 
-        const body = new FormData();
-        body.set("mold_code", moldCode);
-        body.set("mold_name", moldName);
-        body.set("product_code", productCode);
-        body.set("cavities", String(cavities));
+    const body = new FormData();
+    body.set("mold_code", moldCode);
+    body.set("mold_name", moldName);
+    body.set("product_code", productCode);
+    body.set("cavities", String(cavities));
         body.set("remark", m.remark || "");
         body.set("is_active", m.is_active ? "1" : "0");
         body.set("cavity_temperatures", JSON.stringify(buildCavityTemperaturesForCount(m, cavities)));
