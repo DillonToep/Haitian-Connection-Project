@@ -809,17 +809,6 @@ let currentPage = "dashboard";
             ],
         },
         {
-            title: "射退设定",
-            colLabels: ["射退1", "射退2"],
-            rows: [
-                { label: "速度", tags: [null, "SBV2"] },
-                { label: "压力", tags: [null, "SBP2"] },
-                { label: "位置", tags: ["SBS1", "SBS2"] },
-                { label: "时间(S)", tags: ["SBT1", "SBT2"] },
-                { label: "模式", tags: [null, "SBM2"] },
-            ],
-        },
-        {
             title: "锁模设定 ±10%",
             colLabels: ["1段", "2段", "3段", "4段", "高压"],
             rows: [
@@ -949,6 +938,17 @@ let currentPage = "dashboard";
                 { label: "生产状态", tags: ["STS"] },
                 { label: "警报状态", tags: ["ASTS"] },
                 { label: "警报", tags: ["wm"] },
+            ],
+        },
+        {
+            title: "射退设定",
+            colLabels: ["射退1", "射退2"],
+            rows: [
+                { label: "速度", tags: [null, "SBV2"] },
+                { label: "压力", tags: [null, "SBP2"] },
+                { label: "位置", tags: ["SBS1", "SBS2"] },
+                { label: "时间(S)", tags: ["SBT1", "SBT2"] },
+                { label: "模式", tags: [null, "SBM2"] },
             ],
         },
     ];
@@ -1263,7 +1263,27 @@ let currentPage = "dashboard";
         return `<td class="excel-param-cell-readonly" data-parameter="${escapeHtml(tag)}"><div class="${boxClass}">${hasValue ? escapeHtml(p.value) : "--"}</div></td>`;
     }
 
+    // True if at least one real (non-"local:") tag in this block has an
+    // actual reported value -- used to hide whole sections the current
+    // device/machine family never reports anything for (e.g. Toshiba-only
+    // or Haitian-only blocks), instead of showing a full table of "--".
+    function techBlockHasData(block, paramById) {
+        return block.rows.some(row => row.tags.some(tag => {
+            if (!tag || tag.startsWith("local:")) return false;
+            const p = paramById.get(tag);
+            return p && p.value != null && p.value !== "";
+        }));
+    }
+
     function techBlockTableHtml(block, paramById, usedTags) {
+        if (!techBlockHasData(block, paramById)) {
+            // Still mark every real tag as "used" so an empty block never
+            // causes its tags to reappear in the leftover safety-net
+            // section below (which already hides valueless tags anyway,
+            // but this keeps the bookkeeping consistent either way).
+            block.rows.forEach(row => row.tags.forEach(tag => { if (tag) usedTags.add(tag); }));
+            return "";
+        }
         const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
         const bodyRows = block.rows.map((row, i) => {
             const cells = row.tags.map(tag => techParamCell(paramById, tag, usedTags)).join("");
