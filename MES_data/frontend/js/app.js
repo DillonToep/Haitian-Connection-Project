@@ -1294,30 +1294,19 @@ let currentPage = "dashboard";
         </table>`;
     }
 
-    // ---- Read-only Excel-grid cell/table renderers for the 工艺参数 tab --
-    // Same visual language as excelParamCell/excelBlockTableHtml above,
-    // but: no <input>/tolerance row (just the live value as text), a
-    // missing/blank reading renders as an empty cell instead of "--", and
-    // a whole block is skipped entirely if none of its tags have data for
-    // this device -- so the tab never shows a wall of empty tables.
     function techParamCell(paramById, tag, usedTags) {
         if (!tag) return '<td></td>';
         usedTags.add(tag);
         const p = paramById.get(tag);
         const hasValue = p && p.value != null && p.value !== "";
         const changed = highlightParameter && p && p.parameter_id === highlightParameter.parameter_id;
-        return `<td class="excel-param-cell-readonly${changed ? " parameter-changed" : ""}" data-parameter="${escapeHtml(tag)}">${hasValue ? escapeHtml(p.value) : ""}</td>`;
+        if (!hasValue) {
+            return `<td class="excel-param-cell-readonly excel-cell-missing" data-parameter="${escapeHtml(tag)}">--</td>`;
+        }
+        return `<td class="excel-param-cell-readonly${changed ? " parameter-changed" : ""}" data-parameter="${escapeHtml(tag)}">${escapeHtml(p.value)}</td>`;
     }
 
     function techBlockTableHtml(block, paramById, usedTags) {
-        let hasData = false;
-        block.rows.forEach(row => row.tags.forEach(tag => {
-            if (!tag) return;
-            const p = paramById.get(tag);
-            if (p && p.value != null && p.value !== "") hasData = true;
-        }));
-        if (!hasData) return "";
-
         const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
         const bodyRows = block.rows.map((row, i) => {
             const cells = row.tags.map(tag => techParamCell(paramById, tag, usedTags)).join("");
@@ -1332,11 +1321,7 @@ let currentPage = "dashboard";
             <tbody>${bodyRows}</tbody>
         </table>`;
     }
-
-    // Safety net: any tag the API returned that no TECH_GRID_BLOCKS block
-    // claimed (usedTags) still needs to show up somewhere, grouped by the
-    // category the backend already computed for it, so a new/unmapped tag
-    // never silently disappears from the tab.
+    
     function techLeftoverBlocksHtml(parameters, usedTags) {
         const byCategory = new Map();
         parameters.forEach(p => {
