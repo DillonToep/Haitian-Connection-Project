@@ -963,10 +963,10 @@ let currentPage = "dashboard";
     }
 
     function excelLocalCell(tag, includeValue = true) {
-        if (!includeValue) return '<td></td>'; // 默认参数设置 has no mold/machine-type to scope this to
+        if (!includeValue) return '<td></td>';
         const value = getLocalParamValue(tag);
         return `<td class="excel-param-cell-local" data-local-parameter="${escapeHtml(tag)}">
-            <input class="excel-value-input excel-local-input" type="text" placeholder="仅本机保存"
+            <input class="excel-value-input excel-local-input" type="text"
                 value="${value ? escapeHtml(value) : ""}">
         </td>`;
     }
@@ -1062,10 +1062,8 @@ let currentPage = "dashboard";
         if (!p) return '<td class="excel-cell-missing">--</td>';
         const mode = p.tolerance_mode || "percent";
         const toleranceValue = mode === "flat" ? p.tolerance_flat : p.tolerance_percent;
-        const valueHtml = includeValue
-            ? `<input class="mold-param-value excel-value-input" type="text" placeholder="实际值"
-                value="${p.value != null ? escapeHtml(p.value) : ""}">`
-            : "";
+        const valueHtml = `<input class="mold-param-value excel-value-input" type="text" placeholder="${includeValue ? "实际值" : "默认值"}"
+            value="${p.value != null ? escapeHtml(p.value) : ""}">`;
         return `<td class="excel-param-cell" data-parameter="${escapeHtml(tag)}">
             ${valueHtml}
             <div class="excel-tolerance-row">
@@ -1406,12 +1404,7 @@ let currentPage = "dashboard";
             alert("高级参数已保存");
         } catch (error) { alert(error.message); }
     });
-
-    // Same Excel-grid rendering as the per-mold 高级工艺参数 dialog, but
-    // without a "实际值" input per cell -- defaults only ever seed a
-    // target value/tolerance template for brand-new molds (see
-    // MoldParameterInput.value handling on create_mold), so there's
-    // nothing meaningful to show as a live "actual value" here.
+    
     function renderMoldDefaultsGroups(parameters) {
         const readOnly = currentUser.role === "viewer";
         const paramById = new Map(parameters.map(p => [p.parameter_id, p]));
