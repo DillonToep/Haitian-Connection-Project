@@ -819,6 +819,201 @@ let currentPage = "dashboard";
         },
     ];
 
+    // ---- 工艺参数 tab (device dashboard) --------------------------------
+    // Read-only version of the 模具管理 Excel-grid layout, covering every
+    // tag the 工艺参数 tab used to show under its old collapsible-category
+    // rendering. Grouped by function (same idea as EXCEL_BLOCKS above) so
+    // the live tab reads like a spec sheet instead of a flat list. Unlike
+    // EXCEL_BLOCKS, there's no "local:" nozzle-temp cell (that's a
+    // manually-entered mold-spec value, not something a live machine
+    // reports) and no tolerance/value inputs -- just the current reading,
+    // left blank when the device hasn't reported that tag.
+    const TECH_GRID_BLOCKS = [
+        {
+            title: "温度设定",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段", "7段"],
+            rows: [{ label: "温度", tags: ["TS1", "TS2", "TS3", "TS4", "TS5", "TS6", "TS7"] }],
+        },
+        {
+            title: "射胶设定",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段"],
+            rows: [
+                { label: "速度", tags: ["IV1", "IV2", "IV3", "IV4", "IV5", "IV6"] },
+                { label: "压力", tags: ["IP1", "IP2", "IP3", "IP4", "IP5", "IP6"] },
+                { label: "位置", tags: ["IS1", "IS2", "IS3", "IS4", "IS5", null] },
+            ],
+        },
+        {
+            title: "保压设定",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段"],
+            rows: [
+                { label: "速度", tags: ["PV1", "PV2", "PV3", "PV4", "PV5", "PV6"] },
+                { label: "压力", tags: ["PP1", "PP2", "PP3", "PP4", "PP5", "PP6"] },
+                { label: "时间(S)", tags: ["PT1", "PT2", "PT3", "PT4", "PT5", "PT6"] },
+            ],
+        },
+        {
+            title: "储料设定",
+            colLabels: ["1段", "2段", "3段", "4段", "5段"],
+            rows: [
+                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", "PLV5"] },
+                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLP5"] },
+                { label: "背压", tags: ["PLBP1", "PLBP2", "PLBP3", "PLBP4", "PLBP5"] },
+                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", "PLS5"] },
+            ],
+        },
+        {
+            title: "射退设定",
+            colLabels: ["射退1", "射退2"],
+            rows: [
+                { label: "速度", tags: [null, "SBV2"] },
+                { label: "压力", tags: [null, "SBP2"] },
+                { label: "位置", tags: ["SBS1", "SBS2"] },
+                { label: "时间(S)", tags: ["SBT1", "SBT2"] },
+                { label: "模式", tags: [null, "SBM2"] },
+            ],
+        },
+        {
+            title: "锁模设定",
+            colLabels: ["1段", "2段", "3段", "4段", "高压"],
+            rows: [
+                { label: "速度", tags: ["MCV1", "MCV2", "MCV3", "MCV4", "MCV5"] },
+                { label: "压力", tags: ["MCP1", "MCP2", "MCP3", "MCP4", "MCP5"] },
+                { label: "位置", tags: ["MCS1", "MCS2", "MCS3", "MCS4", "MCS5"] },
+            ],
+        },
+        {
+            title: "开模设定",
+            colLabels: ["1段", "2段", "3段", "4段", "终止"],
+            rows: [
+                { label: "速度", tags: ["MOV1", "MOV2", "MOV3", "MOV4", "MOV5"] },
+                { label: "压力", tags: ["MOP1", "MOP2", "MOP3", "MOP4", "MOP5"] },
+                { label: "位置", tags: ["MOS1", "MOS2", "MOS3", "MOS4", "MOS5"] },
+            ],
+        },
+        {
+            title: "顶针设定",
+            colLabels: ["顶进1", "顶进2", "顶进3", "顶退1", "顶退2"],
+            rows: [
+                { label: "速度", tags: ["EFV1", "EFV2", "EFV3", "EBV1", "EBV2"] },
+                { label: "压力", tags: ["EFP1", "EFP2", null, "EBP1", "EBP2"] },
+                { label: "位置", tags: ["EFS1", "EFS2", "EFS3", "EBS1", "EBS2"] },
+                { label: "时间(S)", tags: ["EFDT", null, null, "EBDT", null] },
+            ],
+        },
+        {
+            title: "顶针次数",
+            colLabels: ["数值"],
+            rows: [
+                { label: "顶针次数", tags: ["EJET"] },
+                { label: "顶针模式", tags: ["EJEM"] },
+            ],
+        },
+        {
+            title: "吹气设定",
+            colLabels: ["A组", "B组"],
+            rows: [
+                { label: "动作时间", tags: ["BLT1", "BLT2"] },
+                { label: "延迟时间", tags: ["BLDT1", "BLDT2"] },
+                { label: "起始位置", tags: ["BLS1", "BLS2"] },
+            ],
+        },
+        {
+            title: "中子设定",
+            colLabels: ["中子1", "中子2", "中子3", "中子4"],
+            rows: [
+                { label: "模式", tags: ["CP1M", "CP2M", "CP3M", "CP4M"] },
+                { label: "进位置", tags: ["CPI1S", "CPI2S", "CPI3S", "CPI4S"] },
+                { label: "进压力", tags: ["CPI1P", "CPI2P", "CPI3P", "CPI4P"] },
+                { label: "进速度", tags: ["CPI1V", "CPI2V", "CPI3V", "CPI4V"] },
+                { label: "进时间", tags: ["CPI1T", "CPI2T", "CPI3T", "CPI4T"] },
+                { label: "退位置", tags: ["CPO1S", "CPO2S", "CPO3S", "CPO4S"] },
+                { label: "退压力", tags: ["CPO1P", "CPO2P", "CPO3P", "CPO4P"] },
+                { label: "退速度", tags: ["CPO1V", "CPO2V", "CPO3V", "CPO4V"] },
+                { label: "退时间", tags: ["CPO1T", "CPO2T", "CPO3T", "CPO4T"] },
+            ],
+        },
+        {
+            title: "座进座退设定",
+            colLabels: ["座进1", "座进2", "座退"],
+            rows: [
+                { label: "压力", tags: ["CFP1", "CFP2", "CBP1"] },
+                { label: "速度", tags: ["CFV1", "CFV2", "CBV1"] },
+                { label: "位置", tags: ["CFS1", "CFS2", "CBS1"] },
+                { label: "时间(S)", tags: ["CFT1", null, "CBT1"] },
+                { label: "延迟时间", tags: [null, null, "CBDT1"] },
+            ],
+        },
+        {
+            title: "冷却 / 切保压设定",
+            colLabels: ["数值"],
+            rows: [
+                { label: "储前冷却", tags: ["CTBFPL"] },
+                { label: "冷却时间", tags: ["CT"] },
+                { label: "切保压模式", tags: ["SIPM"] },
+                { label: "切保压时间", tags: ["SIPT"] },
+                { label: "切保压压力", tags: ["SIPP"] },
+                { label: "切保压位置", tags: ["SIPS"] },
+            ],
+        },
+        {
+            title: "生产温度",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段", "7段", "油温"],
+            rows: [{ label: "温度", tags: ["ET1", "ET2", "ET3", "ET4", "ET5", "ET6", "ET7", "EOT"] }],
+        },
+        {
+            title: "温度",
+            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段", "7段", "油温"],
+            rows: [{ label: "温度", tags: ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "OT"] }],
+        },
+        {
+            title: "生产参数汇总",
+            colLabels: ["数值"],
+            rows: [
+                { label: "模数", tags: ["CYCN"] },
+                { label: "产品数量", tags: ["PARTN"] },
+                { label: "周期时间", tags: ["ECYCT"] },
+                { label: "射出起点", tags: ["EISS"] },
+                { label: "最大射速", tags: ["EIVM"] },
+                { label: "最大射压", tags: ["EIPM"] },
+                { label: "转保压时间", tags: ["ESIPT"] },
+                { label: "转保压压力", tags: ["ESIPP"] },
+                { label: "转保压位置", tags: ["ESIPS"] },
+                { label: "射出保压时间", tags: ["EIPT"] },
+                { label: "射出终点位置", tags: ["EIPSE"] },
+                { label: "最小射出位置", tags: ["EIPSMIN"] },
+                { label: "储料时间", tags: ["EPLST"] },
+                { label: "最大储料压力", tags: ["EPLSPM"] },
+                { label: "储料扭矩", tags: ["EPLTorque"] },
+                { label: "取出时间", tags: ["EFCHT"] },
+                { label: "关模时间", tags: ["EMCT"] },
+                { label: "低压时间", tags: ["EMCLP"] },
+                { label: "高压时间", tags: ["EMCHP"] },
+                { label: "开模时间", tags: ["EMOT"] },
+                { label: "托模时间", tags: ["EEJET"] },
+                { label: "顶出时间", tags: ["EEFT"] },
+                { label: "射退时间", tags: ["ESB2T"] },
+            ],
+        },
+        {
+            title: "生产状态",
+            colLabels: ["数值"],
+            rows: [
+                { label: "模式", tags: ["OPM"] },
+                { label: "生产状态", tags: ["STS"] },
+                { label: "警报状态", tags: ["ASTS"] },
+                { label: "警报", tags: ["wm"] },
+            ],
+        },
+    ];
+
+    // Chinese category names the backend already attaches to each
+    // parameter (see categorize()/categorize_tag() in parameter_labels.py)
+    // -- used only as the block title for the safety-net "leftover" block
+    // below, so a tag never silently disappears just because
+    // TECH_GRID_BLOCKS forgot to list it.
+    const TECH_LEFTOVER_CATEGORY_ORDER = ["温度参数", "压力参数", "速度参数", "位置参数", "时间参数", "模式设置", "其他参数", "未知参数"];
+
 
     let moldExtendedFields = {};
     const EXTENDED_INFO_SECTIONS = [
@@ -1097,6 +1292,75 @@ let currentPage = "dashboard";
             <thead><tr><th></th><th></th>${headerCells}</tr></thead>
             <tbody>${bodyRows}</tbody>
         </table>`;
+    }
+
+    // ---- Read-only Excel-grid cell/table renderers for the 工艺参数 tab --
+    // Same visual language as excelParamCell/excelBlockTableHtml above,
+    // but: no <input>/tolerance row (just the live value as text), a
+    // missing/blank reading renders as an empty cell instead of "--", and
+    // a whole block is skipped entirely if none of its tags have data for
+    // this device -- so the tab never shows a wall of empty tables.
+    function techParamCell(paramById, tag, usedTags) {
+        if (!tag) return '<td></td>';
+        usedTags.add(tag);
+        const p = paramById.get(tag);
+        const hasValue = p && p.value != null && p.value !== "";
+        const changed = highlightParameter && p && p.parameter_id === highlightParameter.parameter_id;
+        return `<td class="excel-param-cell-readonly${changed ? " parameter-changed" : ""}" data-parameter="${escapeHtml(tag)}">${hasValue ? escapeHtml(p.value) : ""}</td>`;
+    }
+
+    function techBlockTableHtml(block, paramById, usedTags) {
+        let hasData = false;
+        block.rows.forEach(row => row.tags.forEach(tag => {
+            if (!tag) return;
+            const p = paramById.get(tag);
+            if (p && p.value != null && p.value !== "") hasData = true;
+        }));
+        if (!hasData) return "";
+
+        const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
+        const bodyRows = block.rows.map((row, i) => {
+            const cells = row.tags.map(tag => techParamCell(paramById, tag, usedTags)).join("");
+            const pad = "<td></td>".repeat(Math.max(0, block.colLabels.length - row.tags.length));
+            const labelCell = i === 0
+                ? `<th class="excel-block-label" rowspan="${block.rows.length}">${escapeHtml(block.title)}</th>`
+                : "";
+            return `<tr>${labelCell}<th>${escapeHtml(row.label)}</th>${cells}${pad}</tr>`;
+        }).join("");
+        return `<table class="excel-style-table excel-block-table excel-block-table-readonly">
+            <thead><tr><th></th><th></th>${headerCells}</tr></thead>
+            <tbody>${bodyRows}</tbody>
+        </table>`;
+    }
+
+    // Safety net: any tag the API returned that no TECH_GRID_BLOCKS block
+    // claimed (usedTags) still needs to show up somewhere, grouped by the
+    // category the backend already computed for it, so a new/unmapped tag
+    // never silently disappears from the tab.
+    function techLeftoverBlocksHtml(parameters, usedTags) {
+        const byCategory = new Map();
+        parameters.forEach(p => {
+            if (usedTags.has(p.parameter_id)) return;
+            if (p.value == null || p.value === "") return; // nothing to show
+            if (!byCategory.has(p.category)) byCategory.set(p.category, []);
+            byCategory.get(p.category).push(p);
+        });
+        const categories = [...byCategory.keys()].sort(
+            (a, b) => TECH_LEFTOVER_CATEGORY_ORDER.indexOf(a) - TECH_LEFTOVER_CATEGORY_ORDER.indexOf(b)
+        );
+        return categories.map(category => {
+            const rows = byCategory.get(category).map((p, i) => {
+                const changed = highlightParameter && p.parameter_id === highlightParameter.parameter_id;
+                const labelCell = i === 0
+                    ? `<th class="excel-block-label" rowspan="${byCategory.get(category).length}">${escapeHtml(category)}</th>`
+                    : "";
+                return `<tr>${labelCell}<th>${escapeHtml(p.label)}</th><td class="excel-param-cell-readonly${changed ? " parameter-changed" : ""}" data-parameter="${escapeHtml(p.parameter_id)}">${escapeHtml(p.value)}</td></tr>`;
+            }).join("");
+            return `<table class="excel-style-table excel-block-table excel-block-table-readonly">
+                <thead><tr><th></th><th></th><th>数值</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+        }).join("");
     }
 
     // Small header strip mimicking the sheet's top info rows
@@ -2135,86 +2399,20 @@ let currentPage = "dashboard";
 
     async function loadTech(id) {
         const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
-        const groups=new Map();
-        result.parameters.forEach(p=>{
-            if(!groups.has(p.category)) groups.set(p.category,[]);
-            groups.get(p.category).push(p);
-        });
+        const paramById=new Map(result.parameters.map(p=>[p.parameter_id,p]));
 
         let highlightMatch=null;
         if(highlightParameter && highlightParameter.parameter_id){
             highlightMatch=result.parameters.find(p=>p.parameter_id===highlightParameter.parameter_id)||null;
-            if(highlightMatch && !highlightApplied) techOpenCategories.add(highlightMatch.category);
         }
 
-        const categoryOrder=["温度参数","压力参数","速度参数","位置参数","时间参数","模式设置","其他参数","未知参数"];
-        const orderedCategories=[...groups.keys()].sort((a,b)=>categoryOrder.indexOf(a)-categoryOrder.indexOf(b));
-        function renderCategory(category) {
-            const items=groups.get(category);
-            const unit=techCategoryUnits[category]||"";
-            const paramGroups=groupTechParameters(items);
-            const rows=paramGroups.map(group=>{
-                if(group.items.length===1){
-                    const p=group.items[0];
-                    const changed=highlightParameter && p.parameter_id===highlightParameter.parameter_id;
-                    return `<div class="parameter${changed?" parameter-changed":""}" data-parameter="${escapeHtml(p.parameter_id)}"><span>${escapeHtml(p.label)}</span><span>${showValue(p.value,unit)}</span></div>`;
-                }
-                const sorted=[...group.items].sort((a,b)=>(a.number??0)-(b.number??0));
-                const chips=sorted.map(p=>{
-                    const changed=highlightParameter && p.parameter_id===highlightParameter.parameter_id;
-                    return `<span class="parameter-chip${changed?" parameter-changed":""}" data-parameter="${escapeHtml(p.parameter_id)}"><span class="chip-index">${p.number??""}</span><span class="chip-value">${showValue(p.value,unit)}</span></span>`;
-                }).join("");
-                return `<div class="parameter-group"><span class="parameter-group-label">${escapeHtml(group.key)}</span><span class="parameter-group-values">${chips}</span></div>`;
-            }).join("");
-            const isOpen=techOpenCategories.has(category);
-            return `<details class="tech-group" data-category="${escapeHtml(category)}"${isOpen?" open":""}>
-                <summary class="tech-group-title">
-                    <span class="tech-group-title-text">${escapeHtml(category)}</span>
-                    <span class="tech-group-meta"><span class="tech-group-count">${items.length}</span><span class="chevron">▸</span></span>
-                </summary>
-                <div class="parameter-grid">${rows}</div>
-            </details>`;
-        }
-        // Categories are split into two fixed columns up front (instead of
-        // CSS multi-column flow) so opening/closing one section never moves
-        // another section into a different column -- each category has a
-        // permanent left/right slot for the lifetime of this render.
-        const leftCategories=orderedCategories.filter((_,i)=>i%2===0);
-        const rightCategories=orderedCategories.filter((_,i)=>i%2===1);
-        const leftHtml=leftCategories.map(renderCategory).join("");
-        const rightHtml=rightCategories.map(renderCategory).join("");
-        const hasSections=orderedCategories.length>0;
+        const usedTags=new Set();
+        const blocksHtml=TECH_GRID_BLOCKS.map(block=>techBlockTableHtml(block,paramById,usedTags)).join("");
+        const leftoverHtml=techLeftoverBlocksHtml(result.parameters,usedTags);
+        const hasAnyData=result.parameters.some(p=>p.value!=null && p.value!=="");
+
         const highlightBanner=(highlightParameter && highlightParameter.parameter_id)?`<div class="changelog-banner">变更提示：<strong>${escapeHtml(highlightMatch?highlightMatch.label:highlightParameter.parameter_id)}</strong> ${showValue(highlightParameter.previous_value)} → <strong class="changelog-banner-new">${showValue(highlightParameter.new_value)}</strong></div>`:"";
-        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card">${highlightBanner}<div class="detail-header"><div class="detail-title">工艺参数</div><div class="tech-header-actions"><button type="button" class="tech-action-button" id="tech-toggle-all">全部展开</button><span class="muted">参数时间：${formatTime(result.data_time)}</span></div></div><div class="tech-groups-grid">${hasSections?`<div class="tech-groups-column">${leftHtml}</div><div class="tech-groups-column">${rightHtml}</div>`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
-
-        function updateToggleAllLabel() {
-            const button=document.getElementById("tech-toggle-all");
-            if(!button) return;
-            const allDetails=document.querySelectorAll("#detail-tab-tech details.tech-group");
-            const allOpen=allDetails.length>0 && [...allDetails].every(details=>details.open);
-            button.textContent=allOpen?"全部收起":"全部展开";
-        }
-
-        document.querySelectorAll("#detail-tab-tech details.tech-group").forEach(details=>{
-            details.addEventListener("toggle",()=>{
-                const category=details.dataset.category;
-                if(details.open) techOpenCategories.add(category);
-                else techOpenCategories.delete(category);
-                updateToggleAllLabel();
-            });
-        });
-        document.getElementById("tech-toggle-all")?.addEventListener("click",()=>{
-            const allDetails=document.querySelectorAll("#detail-tab-tech details.tech-group");
-            const allOpen=allDetails.length>0 && [...allDetails].every(details=>details.open);
-            const nextOpen=!allOpen;
-            allDetails.forEach(details=>{
-                details.open=nextOpen;
-                if(nextOpen) techOpenCategories.add(details.dataset.category);
-                else techOpenCategories.delete(details.dataset.category);
-            });
-            updateToggleAllLabel();
-        });
-        updateToggleAllLabel();
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card">${highlightBanner}<div class="detail-header"><div class="detail-title">工艺参数</div><span class="muted">参数时间：${formatTime(result.data_time)}</span></div><div class="excel-sections-wrap">${hasAnyData?`${blocksHtml}${leftoverHtml}`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
 
         if(highlightParameter && highlightParameter.parameter_id && !highlightApplied){
             const target=document.querySelector(`#detail-tab-tech [data-parameter="${CSS.escape(highlightParameter.parameter_id)}"]`);
