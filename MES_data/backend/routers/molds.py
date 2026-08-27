@@ -838,6 +838,7 @@ async def create_mold(
     user: dict = Depends(require_user),
     mold_code: str = Form(..., max_length=100),
     mold_name: str = Form(..., max_length=200),
+    product_code: str | None = Form(None, max_length=100),
     cavities: int = Form(..., ge=1, le=10_000),
     remark: str | None = Form(None, max_length=500),
     cavity_temperatures: str | None = Form(None),
@@ -867,11 +868,11 @@ async def create_mold(
 
     sql_insert_mold = """
         INSERT INTO dbo.molds
-            (mold_code, mold_name, cavities, remark, created_by,
-             requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes,
-             max_output)
+            (mold_code, mold_name, product_code, cavities, remark, created_by,
+            requires_cleaning, cleaning_interval_hours, cleaning_duration_minutes,
+            max_output)
         OUTPUT INSERTED.id
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     try:
@@ -881,6 +882,7 @@ async def create_mold(
                 sql_insert_mold,
                 mold_code.strip(),
                 mold_name.strip(),
+                product_code.strip() if product_code else None,
                 cavities,
                 remark.strip() if remark else None,
                 user["id"],
@@ -957,6 +959,7 @@ async def update_mold(
     user: dict = Depends(require_user),
     mold_code: str = Form(..., max_length=100),
     mold_name: str = Form(..., max_length=200),
+    product_code: str | None = Form(None, max_length=100),
     cavities: int = Form(..., ge=1, le=10_000),
     remark: str | None = Form(None, max_length=500),
     is_active: str = Form("1"),
@@ -1016,17 +1019,17 @@ async def update_mold(
             expected_labels = _cavity_rows_for(cavities)
             temps = _parse_cavity_values(cavity_temperatures, expected_labels)
 
-            # ---- text fields ----
             cursor.execute(
                 """
                 UPDATE dbo.molds
-                SET mold_code = ?, mold_name = ?, cavities = ?, remark = ?,
+                SET mold_code = ?, mold_name = ?, product_code = ?, cavities = ?, remark = ?,
                     is_active = ?, requires_cleaning = ?, cleaning_interval_hours = ?,
                     cleaning_duration_minutes = ?, max_output = ?, updated_at = SYSDATETIME()
                 WHERE id = ?
                 """,
                 mold_code.strip(),
                 mold_name.strip(),
+                product_code.strip() if product_code else None,
                 cavities,
                 remark.strip() if remark else None,
                 1 if is_active == "1" else 0,

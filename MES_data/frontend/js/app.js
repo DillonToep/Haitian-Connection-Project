@@ -439,6 +439,7 @@ let currentPage = "dashboard";
 
         const body = new FormData();
         body.set("mold_code", document.getElementById("edit-mold-code").value);
+        body.set("product_code", document.getElementById("edit-mold-product-code").value || "");
         body.set("mold_name", document.getElementById("edit-mold-name").value);
         body.set("cavities", document.getElementById("mold-edit-cavities").value);
         body.set("remark", document.getElementById("edit-mold-remark").value || "");
@@ -714,6 +715,7 @@ let currentPage = "dashboard";
         const body = new FormData();
         body.set("mold_code", f.get("mold_code"));
         body.set("mold_name", f.get("mold_name"));
+        body.set("product_code", f.get("product_code") || "");
         body.set("cavities", f.get("cavities"));
         body.set("remark", f.get("remark") || "");
         body.set("cavity_temperatures", JSON.stringify(collectCavityTemperatures()));
@@ -1099,7 +1101,7 @@ let currentPage = "dashboard";
         return `<div class="excel-info-strip">
             ${cell("模具编号", textInput("excel-info-mold-code", m.mold_code))}
             ${cell("产品名称", textInput("excel-info-mold-name", m.mold_name))}
-            ${cell("产品编号", staticValue(m.product_code))}
+            ${cell("产品编号", textInput("excel-info-product-code", m.product_code))}
             ${cell("模穴数", numberInput("excel-info-cavities", m.cavities))}
             ${cell("装机设备", staticValue(m.mounted_device_id))}
         </div>`;
@@ -1130,26 +1132,29 @@ let currentPage = "dashboard";
     // shape as the main edit form, filling every other field from the
     // already-loaded mold record (m) so images, cleaning settings, etc.
     // are resubmitted unchanged. No-ops if nothing actually changed.
-    async function saveMoldBasicFieldsFromAdvanced() {
         const codeInput = document.getElementById("excel-info-mold-code");
         const nameInput = document.getElementById("excel-info-mold-name");
+        const productCodeInput = document.getElementById("excel-info-product-code");
         const cavitiesInput = document.getElementById("excel-info-cavities");
-        if (!codeInput || !nameInput || !cavitiesInput) return; // strip wasn't rendered (no mold loaded)
+        if (!codeInput || !nameInput || !productCodeInput || !cavitiesInput) return;
 
         const m = molds.find(x => x.id === editMoldId);
         if (!m) return;
 
         const moldCode = codeInput.value.trim();
         const moldName = nameInput.value.trim();
+        const productCode = productCodeInput.value.trim();
         const cavities = Math.max(1, Number(cavitiesInput.value) || 1);
 
-        if (moldCode === m.mold_code && moldName === m.mold_name && cavities === m.cavities) return;
+        if (moldCode === m.mold_code && moldName === m.mold_name
+            && productCode === (m.product_code || "") && cavities === m.cavities) return;
         if (!moldCode) throw new Error("模具编号不能为空");
         if (!moldName) throw new Error("产品名称不能为空");
 
         const body = new FormData();
         body.set("mold_code", moldCode);
         body.set("mold_name", moldName);
+        body.set("product_code", productCode);
         body.set("cavities", String(cavities));
         body.set("remark", m.remark || "");
         body.set("is_active", m.is_active ? "1" : "0");
@@ -1355,6 +1360,7 @@ let currentPage = "dashboard";
             const m = molds.find(x => x.id === editMoldId);
             if (m) {
                 document.getElementById("edit-mold-code").value = m.mold_code;
+                document.getElementById("edit-mold-product-code").value = m.product_code || "";
                 document.getElementById("edit-mold-name").value = m.mold_name;
                 document.getElementById("mold-edit-cavities").value = m.cavities;
                 document.getElementById("mold-edit-current-device").textContent =
