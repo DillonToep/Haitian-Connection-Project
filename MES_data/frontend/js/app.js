@@ -43,7 +43,7 @@ let currentPage = "dashboard";
     const COMPARE_COLORS = ["#6BAB90","#5b8def","#c98a3c","#5E4C5A","#c2555c","#8a6fdb","#FFD400"];
     const CHANGING_MOLDS_STALL_MS = 60000;
     const RECENT_PARAM_CHANGE_MS = 60000;
-
+    const LOCAL_PARAM_STORAGE_PREFIX = "mes-local-param:";
     const spcFields = {
         cycle_number:["模数",""],
         cycle_time:["周期时间"," s"],
@@ -760,7 +760,7 @@ let currentPage = "dashboard";
         {
             title: "温度设定 ±10℃",
             colLabels: ["射嘴", "1段", "2段", "3段", "4段", "5段", "6段"],
-            rows: [{ label: "温度", tags: ["TS1", "TS2", "TS3", "TS4", "TS5", "TS6", "TS7"] }],
+            rows: [{ label: "温度", tags: ["local:nozzle_temp", "TS1", "TS2", "TS3", "TS4", "TS5", "TS6"] }],
         },
         {
             title: "射胶设定 ±10%",
@@ -948,6 +948,29 @@ let currentPage = "dashboard";
         },
     ];
 
+
+    function localParamStorageKey(tag) {
+        const scope = currentMachineTypeId ? `mt${currentMachineTypeId}` : `mold${editMoldId}`;
+        return `${LOCAL_PARAM_STORAGE_PREFIX}${scope}:${tag}`;
+    }
+    function getLocalParamValue(tag) {
+        try { return localStorage.getItem(localParamStorageKey(tag)) || ""; }
+        catch (error) { return ""; }
+    }
+    function setLocalParamValue(tag, value) {
+        try { localStorage.setItem(localParamStorageKey(tag), value); }
+        catch (error) { /* ignore storage errors -- value just won't persist */ }
+    }
+
+    function excelLocalCell(tag, includeValue = true) {
+        if (!includeValue) return '<td></td>'; // 默认参数设置 has no mold/machine-type to scope this to
+        const value = getLocalParamValue(tag);
+        return `<td class="excel-param-cell-local" data-local-parameter="${escapeHtml(tag)}">
+            <input class="excel-value-input excel-local-input" type="text" placeholder="仅本机保存"
+                value="${value ? escapeHtml(value) : ""}">
+        </td>`;
+    }
+
     function extendedFieldCellHtml(field) {
         if (field.type === "label") {
             return `<td class="excel-extended-cell excel-extended-cell-heading">
@@ -1034,6 +1057,7 @@ let currentPage = "dashboard";
 
     function excelParamCell(paramById, tag, includeValue = true) {
         if (!tag) return '<td></td>';
+        if (typeof tag === "string" && tag.startsWith("local:")) return excelLocalCell(tag, includeValue);
         const p = paramById.get(tag);
         if (!p) return '<td class="excel-cell-missing">--</td>';
         const mode = p.tolerance_mode || "percent";
@@ -1062,7 +1086,7 @@ let currentPage = "dashboard";
         const headerCells = block.colLabels.map(label => `<th>${escapeHtml(label)}</th>`).join("");
         const bodyRows = block.rows.map((row, i) => {
             const cells = row.tags.map(tag => {
-                if (tag) usedTags.add(tag);
+                if (tag && !String(tag).startsWith("local:")) usedTags.add(tag);
                 return excelParamCell(paramById, tag, includeValue);
             }).join("");
             const pad = "<td></td>".repeat(Math.max(0, block.colLabels.length - row.tags.length));
@@ -1187,6 +1211,15 @@ let currentPage = "dashboard";
 
         if (readOnly) {
             document.querySelectorAll("#mold-advanced-groups .excel-param-cell input, #mold-advanced-groups .excel-param-cell select")
+                .forEach(el => { el.disabled = true; });
+        }
+
+        document.querySelectorAll("#mold-advanced-groups .excel-local-input").forEach(input => {
+            const tag = input.closest("[data-local-parameter]").dataset.localParameter;
+            input.addEventListener("change", () => setLocalParamValue(tag, input.value));
+        });
+        if (readOnly) {
+            document.querySelectorAll("#mold-advanced-groups .excel-param-cell input, #mold-advanced-groups .excel-param-cell select, #mold-advanced-groups .excel-local-input")
                 .forEach(el => { el.disabled = true; });
         }
 
