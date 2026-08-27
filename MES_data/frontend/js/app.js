@@ -801,12 +801,11 @@ let currentPage = "dashboard";
         },
         {
             title: "储料设定 ±10%",
-            colLabels: ["1段", "2段", "3段", "4段", "5段"],
+            colLabels: ["1段", "2段", "3段", "抽胶", "背压", "螺杆位置"],
             rows: [
-                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", "PLV5"] },
-                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLP5"] },
-                { label: "背压", tags: ["PLBP1", "PLBP2", "PLBP3", "PLBP4", "PLBP5"] },
-                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", "PLS5"] },
+                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", null, null] },
+                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLBP1", "PLS5"] },
+                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", null, null] },
             ],
         },
         {
