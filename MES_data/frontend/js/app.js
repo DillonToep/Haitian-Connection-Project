@@ -1300,10 +1300,8 @@ let currentPage = "dashboard";
         const p = paramById.get(tag);
         const hasValue = p && p.value != null && p.value !== "";
         const changed = highlightParameter && p && p.parameter_id === highlightParameter.parameter_id;
-        if (!hasValue) {
-            return `<td class="excel-param-cell-readonly excel-cell-missing" data-parameter="${escapeHtml(tag)}">--</td>`;
-        }
-        return `<td class="excel-param-cell-readonly${changed ? " parameter-changed" : ""}" data-parameter="${escapeHtml(tag)}">${escapeHtml(p.value)}</td>`;
+        const boxClass = `excel-value-readonly${hasValue ? "" : " excel-cell-missing"}${changed ? " parameter-changed" : ""}`;
+        return `<td class="excel-param-cell-readonly" data-parameter="${escapeHtml(tag)}"><div class="${boxClass}">${hasValue ? escapeHtml(p.value) : "--"}</div></td>`;
     }
 
     function techBlockTableHtml(block, paramById, usedTags) {
@@ -1321,7 +1319,7 @@ let currentPage = "dashboard";
             <tbody>${bodyRows}</tbody>
         </table>`;
     }
-    
+
     function techLeftoverBlocksHtml(parameters, usedTags) {
         const byCategory = new Map();
         parameters.forEach(p => {
@@ -1339,7 +1337,7 @@ let currentPage = "dashboard";
                 const labelCell = i === 0
                     ? `<th class="excel-block-label" rowspan="${byCategory.get(category).length}">${escapeHtml(category)}</th>`
                     : "";
-                return `<tr>${labelCell}<th>${escapeHtml(p.label)}</th><td class="excel-param-cell-readonly${changed ? " parameter-changed" : ""}" data-parameter="${escapeHtml(p.parameter_id)}">${escapeHtml(p.value)}</td></tr>`;
+                return `<tr>${labelCell}<th>${escapeHtml(p.label)}</th><td class="excel-param-cell-readonly" data-parameter="${escapeHtml(p.parameter_id)}"><div class="excel-value-readonly${changed ? " parameter-changed" : ""}">${escapeHtml(p.value)}</div></td></tr>`;
             }).join("");
             return `<table class="excel-style-table excel-block-table excel-block-table-readonly">
                 <thead><tr><th></th><th></th><th>数值</th></tr></thead>
