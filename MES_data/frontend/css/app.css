@@ -612,8 +612,6 @@ html[data-theme="dark"] .excel-cell-missing { color: #4a5260; }
     border: 1px solid #444b57;
 }
 
-/* Row-spanning block-name cell on the left of each table, mirroring
-   the sheet's "射胶设定±10%" style label that spans its whole block. */
 .excel-block-label {
     width: 62px;
     padding: 6px 4px;

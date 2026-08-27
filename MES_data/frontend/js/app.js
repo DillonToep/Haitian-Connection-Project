@@ -756,11 +756,30 @@ let currentPage = "dashboard";
             };
         });
     }
-    const EXCEL_BLOCKS = [
+    // ---- 工艺参数 grid blocks ------------------------------------------
+    // Single source of truth for BOTH the 设备看板 -> 工艺参数 tab (read-only
+    // live readings, rendered via techBlockTableHtml/techParamCell) and
+    // 模具管理 -> 高级工艺参数 / 默认参数设置 (editable target value + tolerance,
+    // rendered via excelBlockTableHtml/excelParamCell). Keeping one array
+    // means the two pages can never drift apart in which parameters/rows/
+    // columns they show -- a tag added here shows up identically in both
+    // places. Titles that already carried a default-tolerance hint (the
+    // original 7 blocks, e.g. "±10%") keep that hint; newly-merged blocks
+    // use a plain title since there's no established default tolerance
+    // convention for them yet.
+    //
+    // A few tags are categorical/counter values rather than settable
+    // specs (see NON_EDITABLE_TAGS below, mirroring the backend's
+    // EXCLUDED_FROM_TARGETS in parameter_labels.py) -- those still show up
+    // here so their live reading is visible in 工艺参数, but excelParamCell
+    // renders them as a plain "不适用" cell instead of an editable
+    // value/tolerance input, since the backend silently drops any target/
+    // tolerance saved against them.
+    const PARAMETER_GRID_BLOCKS = [
         {
             title: "温度设定 ±10℃",
-            colLabels: ["射嘴", "1段", "2段", "3段", "4段", "5段", "6段"],
-            rows: [{ label: "温度", tags: ["local:nozzle_temp", "TS1", "TS2", "TS3", "TS4", "TS5", "TS6"] }],
+            colLabels: ["射嘴", "1段", "2段", "3段", "4段", "5段", "6段", "7段"],
+            rows: [{ label: "温度", tags: ["local:nozzle_temp", "TS1", "TS2", "TS3", "TS4", "TS5", "TS6", "TS7"] }],
         },
         {
             title: "射胶设定 ±10%",
@@ -768,7 +787,7 @@ let currentPage = "dashboard";
             rows: [
                 { label: "速度", tags: ["IV1", "IV2", "IV3", "IV4", "IV5", "IV6"] },
                 { label: "压力", tags: ["IP1", "IP2", "IP3", "IP4", "IP5", "IP6"] },
-                { label: "位置", tags: ["IS1", "IS2", "IS3", "IS4", "IS5"] },
+                { label: "位置", tags: ["IS1", "IS2", "IS3", "IS4", "IS5", null] },
             ],
         },
         {
@@ -782,11 +801,23 @@ let currentPage = "dashboard";
         },
         {
             title: "储料设定 ±10%",
-            colLabels: ["1段", "2段", "3段", "抽胶", "背压", "螺杆位置"],
+            colLabels: ["1段", "2段", "3段", "4段", "5段"],
             rows: [
-                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", null, null] },
-                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLBP1", "PLS5"] },
-                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", null, null] },
+                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", "PLV5"] },
+                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLP5"] },
+                { label: "背压", tags: ["PLBP1", "PLBP2", "PLBP3", "PLBP4", "PLBP5"] },
+                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", "PLS5"] },
+            ],
+        },
+        {
+            title: "射退设定",
+            colLabels: ["射退1", "射退2"],
+            rows: [
+                { label: "速度", tags: [null, "SBV2"] },
+                { label: "压力", tags: [null, "SBP2"] },
+                { label: "位置", tags: ["SBS1", "SBS2"] },
+                { label: "时间(S)", tags: ["SBT1", "SBT2"] },
+                { label: "模式", tags: [null, "SBM2"] },
             ],
         },
         {
@@ -809,90 +840,6 @@ let currentPage = "dashboard";
         },
         {
             title: "顶针设定 ±10%",
-            colLabels: ["顶进", "顶退"],
-            rows: [
-                { label: "速度", tags: ["EFV1", "EBV1"] },
-                { label: "压力", tags: ["EFP1", "EBP1"] },
-                { label: "位置", tags: ["EFS1", "EBS1"] },
-                { label: "时间(S)", tags: ["EFDT", "EBDT"] },
-            ],
-        },
-    ];
-
-    // ---- 工艺参数 tab (device dashboard) --------------------------------
-    // Read-only version of the 模具管理 Excel-grid layout, covering every
-    // tag the 工艺参数 tab used to show under its old collapsible-category
-    // rendering. Grouped by function (same idea as EXCEL_BLOCKS above) so
-    // the live tab reads like a spec sheet instead of a flat list. Unlike
-    // EXCEL_BLOCKS, there's no "local:" nozzle-temp cell (that's a
-    // manually-entered mold-spec value, not something a live machine
-    // reports) and no tolerance/value inputs -- just the current reading,
-    // left blank when the device hasn't reported that tag.
-    const TECH_GRID_BLOCKS = [
-        {
-            title: "温度设定",
-            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段", "7段"],
-            rows: [{ label: "温度", tags: ["TS1", "TS2", "TS3", "TS4", "TS5", "TS6", "TS7"] }],
-        },
-        {
-            title: "射胶设定",
-            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段"],
-            rows: [
-                { label: "速度", tags: ["IV1", "IV2", "IV3", "IV4", "IV5", "IV6"] },
-                { label: "压力", tags: ["IP1", "IP2", "IP3", "IP4", "IP5", "IP6"] },
-                { label: "位置", tags: ["IS1", "IS2", "IS3", "IS4", "IS5", null] },
-            ],
-        },
-        {
-            title: "保压设定",
-            colLabels: ["1段", "2段", "3段", "4段", "5段", "6段"],
-            rows: [
-                { label: "速度", tags: ["PV1", "PV2", "PV3", "PV4", "PV5", "PV6"] },
-                { label: "压力", tags: ["PP1", "PP2", "PP3", "PP4", "PP5", "PP6"] },
-                { label: "时间(S)", tags: ["PT1", "PT2", "PT3", "PT4", "PT5", "PT6"] },
-            ],
-        },
-        {
-            title: "储料设定",
-            colLabels: ["1段", "2段", "3段", "4段", "5段"],
-            rows: [
-                { label: "速度", tags: ["PLV1", "PLV2", "PLV3", "PLV4", "PLV5"] },
-                { label: "压力", tags: ["PLP1", "PLP2", "PLP3", "PLP4", "PLP5"] },
-                { label: "背压", tags: ["PLBP1", "PLBP2", "PLBP3", "PLBP4", "PLBP5"] },
-                { label: "位置", tags: ["PLS1", "PLS2", "PLS3", "PLS4", "PLS5"] },
-            ],
-        },
-        {
-            title: "射退设定",
-            colLabels: ["射退1", "射退2"],
-            rows: [
-                { label: "速度", tags: [null, "SBV2"] },
-                { label: "压力", tags: [null, "SBP2"] },
-                { label: "位置", tags: ["SBS1", "SBS2"] },
-                { label: "时间(S)", tags: ["SBT1", "SBT2"] },
-                { label: "模式", tags: [null, "SBM2"] },
-            ],
-        },
-        {
-            title: "锁模设定",
-            colLabels: ["1段", "2段", "3段", "4段", "高压"],
-            rows: [
-                { label: "速度", tags: ["MCV1", "MCV2", "MCV3", "MCV4", "MCV5"] },
-                { label: "压力", tags: ["MCP1", "MCP2", "MCP3", "MCP4", "MCP5"] },
-                { label: "位置", tags: ["MCS1", "MCS2", "MCS3", "MCS4", "MCS5"] },
-            ],
-        },
-        {
-            title: "开模设定",
-            colLabels: ["1段", "2段", "3段", "4段", "终止"],
-            rows: [
-                { label: "速度", tags: ["MOV1", "MOV2", "MOV3", "MOV4", "MOV5"] },
-                { label: "压力", tags: ["MOP1", "MOP2", "MOP3", "MOP4", "MOP5"] },
-                { label: "位置", tags: ["MOS1", "MOS2", "MOS3", "MOS4", "MOS5"] },
-            ],
-        },
-        {
-            title: "顶针设定",
             colLabels: ["顶进1", "顶进2", "顶进3", "顶退1", "顶退2"],
             rows: [
                 { label: "速度", tags: ["EFV1", "EFV2", "EFV3", "EBV1", "EBV2"] },
@@ -1007,11 +954,21 @@ let currentPage = "dashboard";
         },
     ];
 
+    // Tags that are categorical status codes or monotonically-increasing
+    // counters rather than settable specs (mirrors EXCLUDED_FROM_TARGETS
+    // in backend/parameter_labels.py). PARAMETER_GRID_BLOCKS still lists
+    // them so their live value shows up in 工艺参数, but excelParamCell
+    // renders them as a plain non-editable cell in the 高级工艺参数 /
+    // 默认参数设置 dialogs -- the backend silently ignores any
+    // target/tolerance submitted for these tags (see valid_tags in
+    // molds.py), so showing an editable box for them would be misleading.
+    const NON_EDITABLE_TAGS = new Set(["CYCN", "PARTN", "STS", "ASTS", "wm"]);
+
     // Chinese category names the backend already attaches to each
     // parameter (see categorize()/categorize_tag() in parameter_labels.py)
     // -- used only as the block title for the safety-net "leftover" block
     // below, so a tag never silently disappears just because
-    // TECH_GRID_BLOCKS forgot to list it.
+    // PARAMETER_GRID_BLOCKS forgot to list it.
     const TECH_LEFTOVER_CATEGORY_ORDER = ["温度参数", "压力参数", "速度参数", "位置参数", "时间参数", "模式设置", "其他参数", "未知参数"];
 
 
@@ -1252,6 +1209,9 @@ let currentPage = "dashboard";
 
     function excelParamCell(paramById, tag, includeValue = true) {
         if (!tag) return '<td></td>';
+        if (NON_EDITABLE_TAGS.has(tag)) {
+            return `<td class="excel-param-cell-readonly" data-parameter="${escapeHtml(tag)}"><div class="excel-value-readonly excel-cell-missing">不适用</div></td>`;
+        }
         if (typeof tag === "string" && tag.startsWith("local:")) return excelLocalCell(tag, includeValue);
         const p = paramById.get(tag);
         if (!p) return '<td class="excel-cell-missing">--</td>';
@@ -1445,7 +1405,7 @@ let currentPage = "dashboard";
         const paramById = new Map(parameters.map(p => [p.parameter_id, p]));
         const usedTags = new Set();
 
-        const blocksHtml = EXCEL_BLOCKS
+        const blocksHtml = PARAMETER_GRID_BLOCKS
             .map(block => excelBlockTableHtml(block, paramById, usedTags))
             .join("");
 
@@ -1657,7 +1617,7 @@ let currentPage = "dashboard";
         const paramById = new Map(parameters.map(p => [p.parameter_id, p]));
         const usedTags = new Set();
 
-        const blocksHtml = EXCEL_BLOCKS
+        const blocksHtml = PARAMETER_GRID_BLOCKS
             .map(block => excelBlockTableHtml(block, paramById, usedTags, false))
             .join("");
 
@@ -2390,7 +2350,7 @@ let currentPage = "dashboard";
         }
 
         const usedTags=new Set();
-        const blocksHtml=TECH_GRID_BLOCKS.map(block=>techBlockTableHtml(block,paramById,usedTags)).join("");
+        const blocksHtml=PARAMETER_GRID_BLOCKS.map(block=>techBlockTableHtml(block,paramById,usedTags)).join("");
         const leftoverHtml=techLeftoverBlocksHtml(result.parameters,usedTags);
         const hasAnyData=result.parameters.some(p=>p.value!=null && p.value!=="");
 
