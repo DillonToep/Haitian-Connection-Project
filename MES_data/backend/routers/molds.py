@@ -1225,11 +1225,13 @@ def assign_mold(
                 raise HTTPException(status_code=400, detail="该模具已停用，无法分配")
 
             machine_type = cursor.execute(
-                "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
+                "SELECT id, machine_type FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
                 data.machine_type_id, data.mold_id,
             ).fetchone()
             if machine_type is None:
                 raise HTTPException(status_code=400, detail="所选机型不属于该模具")
+
+            _check_machine_type_match(cursor, device_id, machine_type.machine_type, data.force)
 
             cursor.execute(
                 """
