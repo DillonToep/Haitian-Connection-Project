@@ -2871,22 +2871,47 @@ let currentPage = "dashboard";
         await refreshFavoritesList();
     }
 
+    // Backend already returns favorites ordered named-first (newest first),
+    // then auto-backups (see apply_favorite_to_schematic) also newest
+    // first -- this just renders that order and drops in a one-time
+    // divider + muted styling at the boundary so the grouping is visible,
+    // not just implied by position in the list.
+    function favoriteListRowHtml(f, readOnly) {
+        const backupBadge = f.is_backup ? '<span class="badge offline" style="margin-left:8px;font-size:10.5px;">自动备份</span>' : "";
+        return `<div class="detail-card favorite-list-row${f.is_backup ? " favorite-list-row-backup" : ""}" data-id="${f.id}" style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;${f.is_backup ? "opacity:.8;" : ""}">
+            <div>
+                <strong>${escapeHtml(f.name)}</strong>${backupBadge}
+                <div class="muted" style="font-size:12px;margin-top:3px;">设备 ${escapeHtml(f.device_id)} · 采集于 ${formatTime(f.captured_data_time)} · 更新于 ${formatTime(f.updated_at)}</div>
+            </div>
+            <div class="actions" style="margin:0;">
+                <button type="button" class="secondary-button favorite-apply-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>应用到当前参数</button>
+                <button type="button" class="danger-button favorite-delete-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>删除</button>
+            </div>
+        </div>`;
+    }
+
     async function refreshFavoritesList() {
         const body = document.getElementById("favorites-list-body");
         try {
             const favorites = await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(favoritesListMachineTypeId)}/favorites`);
             const readOnly = currentUser.role === "viewer";
-            body.innerHTML = favorites.length ? favorites.map(f => `
-                <div class="detail-card favorite-list-row" data-id="${f.id}" style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-                    <div>
-                        <strong>${escapeHtml(f.name)}</strong>
-                        <div class="muted" style="font-size:12px;margin-top:3px;">设备 ${escapeHtml(f.device_id)} · 采集于 ${formatTime(f.captured_data_time)} · 更新于 ${formatTime(f.updated_at)}</div>
-                    </div>
-                    <div class="actions" style="margin:0;">
-                        <button type="button" class="secondary-button favorite-apply-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>应用到当前参数</button>
-                        <button type="button" class="danger-button favorite-delete-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>删除</button>
-                    </div>
-                </div>`).join("") : '<div class="empty">该机型尚未保存任何收藏</div>';
+
+            if (!favorites.length) {
+                body.innerHTML = '<div class="empty">该机型尚未保存任何收藏</div>';
+            } else {
+                const firstBackupIndex = favorites.findIndex(f => f.is_backup);
+                const rowsHtml = favorites.map((f, i) => {
+                    // A single divider right before the first backup row --
+                    // only rendered when the list actually has both named
+                    // favorites and backups, so a list of only one kind
+                    // never shows a pointless lone divider.
+                    const divider = (i === firstBackupIndex && firstBackupIndex > 0)
+                        ? '<div class="favorite-list-divider muted" style="font-size:11.5px;padding:6px 2px 2px;">早期版本 / 自动备份</div>'
+                        : "";
+                    return divider + favoriteListRowHtml(f, readOnly);
+                }).join("");
+                body.innerHTML = rowsHtml;
+            }
 
             body.querySelectorAll(".favorite-list-row").forEach(row => row.addEventListener("click", event => {
                 if (event.target.closest("button")) return;

@@ -159,8 +159,8 @@ def apply_favorite_to_schematic(
                 cursor.execute(
                     """
                     INSERT INTO dbo.mold_favorite_snapshots
-                        (machine_type_id, name, device_id, captured_data_time, parameters_json, created_by)
-                    VALUES (?, ?, N'', SYSUTCDATETIME(), ?, ?)
+                        (machine_type_id, name, device_id, captured_data_time, parameters_json, created_by, is_backup)
+                    VALUES (?, ?, N'', SYSUTCDATETIME(), ?, ?, 1)
                     """,
                     machine_type_id,
                     backup_name,
