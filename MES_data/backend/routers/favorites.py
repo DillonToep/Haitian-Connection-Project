@@ -17,12 +17,51 @@ router = APIRouter(prefix="/api", tags=["favorites"])
 def _json_safe(value):
     """pyodbc returns numeric columns as Decimal, which json.dumps()
     cannot serialize on its own (raises TypeError -> uncaught -> bare 500,
-    since it's not a pyodbc.Error). Normalize to a plain float so
-    parameters_json can always be built successfully."""
+    since it's not a pyodbc.Error). Normalize whole-number Decimals to
+    int (so a reading of 25 is stored/serialized as "25", not "25.0") and
+    only fall back to float for values that actually have a fractional
+    part. Storing "25.0" here is what made a hand-typed "25" schematic
+    value compare as different from an otherwise-identical device
+    reading -- see _values_equal below for the other half of the fix."""
     if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
         return float(value)
     return value
 
+
+def _values_equal(a, b) -> bool:
+    """True if two saved parameter values represent the same value,
+    regardless of which pipeline produced their string/number form (a
+    live device reading normalized by _json_safe, a hand-typed 高级工艺
+    参数 value, or a value round-tripped through JSON). Falls back to
+    plain equality for anything that doesn't parse as a number, so
+    non-numeric/enum values (e.g. mode codes as text) still compare
+    exactly as before."""
+    if a == b:
+        return True
+    try:
+        return float(a) == float(b)
+    except (TypeError, ValueError):
+        return False
+
+
+def _snapshot_value_map(parameters: list[dict]) -> dict:
+    """Reduces a parameters snapshot (parameter_id/label/category/value)
+    down to just {parameter_id: value}, so two snapshots can be compared
+    for meaningful equality regardless of list order or the (derived,
+    always-identical-for-a-given-tag) label/category fields."""
+    return {p.get("parameter_id"): p.get("value") for p in parameters}
+
+
+def _snapshot_maps_equal(a: dict, b: dict) -> bool:
+    """Numeric-aware comparison of two {parameter_id: value} maps (see
+    _values_equal) -- replaces a plain dict `==` comparison, which failed
+    whenever one side's numeric value had a ".0" suffix and the other
+    didn't (same number, different string form)."""
+    if a.keys() != b.keys():
+        return False
+    return all(_values_equal(a[key], b[key]) for key in a)
 
 def _snapshot_value_map(parameters: list[dict]) -> dict:
     """Reduces a parameters snapshot (parameter_id/label/category/value)
@@ -281,7 +320,7 @@ def create_favorite_from_changelog(
             if existing is not None:
                 existing_values = _snapshot_value_map(json.loads(existing.parameters_json))
                 new_values = _snapshot_value_map(parameters)
-                if existing_values == new_values:
+                if _snapshot_maps_equal(existing_values, new_values):
                     return {
                         "status": "ok",
                         "unchanged": True,
