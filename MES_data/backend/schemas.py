@@ -69,3 +69,12 @@ class MachineTypeAssignmentRequest(BaseModel):
     machine_type_id: int = Field(gt=0)
     force: bool = False
 
+
+class FavoriteCreateRequest(BaseModel):
+    """Saves a full 工艺参数 snapshot (captured from a 变更记录 row) against
+    a Mold + Machine Type. Uniqueness is (machine_type_id, name);
+    overwrite=True replaces an existing favorite with that name instead
+    of erroring."""
+    machine_type_id: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=200)
+    overwrite: bool = False

@@ -1489,11 +1489,19 @@ let currentPage = "dashboard";
                     ${mt.is_main ? '<span class="badge production" style="margin-left:8px;">主要机型</span>' : ""}
                 </div>
                 <div class="actions" style="margin:0;">
+                    <button type="button" class="secondary-button view-favorites-button" data-id="${mt.id}" data-name="${escapeHtml(mt.machine_type)}">收藏</button>
                     <button type="button" class="secondary-button rename-machine-type-button" data-id="${mt.id}" data-name="${escapeHtml(mt.machine_type)}" ${readOnly?"disabled":""}>重命名</button>
                     ${mt.is_main ? "" : `<button type="button" class="secondary-button set-main-button" data-id="${mt.id}" ${readOnly?"disabled":""}>设为主要</button>`}
                     <button type="button" class="danger-button delete-machine-type-button" data-id="${mt.id}" ${readOnly || machineTypesCache.length<=1 ?"disabled":""}>删除</button>
                 </div>
             </div>`).join("") : '<div class="empty">该模具尚未配置机型</div>';
+
+        listEl.querySelectorAll(".view-favorites-button").forEach(button => {
+            button.addEventListener("click", event => {
+                event.stopPropagation();
+                openFavoritesListDialog(Number(button.dataset.id), button.dataset.name);
+            });
+        });
 
         listEl.querySelectorAll("[data-machine-type-id]").forEach(card => {
             card.addEventListener("click", event => {
@@ -2649,9 +2657,16 @@ let currentPage = "dashboard";
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
         const table = document.getElementById("changelog-table");
         table.innerHTML = rows.length
-            ? `<table><thead><tr><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
-        table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",()=>openChangelogDetail(row.dataset.id)));
+        table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",event=>{
+            if(event.target.closest(".favorite-star-button")) return;
+            openChangelogDetail(row.dataset.id);
+        }));
+        table.querySelectorAll(".favorite-star-button").forEach(button=>button.addEventListener("click",event=>{
+            event.stopPropagation();
+            openFavoriteSaveDialog(button.dataset.changelogId);
+        }));
     }
 
     // The 变更记录 tab is split into a "shell" (card header + filter bar)
@@ -2736,10 +2751,11 @@ let currentPage = "dashboard";
         const resultsEl = document.getElementById("device-changelog-results");
         if (!resultsEl) return;
         resultsEl.innerHTML = rows.length
-            ? `<table><thead><tr><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         resultsEl.querySelectorAll(".changelog-row").forEach(row => {
-            row.addEventListener("click", () => {
+            row.addEventListener("click", event => {
+                if (event.target.closest(".favorite-star-button")) return;
                 highlightParameter = {
                     parameter_id: row.dataset.parameter,
                     previous_value: row.dataset.previous,
@@ -2749,6 +2765,10 @@ let currentPage = "dashboard";
                 switchDetailTab("tech");
             });
         });
+        resultsEl.querySelectorAll(".favorite-star-button").forEach(button => button.addEventListener("click", event => {
+            event.stopPropagation();
+            openFavoriteSaveDialog(button.dataset.changelogId);
+        }));
     }
 
     async function openChangelogDetail(id) {
@@ -2760,6 +2780,145 @@ let currentPage = "dashboard";
             });
         } catch(error){ alert(error.message); }
     }
+
+    // ---- 收藏 (favorites) --------------------------------------------
+    // A favorite is a full 工艺参数 snapshot captured from a 变更记录 row
+    // at the moment it happened (see POST /api/changelog/{id}/favorite),
+    // saved against a Mold + Machine Type -- same scope as 高级工艺参数.
+
+    function favoriteStarButtonHtml(changelogId) {
+        return `<button type="button" class="favorite-star-button" data-changelog-id="${changelogId}" title="收藏该时刻的工艺参数快照">☆</button>`;
+    }
+
+    let favoriteSaveChangelogId = null;
+
+    async function openFavoriteSaveDialog(changelogId) {
+        favoriteSaveChangelogId = changelogId;
+        document.getElementById("favorite-save-name").value = "";
+        document.getElementById("favorite-save-status").textContent = "";
+
+        const moldSelect = document.getElementById("favorite-save-mold-select");
+        const list = await requestJson("/api/molds");
+        const active = list.filter(m => m.is_active);
+        moldSelect.innerHTML = active.map(m => `<option value="${m.id}">${escapeHtml(m.mold_code)} · ${escapeHtml(m.mold_name)}</option>`).join("");
+        if (active.length) await populateFavoriteMachineTypeSelect(active[0].id);
+
+        document.getElementById("favorite-save-dialog").showModal();
+    }
+
+    async function populateFavoriteMachineTypeSelect(moldId) {
+        const select = document.getElementById("favorite-save-machine-type-select");
+        select.innerHTML = '<option value="">正在读取机型……</option>';
+        try {
+            const types = await loadMachineTypesFor(moldId);
+            select.innerHTML = types.length
+                ? types.map(mt => `<option value="${mt.id}">${escapeHtml(mt.machine_type)}${mt.is_main ? "（主要）" : ""}</option>`).join("")
+                : '<option value="">该模具尚未配置机型</option>';
+        } catch (error) {
+            select.innerHTML = `<option value="">读取失败：${escapeHtml(error.message)}</option>`;
+        }
+    }
+
+    document.getElementById("favorite-save-mold-select").addEventListener("change", e => {
+        if (e.target.value) populateFavoriteMachineTypeSelect(Number(e.target.value));
+    });
+    document.getElementById("favorite-save-cancel").addEventListener("click", () => document.getElementById("favorite-save-dialog").close());
+    document.getElementById("favorite-save-close-x").addEventListener("click", () => document.getElementById("favorite-save-dialog").close());
+
+    async function submitFavoriteSave(overwrite) {
+        const machineTypeId = document.getElementById("favorite-save-machine-type-select").value;
+        const name = document.getElementById("favorite-save-name").value.trim();
+        const statusEl = document.getElementById("favorite-save-status");
+        if (!machineTypeId) { statusEl.textContent = "请选择机型"; return; }
+        if (!name) { statusEl.textContent = "请输入收藏名称"; return; }
+        try {
+            const response = await fetch(`/api/changelog/${encodeURIComponent(favoriteSaveChangelogId)}/favorite`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ machine_type_id: Number(machineTypeId), name, overwrite }),
+            });
+            if (response.status === 409) {
+                const body = await response.json().catch(() => ({}));
+                const message = (body.detail && body.detail.message) || "该名称已存在，是否覆盖？";
+                if (confirm(message)) { await submitFavoriteSave(true); return; }
+                return;
+            }
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error((body.detail && body.detail.message) || body.detail || `HTTP ${response.status}`);
+            document.getElementById("favorite-save-dialog").close();
+            alert("收藏成功");
+        } catch (error) {
+            statusEl.textContent = error.message;
+        }
+    }
+    document.getElementById("favorite-save-confirm").addEventListener("click", () => submitFavoriteSave(false));
+
+    // ---- Favorites list + viewer (opened from the 机型 dialog) --------
+
+    let favoritesListMachineTypeId = null;
+
+    async function openFavoritesListDialog(machineTypeId, machineTypeName) {
+        favoritesListMachineTypeId = machineTypeId;
+        document.getElementById("favorites-list-title").textContent = machineTypeName;
+        const body = document.getElementById("favorites-list-body");
+        body.innerHTML = '<div class="empty">正在读取……</div>';
+        document.getElementById("favorites-list-dialog").showModal();
+        await refreshFavoritesList();
+    }
+
+    async function refreshFavoritesList() {
+        const body = document.getElementById("favorites-list-body");
+        try {
+            const favorites = await requestJson(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(favoritesListMachineTypeId)}/favorites`);
+            const readOnly = currentUser.role === "viewer";
+            body.innerHTML = favorites.length ? favorites.map(f => `
+                <div class="detail-card favorite-list-row" data-id="${f.id}" style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                    <div>
+                        <strong>${escapeHtml(f.name)}</strong>
+                        <div class="muted" style="font-size:12px;margin-top:3px;">设备 ${escapeHtml(f.device_id)} · 采集于 ${formatTime(f.captured_data_time)} · 更新于 ${formatTime(f.updated_at)}</div>
+                    </div>
+                    <button type="button" class="danger-button favorite-delete-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>删除</button>
+                </div>`).join("") : '<div class="empty">该机型尚未保存任何收藏</div>';
+
+            body.querySelectorAll(".favorite-list-row").forEach(row => row.addEventListener("click", event => {
+                if (event.target.closest("button")) return;
+                openFavoriteViewDialog(Number(row.dataset.id));
+            }));
+            body.querySelectorAll(".favorite-delete-button").forEach(button => button.addEventListener("click", async event => {
+                event.stopPropagation();
+                if (!confirm("确认删除该收藏？此操作不可恢复。")) return;
+                try {
+                    await requestJson(`/api/favorites/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
+                    await refreshFavoritesList();
+                } catch (error) { alert(error.message); }
+            }));
+        } catch (error) {
+            body.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+        }
+    }
+    document.getElementById("favorites-list-close").addEventListener("click", () => document.getElementById("favorites-list-dialog").close());
+
+    async function openFavoriteViewDialog(favoriteId) {
+        document.getElementById("favorite-view-title").textContent = "";
+        document.getElementById("favorite-view-meta").textContent = "正在读取……";
+        document.getElementById("favorite-view-groups").innerHTML = "";
+        document.getElementById("favorite-view-dialog").showModal();
+        try {
+            const favorite = await requestJson(`/api/favorites/${encodeURIComponent(favoriteId)}`);
+            document.getElementById("favorite-view-title").textContent = favorite.name;
+            document.getElementById("favorite-view-meta").textContent =
+                `设备 ${favorite.device_id} · 采集于 ${formatTime(favorite.captured_data_time)}`;
+
+            const paramById = new Map(favorite.parameters.map(p => [p.parameter_id, p]));
+            const usedTags = new Set();
+            const blocksHtml = PARAMETER_GRID_BLOCKS.map(block => techBlockTableHtml(block, paramById, usedTags)).join("");
+            const leftoverHtml = techLeftoverBlocksHtml(favorite.parameters, usedTags);
+            document.getElementById("favorite-view-groups").innerHTML = `<div class="excel-sections-wrap">${blocksHtml}${leftoverHtml}</div>`;
+        } catch (error) {
+            document.getElementById("favorite-view-meta").textContent = `读取失败：${error.message}`;
+        }
+    }
+    document.getElementById("favorite-view-close").addEventListener("click", () => document.getElementById("favorite-view-dialog").close());
 
     // ---- 预警通知 (warnings) ----
     // A warning is an unacknowledged dbo.tech_parameter_changelog row (see

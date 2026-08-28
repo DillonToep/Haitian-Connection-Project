@@ -494,6 +494,16 @@ html[data-theme="dark"] .device-type-edit-btn:hover { border-color: #57caa0; col
     background: var(--red); color: white; font-size: 11px; font-weight: 700; line-height: 1;
 }
 .detail-header-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.favorite-star-button {
+    width: 26px; height: 26px; padding: 0; border: 1px solid #ccd4dd; border-radius: 4px;
+    background: white; color: #c9a227; font-size: 15px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.favorite-star-button:hover { border-color: #c9a227; background: #fff8e1; }
+html[data-theme="dark"] .favorite-star-button { border-color: #313a46; background: #1a1f27; color: #e0c15a; }
+html[data-theme="dark"] .favorite-star-button:hover { background: #2b2413; }
+.favorite-list-row:hover { background: #f0f3f7; }
+html[data-theme="dark"] .favorite-list-row:hover { background: #20262f; }
 .warning-row { cursor: pointer; }
 .warning-row:hover { background: #f0f3f7; }
 html[data-theme="dark"] .mold-card-device { background: rgba(87,202,160,.85); color: #0d1015; }
