@@ -2929,7 +2929,7 @@ let currentPage = "dashboard";
                     );
                     moldAdvancedLoaded = false; // force the 高级参数 dialog to re-fetch next time it's opened
                     await refreshFavoritesList();
-                    alert(result.backed_up ? "已应用，原参数已自动备份为一份新收藏" : "已应用");
+                    alert(result.unchanged ? result.message : (result.backed_up ? "已应用，原参数已自动备份为一份新收藏" : "已应用"));
                 } catch (error) { alert(error.message); }
             }));
         } catch (error) {
@@ -2977,7 +2977,7 @@ let currentPage = "dashboard";
             );
             moldAdvancedLoaded = false;
             document.getElementById("favorite-view-dialog").close();
-            alert(result.backed_up ? "已应用，原参数已自动备份为一份新收藏" : "已应用");
+            alert(result.unchanged ? result.message : (result.backed_up ? "已应用，原参数已自动备份为一份新收藏" : "已应用"));
         } catch (error) { alert(error.message); }
     });
 
