@@ -168,8 +168,12 @@ def apply_favorite_to_schematic(
 ):
     """Overwrites this machine type's 高级工艺参数 schematic
     (dbo.mold_parameter_targets) with the value snapshot saved in a
-    favorite. If the schematic currently holds any values, they're saved
-    first as a new, dated favorite -- so applying a saved recipe is never
+    favorite. If the favorite's values are identical to what's already
+    applied, nothing is written -- no backup, no overwrite -- and the
+    response comes back with unchanged=True so the frontend can tell the
+    user instead of silently creating a pointless backup. Otherwise, if
+    the schematic currently holds any values, they're saved first as a
+    new, dated favorite -- so applying a saved recipe is never
     destructive.
 
     Only target_value is replaced from the favorite; tolerance_mode /
@@ -196,8 +200,34 @@ def apply_favorite_to_schematic(
             if favorite_row.machine_type_id != machine_type_id:
                 raise HTTPException(status_code=400, detail="该收藏不属于当前机型")
 
+            favorite_parameters = json.loads(favorite_row.parameters_json)
+            valid_tags = set(PARAMETER_LABELS.keys()) - EXCLUDED_FROM_TARGETS
+
+            # ---- skip entirely if the favorite is already what's applied ----
+            # Compare only the tags that actually carry a value on either
+            # side -- mirrors the filtering _build_schematic_snapshot_from_targets
+            # and the apply loop below already do (blank/None values are
+            # never stored as real targets), so a tag that's blank on both
+            # sides doesn't spuriously count as a difference.
+            current_snapshot = _build_schematic_snapshot_from_targets(cursor, machine_type_id)
+            current_values = {
+                k: v for k, v in _snapshot_value_map(current_snapshot or []).items()
+                if k in valid_tags
+            }
+            favorite_values = {
+                k: v for k, v in _snapshot_value_map(favorite_parameters).items()
+                if k in valid_tags and v not in (None, "")
+            }
+            if _snapshot_maps_equal(current_values, favorite_values):
+                return {
+                    "status": "ok",
+                    "unchanged": True,
+                    "backed_up": False,
+                    "message": "该收藏的内容与当前已应用的参数相同，未作修改",
+                }
+
             # ---- back up the current schematic first, if it has anything ----
-            backup_snapshot = _build_schematic_snapshot_from_targets(cursor, machine_type_id)
+            backup_snapshot = current_snapshot
             if backup_snapshot is not None:
                 backup_name = _unique_backup_name(
                     cursor, machine_type_id,
@@ -216,7 +246,6 @@ def apply_favorite_to_schematic(
                 )
 
             # ---- apply the favorite's values onto the live schematic ----
-            valid_tags = set(PARAMETER_LABELS.keys()) - EXCLUDED_FROM_TARGETS
             existing = {
                 row.parameter_id: row
                 for row in cursor.execute(
@@ -227,7 +256,7 @@ def apply_favorite_to_schematic(
             }
             cursor.execute("DELETE FROM dbo.mold_parameter_targets WHERE machine_type_id = ?", machine_type_id)
 
-            for item in json.loads(favorite_row.parameters_json):
+            for item in favorite_parameters:
                 tag = item.get("parameter_id")
                 value = item.get("value")
                 if tag not in valid_tags or value in (None, ""):
