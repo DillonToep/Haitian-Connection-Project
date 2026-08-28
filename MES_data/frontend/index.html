@@ -239,7 +239,7 @@
     <div class="day-detail-header">
         <h3>编辑模具型号</h3>
         <div class="detail-header-actions">
-            <button id="mold-edit-advanced-button" class="secondary-button" type="button">机型 / 高级参数</button>
+            <button id="mold-edit-advanced-button" class="secondary-button" type="button">机型 / 成型参数</button>
             <button id="mold-edit-close-x" class="dialog-close-x" type="button" aria-label="关闭">✕</button>
         </div>
     </div>
@@ -306,7 +306,7 @@
             <h3>机型 · <span id="machine-types-mold-title"></span></h3>
             <button id="machine-types-close" class="secondary-button" type="button">X</button>
         </div>
-        <p class="muted">同一模具在不同机型上使用时，工艺参数可能不同，因此每个机型都有独立的一套高级参数。点击某个机型进入其参数设置；"主要机型" 决定预警通知使用哪一套公差。每个机型也可以有自己的一组"收藏"（从参数变更记录保存的工艺参数快照）。</p>
+        <p class="muted">同一模具在不同机型上使用时，工艺参数可能不同，因此每个机型都有独立的一套成型参数。点击某个机型进入其参数设置；"主要机型" 决定预警通知使用哪一套公差。每个机型也可以有自己的一组"收藏"（从参数变更记录保存的工艺参数快照）。</p>
         <div id="machine-types-list" class="mold-list" style="grid-template-columns:1fr;"></div>
         <form id="machine-type-add-form" class="form-grid" style="margin-top:14px;">
             <div class="field full">
@@ -324,14 +324,14 @@
         </div>
         <div class="muted" id="mold-advanced-summary"></div>
         <div id="mold-advanced-groups"></div>
-        <div class="actions"><button id="mold-advanced-save" class="primary-button" type="button">保存高级参数</button></div>
+        <div class="actions"><button id="mold-advanced-save" class="primary-button" type="button">保存成型参数</button></div>
     </dialog>
     <dialog id="mold-defaults-dialog" class="mold-edit-dialog">
         <div class="day-detail-header">
-            <h3>默认高级参数（新建模具自动套用）</h3>
+            <h3>默认成型参数（新建模具自动套用）</h3>
             <button id="mold-defaults-close" class="secondary-button" type="button">X</button>
         </div>
-        <p class="muted">这里设置的实际值 / 公差，会在此后新建的模具项目中自动填入作为初始高级参数；已存在的模具不受影响。</p>
+        <p class="muted">这里设置的实际值 / 公差，会在此后新建的模具项目中自动填入作为初始成型参数；已存在的模具不受影响。</p>
         <div class="muted" id="mold-defaults-summary"></div>
         <div id="mold-defaults-groups"></div>
         <div class="actions"><button id="mold-defaults-save" class="primary-button" type="button">保存默认值</button></div>
