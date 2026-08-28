@@ -3,7 +3,8 @@ from decimal import Decimal
 import json
 import pyodbc
 from fastapi import APIRouter, Depends, HTTPException
-
+from datetime import datetime
+from ..parameter_labels import PARAMETER_LABELS, EXCLUDED_FROM_TARGETS, categorize_tag
 from ..database import get_connection, row_to_dict
 from ..parameter_labels import PARAMETER_LABELS, categorize_tag
 from ..schemas import FavoriteCreateRequest
@@ -64,6 +65,147 @@ def _build_parameters_snapshot(cursor, device_id: str, raw_message_id: int) -> l
             }
         )
     return parameters
+
+def _build_schematic_snapshot_from_targets(cursor, machine_type_id: int) -> list[dict] | None:
+    """Same shape as _build_parameters_snapshot (parameter_id/label/
+    category/value), but reads the *current* dbo.mold_parameter_targets
+    rows for a machine type instead of a live device reading -- used to
+    back up the existing 高级工艺参数 schematic before a favorite
+    overwrites it. Returns None if there's nothing worth backing up (no
+    rows, or every target_value is blank)."""
+    cursor.execute(
+        "SELECT parameter_id, target_value FROM dbo.mold_parameter_targets WHERE machine_type_id = ?",
+        machine_type_id,
+    )
+    rows = [(r.parameter_id, r.target_value) for r in cursor.fetchall() if r.target_value not in (None, "")]
+    if not rows:
+        return None
+
+    parameters = []
+    for tag_id, value in rows:
+        meta = PARAMETER_LABELS.get(tag_id)
+        if meta is None:
+            parameters.append({"parameter_id": tag_id, "label": tag_id, "category": "未知参数", "value": value})
+            continue
+        parameters.append({
+            "parameter_id": tag_id,
+            "label": meta["label"],
+            "category": categorize_tag(tag_id, meta["label"]),
+            "value": value,
+        })
+    return parameters
+
+
+def _unique_backup_name(cursor, machine_type_id: int, base_name: str) -> str:
+    """Appends a numeric suffix if base_name already exists for this
+    machine type -- (machine_type_id, name) is unique (see
+    setup_favorites.sql), and two backups saved within the same minute
+    would otherwise collide."""
+    name = base_name
+    suffix = 2
+    while cursor.execute(
+        "SELECT 1 FROM dbo.mold_favorite_snapshots WHERE machine_type_id = ? AND name = ?",
+        machine_type_id, name,
+    ).fetchone():
+        name = f"{base_name} ({suffix})"
+        suffix += 1
+    return name
+
+
+@router.post("/molds/{mold_id}/machine-types/{machine_type_id}/favorites/{favorite_id}/apply")
+def apply_favorite_to_schematic(
+    mold_id: int,
+    machine_type_id: int,
+    favorite_id: int,
+    user: dict = Depends(require_user),
+):
+    """Overwrites this machine type's 高级工艺参数 schematic
+    (dbo.mold_parameter_targets) with the value snapshot saved in a
+    favorite. If the schematic currently holds any values, they're saved
+    first as a new, dated favorite -- so applying a saved recipe is never
+    destructive.
+
+    Only target_value is replaced from the favorite; tolerance_mode /
+    tolerance_percent / tolerance_flat for a tag are carried over
+    unchanged if that tag already had a target row (so tolerance settings
+    survive switching between saved recipes), and default to percent /
+    no-tolerance for a tag that had none.
+    """
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+
+            machine_type = _get_machine_type_or_404(cursor, machine_type_id)
+            if machine_type.mold_id != mold_id:
+                raise HTTPException(status_code=404, detail="机型不属于该模具")
+
+            favorite_row = cursor.execute(
+                "SELECT id, machine_type_id, parameters_json FROM dbo.mold_favorite_snapshots WHERE id = ?",
+                favorite_id,
+            ).fetchone()
+            if favorite_row is None:
+                raise HTTPException(status_code=404, detail="收藏不存在")
+            if favorite_row.machine_type_id != machine_type_id:
+                raise HTTPException(status_code=400, detail="该收藏不属于当前机型")
+
+            # ---- back up the current schematic first, if it has anything ----
+            backup_snapshot = _build_schematic_snapshot_from_targets(cursor, machine_type_id)
+            if backup_snapshot is not None:
+                backup_name = _unique_backup_name(
+                    cursor, machine_type_id,
+                    f"自动备份 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_favorite_snapshots
+                        (machine_type_id, name, device_id, captured_data_time, parameters_json, created_by)
+                    VALUES (?, ?, N'', SYSUTCDATETIME(), ?, ?)
+                    """,
+                    machine_type_id,
+                    backup_name,
+                    json.dumps(backup_snapshot, ensure_ascii=False, default=str),
+                    user["id"],
+                )
+
+            # ---- apply the favorite's values onto the live schematic ----
+            valid_tags = set(PARAMETER_LABELS.keys()) - EXCLUDED_FROM_TARGETS
+            existing = {
+                row.parameter_id: row
+                for row in cursor.execute(
+                    "SELECT parameter_id, tolerance_mode, tolerance_percent, tolerance_flat "
+                    "FROM dbo.mold_parameter_targets WHERE machine_type_id = ?",
+                    machine_type_id,
+                ).fetchall()
+            }
+            cursor.execute("DELETE FROM dbo.mold_parameter_targets WHERE machine_type_id = ?", machine_type_id)
+
+            for item in json.loads(favorite_row.parameters_json):
+                tag = item.get("parameter_id")
+                value = item.get("value")
+                if tag not in valid_tags or value in (None, ""):
+                    continue
+                prior = existing.get(tag)
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_parameter_targets
+                        (mold_id, machine_type_id, parameter_id, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
+                    VALUES (NULL, ?, ?, ?, ?, ?, ?)
+                    """,
+                    machine_type_id,
+                    tag,
+                    str(value),
+                    prior.tolerance_mode if prior else "percent",
+                    prior.tolerance_percent if prior else None,
+                    prior.tolerance_flat if prior else None,
+                )
+
+            connection.commit()
+            return {"status": "ok", "backed_up": backup_snapshot is not None}
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
 def _get_machine_type_or_404(cursor, machine_type_id: int):

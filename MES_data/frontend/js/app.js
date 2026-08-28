@@ -2882,7 +2882,10 @@ let currentPage = "dashboard";
                         <strong>${escapeHtml(f.name)}</strong>
                         <div class="muted" style="font-size:12px;margin-top:3px;">设备 ${escapeHtml(f.device_id)} · 采集于 ${formatTime(f.captured_data_time)} · 更新于 ${formatTime(f.updated_at)}</div>
                     </div>
-                    <button type="button" class="danger-button favorite-delete-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>删除</button>
+                    <div class="actions" style="margin:0;">
+                        <button type="button" class="secondary-button favorite-apply-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>应用到当前参数</button>
+                        <button type="button" class="danger-button favorite-delete-button" data-id="${f.id}" ${readOnly ? "disabled" : ""}>删除</button>
+                    </div>
                 </div>`).join("") : '<div class="empty">该机型尚未保存任何收藏</div>';
 
             body.querySelectorAll(".favorite-list-row").forEach(row => row.addEventListener("click", event => {
@@ -2897,13 +2900,29 @@ let currentPage = "dashboard";
                     await refreshFavoritesList();
                 } catch (error) { alert(error.message); }
             }));
+            body.querySelectorAll(".favorite-apply-button").forEach(button => button.addEventListener("click", async event => {
+                event.stopPropagation();
+                if (!confirm("确认将该收藏应用为当前机型的高级工艺参数？\n如当前已设置参数，将自动备份为一份带日期的新收藏后再覆盖，此操作不可撤销。")) return;
+                try {
+                    const result = await requestJson(
+                        `/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(favoritesListMachineTypeId)}/favorites/${encodeURIComponent(button.dataset.id)}/apply`,
+                        { method: "POST" }
+                    );
+                    moldAdvancedLoaded = false; // force the 高级参数 dialog to re-fetch next time it's opened
+                    await refreshFavoritesList();
+                    alert(result.backed_up ? "已应用，原参数已自动备份为一份新收藏" : "已应用");
+                } catch (error) { alert(error.message); }
+            }));
         } catch (error) {
             body.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
         }
     }
     document.getElementById("favorites-list-close").addEventListener("click", () => document.getElementById("favorites-list-dialog").close());
 
+    let favoriteViewId = null;
+
     async function openFavoriteViewDialog(favoriteId) {
+        favoriteViewId = favoriteId;
         document.getElementById("favorite-view-title").textContent = "";
         document.getElementById("favorite-view-meta").textContent = "正在读取……";
         document.getElementById("favorite-view-groups").innerHTML = "";
@@ -2924,6 +2943,24 @@ let currentPage = "dashboard";
         }
     }
     document.getElementById("favorite-view-close").addEventListener("click", () => document.getElementById("favorite-view-dialog").close());
+
+    // Optional: only wired up if the corresponding button exists in
+    // index.html (id="favorite-view-apply") -- lets a favorite be applied
+    // straight from its detail viewer, same action as the "应用到当前参数"
+    // button in the favorites list.
+    document.getElementById("favorite-view-apply")?.addEventListener("click", async () => {
+        if (!favoriteViewId || !favoritesListMachineTypeId) return;
+        if (!confirm("确认将该收藏应用为当前机型的高级工艺参数？\n如当前已设置参数，将自动备份为一份带日期的新收藏后再覆盖，此操作不可撤销。")) return;
+        try {
+            const result = await requestJson(
+                `/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(favoritesListMachineTypeId)}/favorites/${encodeURIComponent(favoriteViewId)}/apply`,
+                { method: "POST" }
+            );
+            moldAdvancedLoaded = false;
+            document.getElementById("favorite-view-dialog").close();
+            alert(result.backed_up ? "已应用，原参数已自动备份为一份新收藏" : "已应用");
+        } catch (error) { alert(error.message); }
+    });
 
     // ---- 预警通知 (warnings) ----
     // A warning is an unacknowledged dbo.tech_parameter_changelog row (see
