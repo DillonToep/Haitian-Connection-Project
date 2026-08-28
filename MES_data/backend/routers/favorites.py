@@ -1,12 +1,11 @@
 from contextlib import closing
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import json
 import pyodbc
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 from ..parameter_labels import PARAMETER_LABELS, EXCLUDED_FROM_TARGETS, categorize_tag
 from ..database import get_connection, row_to_dict
-from ..parameter_labels import PARAMETER_LABELS, categorize_tag
 from ..schemas import FavoriteCreateRequest
 from ..security import require_editor, require_user
 
@@ -17,17 +16,36 @@ router = APIRouter(prefix="/api", tags=["favorites"])
 def _json_safe(value):
     """pyodbc returns numeric columns as Decimal, which json.dumps()
     cannot serialize on its own (raises TypeError -> uncaught -> bare 500,
-    since it's not a pyodbc.Error). Normalize whole-number Decimals to
-    int (so a reading of 25 is stored/serialized as "25", not "25.0") and
-    only fall back to float for values that actually have a fractional
-    part. Storing "25.0" here is what made a hand-typed "25" schematic
-    value compare as different from an otherwise-identical device
-    reading -- see _values_equal below for the other half of the fix."""
+    since it's not a pyodbc.Error). Numeric values are never stored as
+    doubles -- always rounded to a plain int, matching how the machine
+    actually reports them and guaranteeing a reading of 25 is
+    stored/serialized as "25", never "25.0". (Text/target-value paths use
+    _normalize_numeric_string below for the same guarantee.)"""
     if isinstance(value, Decimal):
-        if value == value.to_integral_value():
-            return int(value)
-        return float(value)
+        return int(value.to_integral_value(rounding=ROUND_HALF_UP))
     return value
+
+
+def _normalize_numeric_string(value):
+    """Canonical form of a stored parameter value for comparison/storage.
+    Whole (or rounded) numbers are always represented as a plain integer
+    string -- never "25.0" -- regardless of whether the value arrived as
+    a Decimal, float, int, or text typed by hand into the 高级工艺参数
+    grid. Non-numeric values (enum/mode codes, blank strings) pass
+    through unchanged."""
+    if value is None:
+        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate == "":
+            return value
+    else:
+        candidate = value
+    try:
+        number = Decimal(str(candidate))
+    except (InvalidOperation, ValueError, TypeError):
+        return value
+    return str(int(number.to_integral_value(rounding=ROUND_HALF_UP)))
 
 
 def _values_equal(a, b) -> bool:
@@ -38,12 +56,22 @@ def _values_equal(a, b) -> bool:
     plain equality for anything that doesn't parse as a number, so
     non-numeric/enum values (e.g. mode codes as text) still compare
     exactly as before."""
-    if a == b:
-        return True
-    try:
-        return float(a) == float(b)
-    except (TypeError, ValueError):
-        return False
+    return _normalize_numeric_string(a) == _normalize_numeric_string(b)
+
+
+def _comparable_tag(tag: str) -> bool:
+    """True if a tag is one that could ever appear in a favorite snapshot
+    (see _build_parameters_snapshot, which only includes tags with
+    PARAMETER_LABELS[tag]["use"] == True). Keeps "is this favorite
+    already applied?" comparisons scoped to tags favorites can actually
+    contain -- otherwise a stray target value saved against a use=False
+    tag (which _build_schematic_snapshot_from_targets still picks up,
+    since it applies no "use" filter) would only ever exist on the
+    "current schematic" side, permanently mismatching the two snapshots'
+    key sets and making every comparison report a difference even when
+    the favorite's own values are identical to what's applied."""
+    meta = PARAMETER_LABELS.get(tag)
+    return bool(meta and meta["use"])
 
 
 def _snapshot_value_map(parameters: list[dict]) -> dict:
@@ -62,13 +90,6 @@ def _snapshot_maps_equal(a: dict, b: dict) -> bool:
     if a.keys() != b.keys():
         return False
     return all(_values_equal(a[key], b[key]) for key in a)
-
-def _snapshot_value_map(parameters: list[dict]) -> dict:
-    """Reduces a parameters snapshot (parameter_id/label/category/value)
-    down to just {parameter_id: value}, so two snapshots can be compared
-    for meaningful equality regardless of list order or the (derived,
-    always-identical-for-a-given-tag) label/category fields."""
-    return {p.get("parameter_id"): p.get("value") for p in parameters}
 
 
 def _build_parameters_snapshot(cursor, device_id: str, raw_message_id: int) -> list[dict]:
@@ -205,18 +226,22 @@ def apply_favorite_to_schematic(
 
             # ---- skip entirely if the favorite is already what's applied ----
             # Compare only the tags that actually carry a value on either
-            # side -- mirrors the filtering _build_schematic_snapshot_from_targets
-            # and the apply loop below already do (blank/None values are
-            # never stored as real targets), so a tag that's blank on both
-            # sides doesn't spuriously count as a difference.
+            # side AND that a favorite could ever contain (_comparable_tag)
+            # -- mirrors the filtering _build_parameters_snapshot applies
+            # when a favorite is created, so a stray target value saved
+            # against a use=False tag (which
+            # _build_schematic_snapshot_from_targets picks up with no
+            # "use" filter) never permanently mismatches the two
+            # snapshots' key sets. Blank/None values are also excluded,
+            # since neither side ever stores a real target for those.
             current_snapshot = _build_schematic_snapshot_from_targets(cursor, machine_type_id)
             current_values = {
                 k: v for k, v in _snapshot_value_map(current_snapshot or []).items()
-                if k in valid_tags
+                if k in valid_tags and _comparable_tag(k)
             }
             favorite_values = {
                 k: v for k, v in _snapshot_value_map(favorite_parameters).items()
-                if k in valid_tags and v not in (None, "")
+                if k in valid_tags and v not in (None, "") and _comparable_tag(k)
             }
             if _snapshot_maps_equal(current_values, favorite_values):
                 return {
@@ -270,7 +295,7 @@ def apply_favorite_to_schematic(
                     """,
                     machine_type_id,
                     tag,
-                    str(value),
+                    _normalize_numeric_string(value),
                     prior.tolerance_mode if prior else "percent",
                     prior.tolerance_percent if prior else None,
                     prior.tolerance_flat if prior else None,
