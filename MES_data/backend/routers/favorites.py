@@ -1,6 +1,6 @@
 from contextlib import closing
+from decimal import Decimal
 import json
-
 import pyodbc
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -11,6 +11,16 @@ from ..security import require_editor, require_user
 
 
 router = APIRouter(prefix="/api", tags=["favorites"])
+
+
+def _json_safe(value):
+    """pyodbc returns numeric columns as Decimal, which json.dumps()
+    cannot serialize on its own (raises TypeError -> uncaught -> bare 500,
+    since it's not a pyodbc.Error). Normalize to a plain float so
+    parameters_json can always be built successfully."""
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def _build_parameters_snapshot(cursor, device_id: str, raw_message_id: int) -> list[dict]:
@@ -36,6 +46,7 @@ def _build_parameters_snapshot(cursor, device_id: str, raw_message_id: int) -> l
     for row in rows:
         tag_id = row.parameter_id
         value = row.parameter_value if row.parameter_value is not None else row.parameter_value_text
+        value = _json_safe(value)
         meta = PARAMETER_LABELS.get(tag_id)
         if meta is None:
             parameters.append(
@@ -94,7 +105,9 @@ def create_favorite_from_changelog(
             parameters = _build_parameters_snapshot(
                 cursor, changelog_row.device_id, changelog_row.raw_message_id
             )
-            payload = json.dumps(parameters, ensure_ascii=False)
+            # default=str as a last-resort safety net for any other
+            # non-JSON-native type (e.g. datetime) that might slip through.
+            payload = json.dumps(parameters, ensure_ascii=False, default=str)
 
             existing = cursor.execute(
                 "SELECT id FROM dbo.mold_favorite_snapshots WHERE machine_type_id = ? AND name = ?",
