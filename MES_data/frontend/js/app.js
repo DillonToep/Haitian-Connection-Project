@@ -953,6 +953,11 @@ let currentPage = "dashboard";
         },
     ];
 
+    const ADVANCED_DIALOG_BLOCKS = PARAMETER_GRID_BLOCKS.slice(
+        0,
+        PARAMETER_GRID_BLOCKS.findIndex(b => b.title === "顶针次数") + 1
+    );
+
     // Tags that are categorical status codes or monotonically-increasing
     // counters rather than settable specs (mirrors EXCLUDED_FROM_TARGETS
     // in backend/parameter_labels.py). PARAMETER_GRID_BLOCKS still lists
@@ -1424,7 +1429,7 @@ let currentPage = "dashboard";
         const paramById = new Map(parameters.map(p => [p.parameter_id, p]));
         const usedTags = new Set();
 
-        const blocksHtml = PARAMETER_GRID_BLOCKS
+        const blocksHtml = ADVANCED_DIALOG_BLOCKS
             .map(block => excelBlockTableHtml(block, paramById, usedTags))
             .join("");
 
