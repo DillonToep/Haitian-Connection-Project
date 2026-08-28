@@ -1606,7 +1606,7 @@ let currentPage = "dashboard";
         loadMachineTypesList();
     });
 
-    // Downloads the company's 试模成型参数表 (.xlsx) for the currently
+    // Downloads the company's 成型参数表 (.xlsx) for the currently
     // open Mold + Machine Type, pre-filled with whatever matching values
     // are already saved in 高级工艺参数 -- see backend/export_xlsx.py for
     // exactly which cells get filled.
@@ -1628,7 +1628,7 @@ let currentPage = "dashboard";
             const blob = await response.blob();
             const disposition = response.headers.get("Content-Disposition") || "";
             const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
-            const filename = match ? decodeURIComponent(match[1]) : "试模成型参数表.xlsx";
+            const filename = match ? decodeURIComponent(match[1]) : "成型参数表.xlsx";
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
