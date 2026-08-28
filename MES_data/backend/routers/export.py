@@ -1,5 +1,6 @@
 from contextlib import closing
 import json
+from urllib.parse import quote
 
 import pyodbc
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,12 +20,6 @@ def export_trial_parameter_sheet(
     machine_type_id: int,
     user: dict = Depends(require_user),
 ):
-    """Generates the company's 试模成型参数表 (.xlsx) for one Mold +
-    Machine Type, filling in only the cells that have a confident match
-    to data already stored in the MES (see export_xlsx.py for the exact
-    field mapping). Everything else -- 试模员/试模日期/审核, the 试模结果
-    defect checklist, etc. -- is left blank for the operator to fill in
-    by hand during the actual trial run."""
     del user
     try:
         with closing(get_connection()) as connection:
@@ -73,8 +68,9 @@ def export_trial_parameter_sheet(
 
     buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
     filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
+    encoded_filename = quote(filename)  # <-- percent-encode for the header
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
