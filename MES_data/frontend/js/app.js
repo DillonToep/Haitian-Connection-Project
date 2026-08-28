@@ -1606,6 +1606,45 @@ let currentPage = "dashboard";
         loadMachineTypesList();
     });
 
+    // Downloads the company's 试模成型参数表 (.xlsx) for the currently
+    // open Mold + Machine Type, pre-filled with whatever matching values
+    // are already saved in 高级工艺参数 -- see backend/export_xlsx.py for
+    // exactly which cells get filled.
+    document.getElementById("mold-advanced-export-button").addEventListener("click", async () => {
+        if (!currentMachineTypeId) { alert("请先选择机型"); return; }
+        const button = document.getElementById("mold-advanced-export-button");
+        const originalLabel = button.textContent;
+        button.disabled = true;
+        button.textContent = "正在生成……";
+        try {
+            const response = await fetch(`/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/export`, {
+                cache: "no-store",
+            });
+            if (response.status === 401) { window.location.replace("/login"); return; }
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `HTTP ${response.status}`);
+            }
+            const blob = await response.blob();
+            const disposition = response.headers.get("Content-Disposition") || "";
+            const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+            const filename = match ? decodeURIComponent(match[1]) : "试模成型参数表.xlsx";
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            alert(`导出失败：${error.message}`);
+        } finally {
+            button.disabled = false;
+            button.textContent = originalLabel;
+        }
+    });
+
     document.getElementById("mold-advanced-save").addEventListener("click", async () => {
         if (!currentMachineTypeId) { alert("请先选择机型"); return; }
         const parameters = collectParameterRows("mold-advanced-groups");

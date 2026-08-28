@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from .config import FRONTEND_DIR
 from .database import get_connection
-from .routers import auth, changelog, devices, favorites, molds, uptime, warnings
+from .routers import auth, changelog, devices, export, favorites, molds, uptime, warnings
 from .security import find_session_user
 
 
@@ -42,6 +42,7 @@ app.include_router(molds.router)
 app.include_router(changelog.router)
 app.include_router(warnings.router)
 app.include_router(favorites.router)
+app.include_router(export.router)
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 app.include_router(uptime.router)
 
