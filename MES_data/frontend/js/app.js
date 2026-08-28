@@ -2957,6 +2957,23 @@ let currentPage = "dashboard";
                     <div class="toast-detail">${escapeHtml(warning.mold_code||"")} 已生产 ${showValue(warning.total_output)} 模，超过设定上限 ${showValue(warning.max_output)} 模</div>
                 </div>
                 <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        } else if(warning.warning_type==="auto_assign"){
+            const pct=warning.match_score!=null?Math.round(warning.match_score*1000)/10:null;
+            toast.innerHTML=`
+                <div class="toast-icon">🤖</div>
+                <div class="toast-body">
+                    <div class="toast-title">系统自动识别装机：设备 ${escapeHtml(warning.device_id)}</div>
+                    <div class="toast-detail">检测到批量参数变更，已自动装机 ${escapeHtml(warning.mold_code||"")} · ${escapeHtml(warning.matched_machine_type_name||"")}${pct!=null?`（匹配度 ${pct}%）`:""}${warning.machine_type_mismatch?"　⚠ 机型不一致，请核对":""}</div>
+                </div>
+                <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
+        } else if(warning.warning_type==="unrecognized"){
+            toast.innerHTML=`
+                <div class="toast-icon">❓</div>
+                <div class="toast-body">
+                    <div class="toast-title">未识别的批量参数变更：设备 ${escapeHtml(warning.device_id)}</div>
+                    <div class="toast-detail">检测到 ${showValue(warning.tags_changed_count)} 项参数同时变更，但未匹配到任何已有模具，可能需要在模具管理中录入</div>
+                </div>
+                <button class="toast-close" type="button" aria-label="关闭">✕</button>`;
         } else {
             toast.innerHTML=`
                 <div class="toast-icon">⚠</div>
@@ -3029,6 +3046,28 @@ let currentPage = "dashboard";
                 <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="output" type="button">清除</button>`}</td>
             </tr>`;
         }
+        if(r.warning_type==="auto_assign"){
+            const pct=r.match_score!=null?Math.round(r.match_score*1000)/10:null;
+            const mismatch=r.machine_type_mismatch?`　⚠ 机型不一致（设备：${escapeHtml(r.device_machine_type||"未设置")} / 规格表：${escapeHtml(r.sheet_machine_type||"未命名")}）`:"";
+            return `<tr class="warning-row" data-id="${r.id}" data-warning-type="auto_assign" data-device="${escapeHtml(r.device_id)}" data-mold="${r.matched_mold_id??""}">
+                <td>${formatTime(r.detected_at)}</td>
+                <td>${escapeHtml(r.device_id)}</td>
+                <td>🤖 系统自动识别装机（${showValue(r.tags_changed_count)} 项参数变更）</td>
+                <td>${escapeHtml(r.mold_code||"")} · ${escapeHtml(r.matched_machine_type_name||"")}</td>
+                <td class="changelog-new-value">匹配度 ${pct!=null?`${pct}%`:"--"}${mismatch}</td>
+                <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="auto_assign" type="button">清除</button>`}</td>
+            </tr>`;
+        }
+        if(r.warning_type==="unrecognized"){
+            return `<tr class="warning-row" data-id="${r.id}" data-warning-type="unrecognized" data-device="${escapeHtml(r.device_id)}">
+                <td>${formatTime(r.detected_at)}</td>
+                <td>${escapeHtml(r.device_id)}</td>
+                <td>❓ 检测到批量参数变更，未匹配到已有模具</td>
+                <td>${showValue(r.tags_changed_count)} 项参数同时变更</td>
+                <td class="changelog-new-value">建议前往模具管理录入</td>
+                <td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="unrecognized" type="button">清除</button>`}</td>
+            </tr>`;
+        }
         return `<tr class="warning-row" data-id="${r.id}" data-warning-type="parameter"><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${readOnly?"":`<button class="secondary-button warning-clear-button" data-id="${r.id}" data-warning-type="parameter" type="button">清除</button>`}</td></tr>`;
     }
 
@@ -3043,6 +3082,8 @@ let currentPage = "dashboard";
                 if(event.target.closest(".warning-clear-button")) return;
                 if(row.dataset.warningType==="cleaning") openDeviceDetail(row.dataset.device,{tab:"uptime"});
                 else if(row.dataset.warningType==="output") openMoldEdit(Number(row.dataset.mold));
+                else if(row.dataset.warningType==="auto_assign") openDeviceDetail(row.dataset.device);
+                else if(row.dataset.warningType==="unrecognized") openDeviceDetail(row.dataset.device,{tab:"tech"});
                 else openChangelogDetail(row.dataset.id);
             });
         });
@@ -3054,6 +3095,8 @@ let currentPage = "dashboard";
                         ? `/api/warnings/cleaning/${encodeURIComponent(button.dataset.id)}/clear`
                         : button.dataset.warningType==="output"
                         ? `/api/warnings/output/${encodeURIComponent(button.dataset.id)}/clear`
+                        : (button.dataset.warningType==="auto_assign" || button.dataset.warningType==="unrecognized")
+                        ? `/api/warnings/detection/${encodeURIComponent(button.dataset.id)}/clear`
                         : `/api/warnings/${encodeURIComponent(button.dataset.id)}/clear`;
                     await requestJson(endpoint,{method:"POST"});
                     seenWarningIds.delete(`${button.dataset.warningType}-${button.dataset.id}`);

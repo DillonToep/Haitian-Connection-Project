@@ -55,6 +55,42 @@ SPC_MESSAGE_TOPIC = "spc"
 REALTIME_MESSAGE_TOPIC = "realtime"
 ACTIVE_MACHINE_STATUS = 2
 
+# ================= 自动识别模具（批量参数变更） =================
+#
+# See "Feature Spec: Auto Mold Detection & Assignment via MQTT Parameter
+# Bursts". A single `tech` message that changes more tags than
+# BURST_CHANGE_THRESHOLD is treated as a full recipe/mold load rather than
+# an operator tweaking one value, since the machine's own saved-mold
+# feature isn't visible over MQTT -- we can only infer it from the shape
+# of the incoming data.
+
+# Starting value -- revisit once real production data is observed (see
+# spec section 8): a legitimate "reset to defaults" panel action could in
+# principle also trip this without a real mold swap having occurred.
+BURST_CHANGE_THRESHOLD = 7
+
+# A candidate machine type must have at least this many defined target
+# values, AND at least MIN_TARGETS_FRACTION of them must be present in the
+# device's current snapshot, to be considered at all -- this is what
+# keeps a near-empty machine type from trivially scoring 100% just
+# because it happens to have one or two targets that coincidentally match.
+MIN_TARGETS_ABSOLUTE = 5
+MIN_TARGETS_FRACTION = 0.5
+
+# Fraction of a candidate's *defined* targets (not just the checkable
+# ones) that must match the observed snapshot for it to win. Deliberately
+# high -- a false-positive auto-assignment is silently wrong and much
+# worse than a missed detection, which just falls through to the
+# "unrecognized" notice instead. Tune later using dbo.mold_match_attempts.
+MATCH_CONFIDENCE_THRESHOLD = 0.85
+
+# Categorical/enum tags (a mode/selector setting, not a continuous
+# measurement) -- these require an exact string match, never a tolerance
+# comparison, both for normal warnings (see _exceeds_tolerance callers)
+# and for mold matching. Mirrors the "模式" keyword grouping in
+# parameter_labels.categorize().
+ENUM_MODE_TAGS = {"SIPM", "EJEM", "SBM2", "CP1M", "CP2M", "CP3M", "CP4M"}
+
 
 def _stringify(value):
     """Normalize a raw tag value to a string for comparison/storage.
@@ -260,6 +296,238 @@ def _insert_changelog_rows(cursor, device_id, changes, raw_message_id, data_time
             1 if producing else 0,
         )
 
+def _fetch_all_machine_type_targets(cursor):
+    """Every machine type's defined (non-blank) parameter targets, grouped
+    by machine_type_id -- the full candidate pool for mold matching. This
+    intentionally is NOT scoped to the mold currently mounted on any
+    particular device: a machine loading a saved mold may be loading a
+    *different* mold than whatever the app currently thinks is mounted
+    (see spec section 4)."""
+    cursor.execute(
+        """
+        SELECT mt.id AS machine_type_id, mt.mold_id, t.parameter_id, t.target_value,
+               t.tolerance_mode, t.tolerance_percent, t.tolerance_flat
+        FROM dbo.mold_machine_types AS mt
+        INNER JOIN dbo.mold_parameter_targets AS t ON t.machine_type_id = mt.id
+        WHERE t.target_value IS NOT NULL AND t.target_value <> N''
+        """
+    )
+    by_type: dict[int, dict] = {}
+    for row in cursor.fetchall():
+        entry = by_type.setdefault(row.machine_type_id, {"mold_id": row.mold_id, "targets": {}})
+        entry["targets"][row.parameter_id] = (
+            row.target_value, row.tolerance_mode, row.tolerance_percent, row.tolerance_flat
+        )
+    return by_type
+
+
+def _tag_matches_target(tag, observed_value, target_value, tolerance_mode, tolerance_percent, tolerance_flat):
+    """True if an observed value is consistent with a candidate's target
+    for this tag. Enum/mode tags (see ENUM_MODE_TAGS) require an exact
+    string match; every other tag reuses the existing tolerance-check
+    logic (a "match" is simply "does not exceed tolerance")."""
+    if tag in ENUM_MODE_TAGS:
+        return _stringify(observed_value) == _stringify(target_value)
+    return not _exceeds_tolerance(observed_value, target_value, tolerance_mode, tolerance_percent, tolerance_flat)
+
+
+def _find_best_mold_match(cursor, device_id):
+    """Compares the device's current full tag snapshot (_last_values)
+    against every machine type's defined targets and returns the
+    best-scoring candidate as {"mold_id", "machine_type_id", "score"}, or
+    None if nothing clears MATCH_CONFIDENCE_THRESHOLD (or there's no
+    snapshot / no eligible candidate at all). EXCLUDED_FROM_TARGETS tags
+    never appear in dbo.mold_parameter_targets to begin with (see
+    valid_tags filtering in molds.py), so they're already excluded here
+    without extra filtering."""
+    snapshot = _last_values.get(device_id)
+    if not snapshot:
+        return None
+
+    candidates = _fetch_all_machine_type_targets(cursor)
+    best = None
+
+    for machine_type_id, info in candidates.items():
+        targets = info["targets"]
+        total_defined = len(targets)
+        if total_defined < MIN_TARGETS_ABSOLUTE:
+            continue
+
+        checkable = sum(1 for tag in targets if tag in snapshot)
+        if checkable / total_defined < MIN_TARGETS_FRACTION:
+            continue
+
+        matched = 0
+        for tag, (target_value, tolerance_mode, tolerance_percent, tolerance_flat) in targets.items():
+            observed_value = snapshot.get(tag)
+            if observed_value is None:
+                continue  # not present in snapshot -- neither matched nor penalized twice, just uncounted
+            if _tag_matches_target(tag, observed_value, target_value, tolerance_mode, tolerance_percent, tolerance_flat):
+                matched += 1
+
+        score = matched / total_defined
+        if best is None or score > best["score"]:
+            best = {"machine_type_id": machine_type_id, "mold_id": info["mold_id"], "score": score}
+
+    if best is not None and best["score"] >= MATCH_CONFIDENCE_THRESHOLD:
+        return best
+    return None
+
+
+def _record_burst_changelog_rows(cursor, device_id, changes, raw_message_id, data_time):
+    """Like _insert_changelog_rows, but for a detected mold-load burst:
+    every changed tag is still recorded for history, but always
+    pre-acknowledged (same convention as an in-tolerance change) --
+    running the normal per-tag tolerance/warning path here would flood
+    the changelog with dozens of simultaneous false alerts against a
+    target set that's about to become stale the moment the new mold is
+    (or isn't) assigned."""
+    if not changes:
+        return
+
+    producing = _last_machine_status.get(device_id) == ACTIVE_MACHINE_STATUS
+    ack_time = datetime.utcnow()
+    sql = """
+        INSERT INTO dbo.tech_parameter_changelog
+        (
+            device_id, parameter_id, previous_value, new_value,
+            data_time, raw_message_id, acknowledged_at, during_production
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """
+    for parameter_id, previous_value, new_value in changes:
+        cursor.execute(
+            sql,
+            device_id, parameter_id, previous_value, new_value,
+            data_time, raw_message_id, ack_time, 1 if producing else 0,
+        )
+
+
+def _record_match_attempt(cursor, device_id, tags_changed_count, raw_message_id, match):
+    cursor.execute(
+        """
+        INSERT INTO dbo.mold_match_attempts
+            (device_id, tags_changed_count, raw_message_id,
+             matched_mold_id, matched_machine_type_id, match_score, outcome)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        device_id,
+        tags_changed_count,
+        raw_message_id,
+        match["mold_id"] if match else None,
+        match["machine_type_id"] if match else None,
+        match["score"] if match else None,
+        "assigned" if match else "no_match",
+    )
+
+
+def _auto_assign_mold(cursor, device_id, match, tags_changed_count):
+    """System-triggered equivalent of assign_mold() in molds.py: unmounts
+    whatever is active on this device and wherever else the matched mold
+    is active (a mold running on multiple machines simultaneously is
+    normal -- see spec), then mounts it here with operator_user_id NULL
+    (no human involved) and a remark identifying it as an automatic
+    match. Unlike the interactive endpoint, this never blocks on a
+    machine-type mismatch (there's no user to confirm with) -- a mismatch
+    is recorded on the alert instead, as extra context."""
+    mold_id = match["mold_id"]
+    machine_type_id = match["machine_type_id"]
+
+    device_type_row = cursor.execute(
+        "SELECT machine_type FROM dbo.device_profiles WHERE device_id = ?", device_id
+    ).fetchone()
+    device_machine_type = device_type_row.machine_type if device_type_row else None
+
+    sheet_type_row = cursor.execute(
+        "SELECT machine_type FROM dbo.mold_machine_types WHERE id = ?", machine_type_id
+    ).fetchone()
+    sheet_machine_type = sheet_type_row.machine_type if sheet_type_row else None
+
+    mismatch = bool(
+        device_machine_type and sheet_machine_type
+        and device_machine_type.strip().casefold() != sheet_machine_type.strip().casefold()
+    )
+
+    cursor.execute(
+        """
+        UPDATE dbo.device_mold_assignments
+        SET unmounted_at = SYSDATETIME()
+        WHERE device_id = ? AND unmounted_at IS NULL
+        """,
+        device_id,
+    )
+    cursor.execute(
+        """
+        UPDATE dbo.device_mold_assignments
+        SET unmounted_at = SYSDATETIME()
+        WHERE mold_id = ? AND unmounted_at IS NULL
+        """,
+        mold_id,
+    )
+    cursor.execute(
+        """
+        INSERT INTO dbo.device_mold_assignments
+            (device_id, mold_id, machine_type_id, operator_user_id, remark)
+        VALUES (?, ?, ?, NULL, ?)
+        """,
+        device_id,
+        mold_id,
+        machine_type_id,
+        f"系统自动识别装机（匹配度 {match['score'] * 100:.1f}%）",
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO dbo.mold_detection_alerts
+            (device_id, alert_type, tags_changed_count,
+             matched_mold_id, matched_machine_type_id, match_score,
+             machine_type_mismatch, device_machine_type, sheet_machine_type)
+        VALUES (?, N'auto_assign', ?, ?, ?, ?, ?, ?, ?)
+        """,
+        device_id,
+        tags_changed_count,
+        mold_id,
+        machine_type_id,
+        match["score"],
+        1 if mismatch else 0,
+        device_machine_type,
+        sheet_machine_type,
+    )
+
+
+def _raise_unrecognized_burst_alert(cursor, device_id, tags_changed_count):
+    """A burst was detected but nothing cleared MATCH_CONFIDENCE_THRESHOLD
+    -- leave the device's current assignment untouched (spec section 7)
+    and just notify that it may need a new mold entered into 模具管理."""
+    cursor.execute(
+        """
+        INSERT INTO dbo.mold_detection_alerts (device_id, alert_type, tags_changed_count)
+        VALUES (?, N'unrecognized', ?)
+        """,
+        device_id,
+        tags_changed_count,
+    )
+
+
+def _handle_parameter_burst(cursor, device_id, changes, raw_message_id, data_time):
+    """Entry point for a single `tech` message whose change count exceeds
+    BURST_CHANGE_THRESHOLD -- assumed to be a full recipe/mold load
+    (see module docstring / feature spec). Runs entirely inside the
+    caller's existing transaction so a partial failure never leaves an
+    inconsistent state (e.g. changelog rows recorded but no matching
+    alert, or an assignment without its alert)."""
+    _record_burst_changelog_rows(cursor, device_id, changes, raw_message_id, data_time)
+
+    match = _find_best_mold_match(cursor, device_id)
+    _record_match_attempt(cursor, device_id, len(changes), raw_message_id, match)
+
+    if match is None:
+        _raise_unrecognized_burst_alert(cursor, device_id, len(changes))
+        return
+
+    _auto_assign_mold(cursor, device_id, match, len(changes))
+
+
 def _assign_pending_changelogs_to_spc(cursor, device_id, spc_message_id):
     cursor.execute(
         """
@@ -393,7 +661,10 @@ def insert_message(message, payload, raw_payload):
 
             if device_id and topic == TECH_MESSAGE_TOPIC:
                 changes = _detect_parameter_changes(device_id, data)
-                _insert_changelog_rows(cursor, device_id, changes, record_id, data_time)
+                if len(changes) > BURST_CHANGE_THRESHOLD:
+                    _handle_parameter_burst(cursor, device_id, changes, record_id, data_time)
+                else:
+                    _insert_changelog_rows(cursor, device_id, changes, record_id, data_time)
 
             if device_id and topic == REALTIME_MESSAGE_TOPIC and isinstance(data, dict):
                 sts = data.get("STS")
