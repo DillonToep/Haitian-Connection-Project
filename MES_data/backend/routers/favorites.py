@@ -24,6 +24,14 @@ def _json_safe(value):
     return value
 
 
+def _snapshot_value_map(parameters: list[dict]) -> dict:
+    """Reduces a parameters snapshot (parameter_id/label/category/value)
+    down to just {parameter_id: value}, so two snapshots can be compared
+    for meaningful equality regardless of list order or the (derived,
+    always-identical-for-a-given-tag) label/category fields."""
+    return {p.get("parameter_id"): p.get("value") for p in parameters}
+
+
 def _build_parameters_snapshot(cursor, device_id: str, raw_message_id: int) -> list[dict]:
     """Same decorated shape GET /api/tech/{device_id} returns, but pinned
     to one specific raw_message_id instead of "latest" -- this is what
@@ -225,7 +233,21 @@ def create_favorite_from_changelog(
     user: dict = Depends(require_user),
 ):
     """Snapshot every 工艺参数 tag as it stood at the moment of a
-    specific 变更记录 row, and save it against a Mold + Machine Type."""
+    specific 变更记录 row, and save it against a Mold + Machine Type.
+
+    If a favorite with this name already exists for the machine type:
+      - If its saved values are identical to the new snapshot, nothing is
+        written -- the response comes back with unchanged=True so the
+        frontend can tell the user "这与已保存的版本相同" instead of
+        writing a pointless duplicate/backup.
+      - Otherwise, without overwrite=True, this 409s exactly as before so
+        the frontend can confirm with the user.
+      - With overwrite=True (and the content actually differs), the
+        *old* version is preserved as an auto-backup (is_backup=1, same
+        convention as apply_favorite_to_schematic) before the named
+        favorite's row is updated in place -- so overwriting a favorite
+        is never destructive, just like applying one.
+    """
     require_editor(user)
     name = data.name.strip()
     if not name:
@@ -252,9 +274,20 @@ def create_favorite_from_changelog(
             payload = json.dumps(parameters, ensure_ascii=False, default=str)
 
             existing = cursor.execute(
-                "SELECT id FROM dbo.mold_favorite_snapshots WHERE machine_type_id = ? AND name = ?",
+                "SELECT id, parameters_json FROM dbo.mold_favorite_snapshots WHERE machine_type_id = ? AND name = ?",
                 data.machine_type_id, name,
             ).fetchone()
+
+            if existing is not None:
+                existing_values = _snapshot_value_map(json.loads(existing.parameters_json))
+                new_values = _snapshot_value_map(parameters)
+                if existing_values == new_values:
+                    return {
+                        "status": "ok",
+                        "unchanged": True,
+                        "id": existing.id,
+                        "message": f"「{name}」的内容与当前保存的版本相同，未作修改",
+                    }
 
             if existing and not data.overwrite:
                 raise HTTPException(
@@ -266,6 +299,25 @@ def create_favorite_from_changelog(
                 )
 
             if existing:
+                # ---- preserve the version being replaced as a backup ----
+                backup_name = _unique_backup_name(
+                    cursor, data.machine_type_id,
+                    f"{name} 自动备份 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.mold_favorite_snapshots
+                        (machine_type_id, name, device_id, source_raw_message_id, source_changelog_id,
+                         captured_data_time, parameters_json, created_by, is_backup)
+                    SELECT machine_type_id, ?, device_id, source_raw_message_id, source_changelog_id,
+                           captured_data_time, parameters_json, created_by, 1
+                    FROM dbo.mold_favorite_snapshots
+                    WHERE id = ?
+                    """,
+                    backup_name,
+                    existing.id,
+                )
+
                 cursor.execute(
                     """
                     UPDATE dbo.mold_favorite_snapshots
@@ -312,6 +364,14 @@ def create_favorite_from_changelog(
 
 @router.get("/molds/{mold_id}/machine-types/{machine_type_id}/favorites")
 def list_favorites(mold_id: int, machine_type_id: int, user: dict = Depends(require_user)):
+    """Named favorites first (newest first), then auto-backups (also
+    newest first) -- see setup_favorites_backup_flag.sql, which added
+    is_backup plus IX_mold_favorite_snapshots_backup_order specifically
+    for this ordering. Previously this query selected neither is_backup
+    nor ordered by it, so despite the frontend already grouping/
+    dividing the list on that assumption (see favoriteListRowHtml /
+    refreshFavoritesList in app.js), backups and named favorites were
+    actually interleaved by updated_at alone."""
     del user
     try:
         with closing(get_connection()) as connection:
@@ -321,10 +381,10 @@ def list_favorites(mold_id: int, machine_type_id: int, user: dict = Depends(requ
                 raise HTTPException(status_code=404, detail="机型不属于该模具")
             cursor.execute(
                 """
-                SELECT id, name, device_id, captured_data_time, updated_at
+                SELECT id, name, device_id, captured_data_time, updated_at, is_backup
                 FROM dbo.mold_favorite_snapshots
                 WHERE machine_type_id = ?
-                ORDER BY updated_at DESC
+                ORDER BY is_backup ASC, updated_at DESC
                 """,
                 machine_type_id,
             )

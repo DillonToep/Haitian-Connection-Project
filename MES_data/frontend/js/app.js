@@ -2824,12 +2824,6 @@ let currentPage = "dashboard";
         }
     }
 
-    document.getElementById("favorite-save-mold-select").addEventListener("change", e => {
-        if (e.target.value) populateFavoriteMachineTypeSelect(Number(e.target.value));
-    });
-    document.getElementById("favorite-save-cancel").addEventListener("click", () => document.getElementById("favorite-save-dialog").close());
-    document.getElementById("favorite-save-close-x").addEventListener("click", () => document.getElementById("favorite-save-dialog").close());
-
     async function submitFavoriteSave(overwrite) {
         const machineTypeId = document.getElementById("favorite-save-machine-type-select").value;
         const name = document.getElementById("favorite-save-name").value.trim();
@@ -2851,7 +2845,7 @@ let currentPage = "dashboard";
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error((body.detail && body.detail.message) || body.detail || `HTTP ${response.status}`);
             document.getElementById("favorite-save-dialog").close();
-            alert("收藏成功");
+            alert(body.unchanged ? body.message : "收藏成功");
         } catch (error) {
             statusEl.textContent = error.message;
         }
