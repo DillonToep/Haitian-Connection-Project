@@ -285,9 +285,36 @@ def overlay_values_onto_template(
         _, field = key.split(":", 1)
         _set(r0, c0, _extended_value(extended_fields, field))
 
+    # ---- parameter cells: label-driven position first, fixed coordinate
+    # as a last resort -- this is the write-side counterpart of the
+    # label-driven reader in label_scan_xlsx.py. An uploaded workbook's
+    # actual layout can differ from the built-in template's fixed
+    # PARAMETER_CELL_MAP coordinates (extra/missing rows, shifted
+    # columns), so locating each tag's real cell by its block title +
+    # row label + stage header keeps a value from being written into the
+    # wrong cell (or worse, into an unrelated merged banner cell).
+    from .label_scan_xlsx import build_resolved_grid, covered_tags, locate_all_blocks
+
+    grid = build_resolved_grid(ws)
+    located = locate_all_blocks(grid)
+    label_covered = covered_tags()
+
     for (r0, c0), key in PARAMETER_CELL_MAP.items():
         _, tag = key.split(":", 1)
-        _set(r0, c0, _tag_value(parameters_by_tag, tag))
+        if tag in located:
+            row0, col0 = located[tag]
+        elif tag in label_covered:
+            # BLOCK_DEFS knows this tag but couldn't find it on this
+            # sheet -- that block/stage genuinely isn't present here.
+            # Falling back to the fixed coordinate is what previously
+            # let an unrelated tag's stale coordinate land inside a
+            # neighboring block's merged banner cell (or clobber a
+            # correctly-located sibling), so skip it entirely rather
+            # than guess.
+            continue
+        else:
+            row0, col0 = r0, c0
+        _set(row0, col0, _tag_value(parameters_by_tag, tag))
 
     for offset, col0 in enumerate(_HOT_RUNNER_COLS):
         _, field = f"ext:hot_runner_t{offset + 1}".split(":", 1)

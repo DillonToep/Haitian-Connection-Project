@@ -33,6 +33,11 @@ from .export_xlsx import (
     _HOT_RUNNER_COLS,
     _MERGES,
 )
+from .label_scan_xlsx import (
+    build_resolved_grid,
+    build_resolved_grid_xlrd,
+    scan_all_blocks,
+)
 
 # Anchor-cell lookup for the *built-in* xlsx template's merges -- only
 # used by the xlsx reader (openpyxl only stores a value on the top-left
@@ -68,6 +73,34 @@ def _clean(value):
     if isinstance(value, str):
         value = value.strip()
     return value if value not in (None, "") else None
+
+
+def _scan_parameters_xlsx(file_bytes: bytes) -> dict:
+    """Label-driven parameter scan for .xlsx/.xlsm -- replaces reading
+    PARAMETER_CELL_MAP by fixed coordinate. See label_scan_xlsx.py for
+    why: an uploaded workbook's real row/column layout can differ from
+    the built-in template's, and fixed coordinates silently misread the
+    wrong cell (or a merged banner cell) when it does."""
+    workbook = load_workbook(BytesIO(file_bytes), data_only=True)
+    worksheet = workbook.active
+    grid = build_resolved_grid(worksheet)
+    return scan_all_blocks(grid)
+
+
+def _scan_parameters_xls(file_bytes: bytes) -> dict:
+    try:
+        import xlrd
+    except ImportError as error:
+        raise RuntimeError(
+            "服务器缺少 xlrd 库，无法解析 .xls 文件（请安装 xlrd 或改用 .xlsx/.csv）"
+        ) from error
+    try:
+        workbook = xlrd.open_workbook(file_contents=file_bytes, formatting_info=True)
+    except Exception:
+        workbook = xlrd.open_workbook(file_contents=file_bytes)
+    sheet = workbook.sheet_by_index(0)
+    grid = build_resolved_grid_xlrd(sheet)
+    return scan_all_blocks(grid)
 
 
 def _make_xlsx_reader(file_bytes: bytes):
@@ -203,11 +236,30 @@ def parse_trial_parameter_workbook(file_bytes: bytes, filename: str = "") -> dic
         if value is not None:
             extended[f"hot_runner_t{offset + 1}"] = value
 
+    # ---- parameters: label-driven scan for .xlsx/.xlsm/.xls, since this
+    # is the path that broke against a real-world layout drift (extra
+    # inserted row shifted every fixed coordinate below it). .csv has no
+    # merged-cell/label-search story worth building (a CSV export of a
+    # merged sheet only carries a value in each former merge's top-left
+    # cell anyway), so it stays on the fixed-coordinate reader.
+    ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
+    if ext == "xls":
+        raw_parameters = _scan_parameters_xls(file_bytes)
+    elif ext == "csv":
+        raw_parameters = None
+    else:
+        raw_parameters = _scan_parameters_xlsx(file_bytes)
+
     parameters: dict = {}
-    for (row0, col0), key in PARAMETER_CELL_MAP.items():
-        _, tag = key.split(":", 1)
-        value = read_cell(row0, col0)
-        if value is not None:
-            parameters[tag] = _normalize_numeric_string(value)
+    if raw_parameters is not None:
+        for tag, value in raw_parameters.items():
+            if value not in (None, ""):
+                parameters[tag] = _normalize_numeric_string(value)
+    else:
+        for (row0, col0), key in PARAMETER_CELL_MAP.items():
+            _, tag = key.split(":", 1)
+            value = read_cell(row0, col0)
+            if value is not None:
+                parameters[tag] = _normalize_numeric_string(value)
 
     return {"header": header, "extended": extended, "parameters": parameters}
