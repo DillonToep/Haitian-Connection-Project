@@ -1,7 +1,23 @@
 """Builds the "试模成型参数表" (trial-mold parameter form) as an .xlsx
-file, reproducing the layout of the company's original paper/.xls template
-(grid text + merged cells captured verbatim below) and overlaying whichever
-cells have a matching value already stored in the MES.
+file, filling in whichever cells have a matching value already stored in
+the MES. Two code paths share the same cell mapping
+(PARAMETER_CELL_MAP / EXTENDED_CELL_MAP / HEADER_CELL_MAP):
+
+- build_trial_parameter_workbook(): generates a brand-new workbook from
+  the company's original paper/.xls template (grid text + merged cells
+  captured verbatim below as static data, extracted once from
+  参数.xls via xlrd, so this module has no runtime dependency on that
+  file). Used when no workbook has ever been uploaded for a given Mold +
+  Machine Type -- see backend/template_storage.py.
+
+- overlay_values_onto_template(): writes the same mapped values onto a
+  COPY of a workbook a user previously uploaded (see
+  backend/routers/export.py's POST .../import), instead of regenerating
+  a sheet. Every cell not in the mapping -- and all formatting, merges,
+  images, formulas, column widths, page setup, etc. -- is left exactly
+  as uploaded. This is the path used once a Mold + Machine Type has an
+  uploaded template on file, so "upload -> edit in app -> export" writes
+  back into the user's own file rather than a freshly generated one.
 
 Only cells with a confident, unambiguous field mapping are filled in --
 see PARAMETER_CELL_MAP / EXTENDED_CELL_MAP / HEADER_CELL_MAP below. Fields
@@ -9,15 +25,11 @@ that only exist on the paper form (试模员/试模日期/审核/试模结果 de
 checklist, 螺杆直径, 锁模力, etc.) are intentionally left blank since the
 MES has no data behind them -- the exported sheet is meant to be finished
 by hand during the actual trial run.
-
-The grid text and merge ranges were extracted once from the company's
-original 参数.xls (via xlrd) and are embedded as static data (_TEMPLATE)
-so this module has no runtime dependency on that file.
 """
 import json
 from io import BytesIO
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
 
@@ -214,5 +226,74 @@ def build_trial_parameter_workbook(mold: dict, parameters_by_tag: dict, extended
 
     buffer = BytesIO()
     wb.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def overlay_values_onto_template(
+    file_bytes: bytes,
+    is_macro_enabled: bool,
+    mold: dict,
+    parameters_by_tag: dict,
+    extended_fields: dict,
+) -> BytesIO:
+    """Writes the same mapped values as build_trial_parameter_workbook,
+    but onto a COPY of a user-uploaded workbook (file_bytes) instead of
+    regenerating a sheet from the embedded _TEMPLATE. Only the cells
+    listed in HEADER_CELL_MAP / EXTENDED_CELL_MAP / PARAMETER_CELL_MAP /
+    the hot-runner columns are touched -- every other cell, its
+    formatting, merges, images, formulas, column widths, page setup,
+    etc. are left exactly as uploaded.
+
+    Unlike build_trial_parameter_workbook (which skips None values,
+    since it starts from an already-blank template), a mapped field with
+    no value here explicitly clears its cell to blank -- the uploaded
+    workbook may already hold a stale value from a previous edit/export
+    cycle, and per spec a field with no value must blank its cell rather
+    than silently keep whatever was there before.
+
+    Merge ranges are read from the ACTUAL uploaded worksheet (not the
+    static _MERGES table used by build_trial_parameter_workbook), so this
+    works correctly even if the uploaded file's structure isn't byte-for-
+    byte identical to the embedded template, as long as the same cell
+    positions carry the same fields.
+
+    Known limitation: openpyxl does not reliably preserve embedded charts
+    through a load/save round trip -- a workbook containing charts may
+    lose them on export. Styles, merges, images, formulas, and layout are
+    unaffected.
+    """
+    workbook = load_workbook(BytesIO(file_bytes), data_only=False, keep_vba=is_macro_enabled)
+    ws = workbook.active
+
+    anchor_for: dict[tuple[int, int], tuple[int, int]] = {}
+    for merged_range in ws.merged_cells.ranges:
+        anchor = (merged_range.min_row - 1, merged_range.min_col - 1)
+        for r in range(merged_range.min_row - 1, merged_range.max_row):
+            for c in range(merged_range.min_col - 1, merged_range.max_col):
+                anchor_for[(r, c)] = anchor
+
+    def _set(row0, col0, value):
+        anchor_row0, anchor_col0 = anchor_for.get((row0, col0), (row0, col0))
+        ws.cell(row=anchor_row0 + 1, column=anchor_col0 + 1).value = value
+
+    for (r0, c0), key in HEADER_CELL_MAP.items():
+        _, field = key.split(":", 1)
+        _set(r0, c0, mold.get(field))
+
+    for (r0, c0), key in EXTENDED_CELL_MAP.items():
+        _, field = key.split(":", 1)
+        _set(r0, c0, _extended_value(extended_fields, field))
+
+    for (r0, c0), key in PARAMETER_CELL_MAP.items():
+        _, tag = key.split(":", 1)
+        _set(r0, c0, _tag_value(parameters_by_tag, tag))
+
+    for offset, col0 in enumerate(_HOT_RUNNER_COLS):
+        _, field = f"ext:hot_runner_t{offset + 1}".split(":", 1)
+        _set(_HOT_RUNNER_ROW, col0, _extended_value(extended_fields, field))
+
+    buffer = BytesIO()
+    workbook.save(buffer)
     buffer.seek(0)
     return buffer

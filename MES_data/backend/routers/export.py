@@ -1,5 +1,6 @@
 from contextlib import closing
 import json
+from pathlib import Path
 from urllib.parse import quote
 
 import pyodbc
@@ -7,13 +8,27 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ..database import get_connection
-from ..export_xlsx import build_trial_parameter_workbook
+from ..export_xlsx import build_trial_parameter_workbook, overlay_values_onto_template
 from ..import_xlsx import parse_trial_parameter_workbook
 from ..parameter_labels import EXCLUDED_FROM_TARGETS, PARAMETER_LABELS
 from ..security import require_editor, require_user
+from ..template_storage import delete_trial_template, get_trial_template, save_trial_template
 
 
 router = APIRouter(prefix="/api", tags=["export"])
+
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+XLSM_MEDIA_TYPE = "application/vnd.ms-excel.sheet.macroEnabled.12"
+
+
+def _get_machine_type_or_404(cursor, mold_id: int, machine_type_id: int):
+    row = cursor.execute(
+        "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
+        machine_type_id, mold_id,
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="机型不存在")
+    return row
 
 
 @router.get("/molds/{mold_id}/machine-types/{machine_type_id}/export")
@@ -22,12 +37,22 @@ def export_trial_parameter_sheet(
     machine_type_id: int,
     user: dict = Depends(require_user),
 ):
-    """Generates the company's 试模成型参数表 (.xlsx) for one Mold +
-    Machine Type, filling in only the cells that have a confident match
-    to data already stored in the MES (see export_xlsx.py for the exact
-    field mapping). Everything else -- 试模员/试模日期/审核, the 试模结果
-    defect checklist, etc. -- is left blank for the operator to fill in
-    by hand during the actual trial run."""
+    """Generates the 试模成型参数表 (.xlsx/.xlsm) for one Mold + Machine
+    Type.
+
+    If a workbook was previously uploaded for this machine type (see
+    POST .../import below), THAT exact file is used as the base -- a copy
+    of it is opened, only the mapped cells are overwritten with current
+    MES values (blank if a mapped field currently has no value), and
+    everything else (formatting, merges, images, formulas, layout) is
+    preserved untouched. This is the "upload -> edit in app -> export
+    back into the same file" workflow.
+
+    If nothing has ever been uploaded for this machine type, this falls
+    back to the original behavior: a fresh sheet generated from the
+    built-in static template (backend/export_xlsx.py's embedded
+    _TEMPLATE), with only confidently-mapped cells filled in.
+    """
     del user
     try:
         with closing(get_connection()) as connection:
@@ -40,12 +65,7 @@ def export_trial_parameter_sheet(
             if mold_row is None:
                 raise HTTPException(status_code=404, detail="模具不存在")
 
-            machine_type_row = cursor.execute(
-                "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
-                machine_type_id, mold_id,
-            ).fetchone()
-            if machine_type_row is None:
-                raise HTTPException(status_code=404, detail="机型不存在")
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
 
             cursor.execute(
                 "SELECT parameter_id, target_value FROM dbo.mold_parameter_targets "
@@ -67,21 +87,90 @@ def export_trial_parameter_sheet(
         raise HTTPException(status_code=500, detail=str(error)) from error
 
     extended_fields = json.loads(extended_row.info_json) if extended_row and extended_row.info_json else {}
-
     mold = {
         "mold_code": mold_row.mold_code,
         "mold_name": mold_row.mold_name,
         "cavities": mold_row.cavities,
     }
 
-    buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
-    filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
+    template = get_trial_template(machine_type_id)
+    original_bytes = None
+    if template is not None:
+        try:
+            original_bytes = Path(template.file_path).read_bytes()
+        except OSError:
+            template = None  # file missing on disk -- fall back to the generated sheet
+
+    if template is not None and original_bytes is not None:
+        is_macro = template.original_filename.lower().endswith(".xlsm")
+        buffer = overlay_values_onto_template(original_bytes, is_macro, mold, parameters_by_tag, extended_fields)
+        filename = template.original_filename
+        media_type = XLSM_MEDIA_TYPE if is_macro else XLSX_MEDIA_TYPE
+    else:
+        buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
+        filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
+        media_type = XLSX_MEDIA_TYPE
+
     encoded_filename = quote(filename)  # percent-encode: headers must be latin-1
     return StreamingResponse(
         buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
+
+
+@router.get("/molds/{mold_id}/machine-types/{machine_type_id}/template")
+def get_template_status(
+    mold_id: int,
+    machine_type_id: int,
+    user: dict = Depends(require_user),
+):
+    """Tells the frontend whether exports for this machine type currently
+    write back into a previously uploaded workbook, or fall back to the
+    generated static template."""
+    del user
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    template = get_trial_template(machine_type_id)
+    if template is None:
+        return {"has_template": False}
+    return {
+        "has_template": True,
+        "original_filename": template.original_filename,
+        "uploaded_at": template.uploaded_at,
+    }
+
+
+@router.delete("/molds/{mold_id}/machine-types/{machine_type_id}/template")
+def remove_template(
+    mold_id: int,
+    machine_type_id: int,
+    user: dict = Depends(require_user),
+):
+    """Forgets the uploaded workbook for this machine type. After this,
+    GET .../export reverts to generating a fresh sheet from the built-in
+    static template. Does not touch any already-imported MES values
+    (mold_parameter_targets / mold_extended_info) -- those stay as-is."""
+    require_editor(user)
+    try:
+        with closing(get_connection()) as connection:
+            cursor = connection.cursor()
+            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+    except HTTPException:
+        raise
+    except pyodbc.Error as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    if not delete_trial_template(machine_type_id):
+        raise HTTPException(status_code=404, detail="尚未上传过原始文件")
+    return {"status": "ok"}
 
 
 @router.post("/molds/{mold_id}/machine-types/{machine_type_id}/import")
@@ -91,25 +180,27 @@ async def import_trial_parameter_sheet(
     user: dict = Depends(require_user),
     file: UploadFile = File(...),
 ):
-    """Reads a filled-in 试模成型参数表 (.xlsx) -- typically one previously
-    exported by the endpoint above, then edited by hand during a trial
-    run -- and writes whatever values it finds back onto this Mold +
-    Machine Type's 高级工艺参数 (dbo.mold_parameter_targets) and extended
-    info (dbo.mold_extended_info).
+    """Reads an uploaded 试模成型参数表 (.xlsx/.xlsm) and:
 
-    Import is additive/overlay, never destructive:
+      1. Writes whatever mapped values it finds onto this Mold + Machine
+         Type's 高级工艺参数 (dbo.mold_parameter_targets) and extended info
+         (dbo.mold_extended_info) -- same as before.
+      2. Stores the uploaded workbook itself as this machine type's
+         export template (see backend/template_storage.py). From now on,
+         GET .../export writes updated values back into a copy of THIS
+         exact file -- preserving its formatting, merges, images, and
+         layout -- instead of generating a fresh sheet. Uploading again
+         later replaces the stored template.
+
+    Import is additive/overlay, never destructive to the DB values:
       - A blank cell means "leave the existing saved value alone", not
         "clear it" -- only tags/fields the sheet actually has a value for
         are touched.
       - An existing tag's tolerance_mode/tolerance_percent/tolerance_flat
-        are left completely untouched; only target_value is overwritten
-        (mirrors how applying a favorite works in favorites.py).
+        are left completely untouched; only target_value is overwritten.
       - 模具编号/产品名称/模穴数 read from the sheet header are returned to
         the caller as `header_read_only` for review, but are NOT applied
-        automatically -- changing those has wider effects (unique
-        mold_code constraint, cavity-temperature row count, etc.) that
-        deserve an explicit edit through PUT /api/molds/{mold_id}
-        instead of an implicit side effect of an xlsx import.
+        automatically -- see PUT /api/molds/{mold_id} for that instead.
     """
     require_editor(user)
 
@@ -196,9 +287,16 @@ async def import_trial_parameter_sheet(
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
+    # Persist the uploaded workbook itself as this machine type's export
+    # template -- done after the DB transaction above commits successfully,
+    # so a bad file never gets "adopted" as the template without its
+    # values actually having been imported.
+    save_trial_template(machine_type_id, file.filename, content, user["id"])
+
     return {
         "status": "ok",
         "parameters_imported": len(incoming_parameters),
         "extended_fields_imported": len(parsed["extended"]),
         "header_read_only": parsed["header"],
+        "template_saved": True,
     }

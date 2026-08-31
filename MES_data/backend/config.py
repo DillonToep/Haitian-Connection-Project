@@ -7,6 +7,8 @@ FRONTEND_DIR = PROJECT_DIR / "frontend"
 
 MOLD_UPLOAD_DIR = FRONTEND_DIR / "uploads" / "molds"
 MOLD_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TRIAL_TEMPLATE_DIR = FRONTEND_DIR / "uploads" / "trial_templates"
+TRIAL_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
 SESSION_COOKIE = "mes_session"
 SESSION_HOURS = 12
