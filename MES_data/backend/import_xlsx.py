@@ -71,13 +71,29 @@ def _clean(value):
 
 
 def _make_xlsx_reader(file_bytes: bytes):
-    """.xlsx / .xlsm -- openpyxl, using the built-in template's own
-    static merge map (this is the original behavior, unchanged)."""
+    """.xlsx / .xlsm -- openpyxl. Resolves each mapped cell against the
+    UPLOADED workbook's own merged ranges first (same approach the .xls
+    reader below uses), falling back to the built-in template's static
+    merge map (_ANCHOR_FOR) for any cell the uploaded file doesn't merge
+    itself. The fallback keeps this working exactly as before for a
+    workbook whose merges happen to match the built-in template, while
+    the real-merges-first lookup fixes cells whose merge boundaries in
+    the actual uploaded file differ from that static assumption (e.g. a
+    template that was hand-edited, or one whose merges don't line up
+    1:1 with ours) -- previously a mismatch here silently read back
+    blank instead of resolving to wherever the value actually lives."""
     workbook = load_workbook(BytesIO(file_bytes), data_only=True)
     worksheet = workbook.active
 
+    anchor_for = dict(_ANCHOR_FOR)
+    for merged_range in worksheet.merged_cells.ranges:
+        anchor = (merged_range.min_row - 1, merged_range.min_col - 1)
+        for r in range(merged_range.min_row - 1, merged_range.max_row):
+            for c in range(merged_range.min_col - 1, merged_range.max_col):
+                anchor_for[(r, c)] = anchor
+
     def _read(row0: int, col0: int):
-        anchor_row0, anchor_col0 = _ANCHOR_FOR.get((row0, col0), (row0, col0))
+        anchor_row0, anchor_col0 = anchor_for.get((row0, col0), (row0, col0))
         value = worksheet.cell(row=anchor_row0 + 1, column=anchor_col0 + 1).value
         return _clean(value)
 
@@ -95,7 +111,19 @@ def _make_xls_reader(file_bytes: bytes):
             "服务器缺少 xlrd 库，无法解析 .xls 文件（请安装 xlrd 或改用 .xlsx/.csv）"
         ) from error
 
-    workbook = xlrd.open_workbook(file_contents=file_bytes)
+    # formatting_info=True is required for xlrd to populate
+    # sheet.merged_cells at all -- without it the attribute is always an
+    # empty list regardless of what the file actually contains, which
+    # silently defeated the merge-anchor resolution below for every cell
+    # that isn't itself a merge's top-left corner (several of the
+    # PARAMETER_CELL_MAP / EXTENDED_CELL_MAP entries aren't). A handful of
+    # malformed/legacy .xls files raise while xlrd parses the formatting
+    # records this needs, so fall back to the old (merge-blind) behavior
+    # for those rather than failing the import outright.
+    try:
+        workbook = xlrd.open_workbook(file_contents=file_bytes, formatting_info=True)
+    except Exception:
+        workbook = xlrd.open_workbook(file_contents=file_bytes)
     sheet = workbook.sheet_by_index(0)
 
     # Build an anchor map from THIS file's own merged cells (not the
