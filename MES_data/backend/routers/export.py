@@ -204,12 +204,13 @@ async def import_trial_parameter_sheet(
     """
     require_editor(user)
 
-    if not (file.filename or "").lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="请上传 .xlsx 文件")
+    filename_lower = (file.filename or "").lower()
+    if not filename_lower.endswith((".xlsx", ".xlsm", ".xls", ".csv")):
+        raise HTTPException(status_code=400, detail="请上传 .xlsx / .xls / .csv 文件")
 
     content = await file.read()
     try:
-        parsed = parse_trial_parameter_workbook(content)
+        parsed = parse_trial_parameter_workbook(content, file.filename)
     except Exception as error:  # noqa: BLE001 -- surface any parse failure as a clean 400
         raise HTTPException(status_code=400, detail=f"文件解析失败：{error}") from error
 
@@ -293,10 +294,14 @@ async def import_trial_parameter_sheet(
     # values actually having been imported.
     save_trial_template(machine_type_id, file.filename, content, user["id"])
 
+    template_saved = filename_lower.endswith((".xlsx", ".xlsm"))
+    if template_saved:
+        save_trial_template(machine_type_id, file.filename, content, user["id"])
+
     return {
         "status": "ok",
         "parameters_imported": len(incoming_parameters),
         "extended_fields_imported": len(parsed["extended"]),
         "header_read_only": parsed["header"],
-        "template_saved": True,
+        "template_saved": template_saved,
     }

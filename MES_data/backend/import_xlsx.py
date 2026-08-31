@@ -1,18 +1,26 @@
 """Reverses the cell maps in export_xlsx.py so a filled-in 试模成型参数表
-(.xlsx) can be read back into structured data for import.
+can be read back into structured data for import.
 
-This intentionally mirrors export_xlsx.py's approach: it reuses that
-module's HEADER_CELL_MAP / EXTENDED_CELL_MAP / PARAMETER_CELL_MAP /
-_HOT_RUNNER_ROW / _HOT_RUNNER_COLS / _MERGES so the two stay in sync --
-any cell added to one side's map should be added to the other, and if
-export_xlsx.py's maps ever change, this module picks up the change
-automatically rather than needing a parallel edit.
+Three source formats are supported, all mapped onto the same
+HEADER_CELL_MAP / EXTENDED_CELL_MAP / PARAMETER_CELL_MAP /
+_HOT_RUNNER_ROW / _HOT_RUNNER_COLS / _MERGES cell positions defined in
+export_xlsx.py (so the maps only need to be maintained in one place):
 
-Only cells listed in those maps are read; anything else on the sheet
-(试模员/试模日期/审核/试模结果 defect checklist, etc.) is ignored, same
-scope limitation the export side documents.
+- .xlsx / .xlsm -- read via openpyxl, using the workbook's own merged
+  cells (a value only lives on a merge's top-left cell).
+- .xls (Excel 97-2003 / legacy BIFF) -- read via xlrd, same idea but
+  using xlrd's merged_cells info.
+- .csv -- read as a plain row/column grid via the stdlib csv module.
+  CSV has no merged-cell concept, so every mapped cell must contain its
+  own value directly (i.e. a CSV exported from a merged sheet will only
+  have the value in the top-left cell of each former merge anyway,
+  which is exactly what these cell maps expect).
+
+Only cells listed in the maps are read; anything else on the sheet is
+ignored, same scope limitation the export side documents.
 """
-from io import BytesIO
+from io import BytesIO, StringIO
+import csv
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from openpyxl import load_workbook
@@ -26,9 +34,10 @@ from .export_xlsx import (
     _MERGES,
 )
 
-# Same anchor-cell lookup export_xlsx.py builds for writing -- needed here
-# for reading too, since openpyxl only stores a value on the top-left cell
-# of a merged range; every other cell in that range reads back as None.
+# Anchor-cell lookup for the *built-in* xlsx template's merges -- only
+# used by the xlsx reader (openpyxl only stores a value on the top-left
+# cell of a merged range; every other cell in that range reads back as
+# None on a workbook built from our own template).
 _ANCHOR_FOR = {}
 for _r0, _r1, _c0, _c1 in _MERGES:
     for _rr in range(_r0, _r1):
@@ -53,9 +62,7 @@ def _normalize_numeric_string(value):
     return str(int(number.to_integral_value(rounding=ROUND_HALF_UP)))
 
 
-def _read_cell(worksheet, row0: int, col0: int):
-    anchor_row0, anchor_col0 = _ANCHOR_FOR.get((row0, col0), (row0, col0))
-    value = worksheet.cell(row=anchor_row0 + 1, column=anchor_col0 + 1).value
+def _clean(value):
     if value is None:
         return None
     if isinstance(value, str):
@@ -63,7 +70,77 @@ def _read_cell(worksheet, row0: int, col0: int):
     return value if value not in (None, "") else None
 
 
-def parse_trial_parameter_workbook(file_bytes: bytes) -> dict:
+def _make_xlsx_reader(file_bytes: bytes):
+    """.xlsx / .xlsm -- openpyxl, using the built-in template's own
+    static merge map (this is the original behavior, unchanged)."""
+    workbook = load_workbook(BytesIO(file_bytes), data_only=True)
+    worksheet = workbook.active
+
+    def _read(row0: int, col0: int):
+        anchor_row0, anchor_col0 = _ANCHOR_FOR.get((row0, col0), (row0, col0))
+        value = worksheet.cell(row=anchor_row0 + 1, column=anchor_col0 + 1).value
+        return _clean(value)
+
+    return _read
+
+
+def _make_xls_reader(file_bytes: bytes):
+    """Legacy .xls (Excel 97-2003 / BIFF), via xlrd. openpyxl cannot open
+    this format, and xlrd 2.x dropped xlsx support entirely, so xlrd is
+    used only for this one path."""
+    try:
+        import xlrd
+    except ImportError as error:
+        raise RuntimeError(
+            "服务器缺少 xlrd 库，无法解析 .xls 文件（请安装 xlrd 或改用 .xlsx/.csv）"
+        ) from error
+
+    workbook = xlrd.open_workbook(file_contents=file_bytes)
+    sheet = workbook.sheet_by_index(0)
+
+    # Build an anchor map from THIS file's own merged cells (not the
+    # static template map above) -- an uploaded .xls may not be merged
+    # identically to the generated xlsx template.
+    anchor_for = {}
+    for rlo, rhi, clo, chi in getattr(sheet, "merged_cells", []):
+        for r in range(rlo, rhi):
+            for c in range(clo, chi):
+                anchor_for[(r, c)] = (rlo, clo)
+
+    def _read(row0: int, col0: int):
+        anchor_row0, anchor_col0 = anchor_for.get((row0, col0), (row0, col0))
+        if anchor_row0 >= sheet.nrows or anchor_col0 >= sheet.ncols:
+            return None
+        value = sheet.cell_value(anchor_row0, anchor_col0)
+        return _clean(value)
+
+    return _read
+
+
+def _make_csv_reader(file_bytes: bytes):
+    """.csv -- plain row/column grid, no merged-cell concept. A mapped
+    cell must carry its own value directly."""
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    rows = list(csv.reader(StringIO(text)))
+
+    def _read(row0: int, col0: int):
+        if row0 >= len(rows) or col0 >= len(rows[row0]):
+            return None
+        return _clean(rows[row0][col0])
+
+    return _read
+
+
+def _reader_for(file_bytes: bytes, filename: str):
+    ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
+    if ext == "xls":
+        return _make_xls_reader(file_bytes)
+    if ext == "csv":
+        return _make_csv_reader(file_bytes)
+    return _make_xlsx_reader(file_bytes)  # .xlsx / .xlsm (default/fallback)
+
+
+def parse_trial_parameter_workbook(file_bytes: bytes, filename: str = "") -> dict:
     """Returns
     {
         "header": {"mold_code": ..., "mold_name": ..., "cavities": ...},
@@ -73,33 +150,35 @@ def parse_trial_parameter_workbook(file_bytes: bytes) -> dict:
     Every sub-dict only contains keys the sheet actually had a
     non-blank value for -- a blank cell means "leave whatever is
     already saved alone", never "clear it".
+
+    `filename` picks the parser: .xls -> xlrd, .csv -> csv module,
+    anything else (.xlsx/.xlsm, or unspecified) -> openpyxl.
     """
-    workbook = load_workbook(BytesIO(file_bytes), data_only=True)
-    worksheet = workbook.active
+    read_cell = _reader_for(file_bytes, filename)
 
     header: dict = {}
     for (row0, col0), key in HEADER_CELL_MAP.items():
         _, field = key.split(":", 1)
-        value = _read_cell(worksheet, row0, col0)
+        value = read_cell(row0, col0)
         if value is not None:
             header[field] = value
 
     extended: dict = {}
     for (row0, col0), key in EXTENDED_CELL_MAP.items():
         _, field = key.split(":", 1)
-        value = _read_cell(worksheet, row0, col0)
+        value = read_cell(row0, col0)
         if value is not None:
             extended[field] = value
 
     for offset, col0 in enumerate(_HOT_RUNNER_COLS):
-        value = _read_cell(worksheet, _HOT_RUNNER_ROW, col0)
+        value = read_cell(_HOT_RUNNER_ROW, col0)
         if value is not None:
             extended[f"hot_runner_t{offset + 1}"] = value
 
     parameters: dict = {}
     for (row0, col0), key in PARAMETER_CELL_MAP.items():
         _, tag = key.split(":", 1)
-        value = _read_cell(worksheet, row0, col0)
+        value = read_cell(row0, col0)
         if value is not None:
             parameters[tag] = _normalize_numeric_string(value)
 

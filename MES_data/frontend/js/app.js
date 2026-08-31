@@ -1675,10 +1675,13 @@ let currentPage = "dashboard";
             const headerNotes = result.header_read_only && Object.keys(result.header_read_only).length
                 ? `\n读取到表头信息（未自动应用，请核对）：${JSON.stringify(result.header_read_only)}`
                 : "";
+            const templateNote = result.template_saved
+                ? "该文件已保存为此机型的导出模板，之后导出将写回这份文件。"
+                : "该文件格式不支持保存为导出模板，导出仍使用系统默认模板（已导入的数值不受影响）。";
             alert(
                 `导入成功：写入 ${result.parameters_imported} 项工艺参数、` +
                 `${result.extended_fields_imported} 项扩展字段。\n` +
-                `该文件已保存为此机型的导出模板，之后导出将写回这份文件。${headerNotes}`
+                `${templateNote}${headerNotes}`
             );
         } catch (error) {
             alert(`导入失败：${error.message}`);
