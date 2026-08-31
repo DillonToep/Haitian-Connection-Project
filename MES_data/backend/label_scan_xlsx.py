@@ -167,36 +167,44 @@ BLOCK_DEFS: tuple[BlockDef, ...] = (
     BlockDef(
         title_aliases=("保压",),
         rows=(
-            RowDef(("速度",), {1: "PV1", 2: "PV2", 3: "PV3"}),
-            RowDef(("压力",), {1: "PP1", 2: "PP2", 3: "PP3"}),
-            RowDef(("时间S", "时间"), {1: "PT1", 2: "PT2", 3: "PT3"}),
+            RowDef(("速度",), {1: "PV1", 2: "PV2", 3: "PV3", 4: "PV4"}),
+            RowDef(("压力",), {1: "PP1", 2: "PP2", 3: "PP3", 4: "PP4"}),
+            RowDef(("时间S", "时间"), {1: "PT1", 2: "PT2", 3: "PT3", 4: "PT4"}),
         ),
     ),
     BlockDef(
         title_aliases=("锁模设定",),
         rows=(
-            RowDef(("速度",), {1: "MCV1", 2: "MCV2", 3: "MCV3"}),
-            RowDef(("压力",), {1: "MCP1", 2: "MCP2", 3: "MCP3"}),
-            RowDef(("位置",), {1: "MCS1", 2: "MCS2", 3: "MCS3"}),
+            RowDef(("速度",), {1: "MCV1", 2: "MCV2", 3: "MCV3", 4: "MCV4", 5: "MCV5"}),
+            RowDef(("压力",), {1: "MCP1", 2: "MCP2", 3: "MCP3", 4: "MCP4", 5: "MCP5"}),
+            RowDef(("位置",), {1: "MCS1", 2: "MCS2", 3: "MCS3", 4: "MCS4", 5: "MCS5"}),
         ),
         simple_rows=(
-            # "高压" is its own labeled column in this block rather than a
-            # numbered stage -- treated as a simple row keyed by that
-            # label text, mapped to the 5th (final) lock-clamp stage
-            # (matches the machine panel's own "高压" = last stage
-            # convention -- see export_xlsx.py comment).
+            # Back-compat with sheets that spell out "高压速度"/"高压压力"/
+            # "高压位置" as their own combined row label instead of a
+            # "高压" column header shared by the 速度/压力/位置 rows (see
+            # stage_name_aliases below, which is what the observed sheets
+            # actually use). Harmless if unused -- setdefault() below means
+            # whichever resolves first wins, never both.
             SimpleRowDef(("高压速度",), "MCV5"),
             SimpleRowDef(("高压压力",), "MCP5"),
             SimpleRowDef(("高压位置",), "MCS5"),
         ),
+        # "高压" (final/high-pressure stage) is a named column on the
+        # header row on observed sheets, not a combined row label -- map
+        # it onto the same stage-5 tags as the RowDefs above use.
+        stage_name_aliases={"高压": 5},
     ),
     BlockDef(
         title_aliases=("开模设定",),
         rows=(
-            RowDef(("速度",), {1: "MOV1", 2: "MOV2", 3: "MOV3", 4: "MOV4"}),
-            RowDef(("压力",), {1: "MOP1", 2: "MOP2", 3: "MOP3", 4: "MOP4"}),
-            RowDef(("位置",), {1: "MOS1", 2: "MOS2", 3: "MOS3", 4: "MOS4"}),
+            RowDef(("速度",), {1: "MOV1", 2: "MOV2", 3: "MOV3", 4: "MOV4", 5: "MOV5"}),
+            RowDef(("压力",), {1: "MOP1", 2: "MOP2", 3: "MOP3", 4: "MOP4", 5: "MOP5"}),
+            RowDef(("位置",), {1: "MOS1", 2: "MOS2", 3: "MOS3", 4: "MOS4", 5: "MOS5"}),
         ),
+        # "终止" (final stage / mold-open limit) is a named column on the
+        # header row, alongside numbered "1段".."4段" columns.
+        stage_name_aliases={"终止": 5},
     ),
     BlockDef(
         title_aliases=("顶出次数",),
@@ -212,14 +220,31 @@ BLOCK_DEFS: tuple[BlockDef, ...] = (
         title_aliases=("熔胶设定", "储料设定"),
         rows=(
             RowDef(("速度",), {1: "PLV1", 2: "PLV2", 3: "PLV3", 4: "PLV4"}),
-            RowDef(("压力",), {1: "PLP1", 2: "PLP2", 3: "PLP3", 4: "PLP4"}),
+            # "背压" and "螺杆位置" are named columns that, on observed
+            # sheets, only ever carry a value on the 压力 row (matching
+            # the frontend's own PARAMETER_GRID_BLOCKS mapping, where
+            # those two columns are null for the 速度/位置 rows) -- see
+            # stage_name_aliases below.
+            RowDef(("压力",), {1: "PLP1", 2: "PLP2", 3: "PLP3", 4: "PLP4", 5: "PLBP1", 6: "PLS5"}),
             RowDef(("位置",), {1: "PLS1", 2: "PLS2", 3: "PLS3", 4: "PLS4"}),
+            # Back-compat: some sheets may spell out 背压 as its own row
+            # label (the original assumption here) rather than a named
+            # column on the 压力 row -- harmless if unused, since
+            # result.setdefault() in locate_block never lets this
+            # override a value the 压力 row already resolved.
             RowDef(("背压",), {1: "PLBP1", 2: "PLBP2", 3: "PLBP3", 4: "PLBP4"}),
         ),
         simple_rows=(
             SimpleRowDef(("熔胶时间S", "熔胶时间"), "EPLST"),
             SimpleRowDef(("周期S", "周期"), "ECYCT"),
         ),
+        # "抽胶" is a named column that behaves as the 4th stage (matches
+        # the frontend's own colLabels ordering: 1段/2段/3段/抽胶/背压/
+        # 螺杆位置 map onto stage 4/5/6 respectively). "背压"/"螺杆位置"
+        # only resolve to a real tag on the 压力 RowDef above (stages 5/6
+        # aren't defined for 速度/位置, so those rows simply have nothing
+        # to fill for those columns, matching the frontend's null cells).
+        stage_name_aliases={"抽胶": 4, "背压": 5, "螺杆位置": 6},
     ),
     BlockDef(
         # Previously missing entirely -- 顶针设定 has no BlockDef at all,
