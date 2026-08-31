@@ -1,343 +1,326 @@
-from contextlib import closing
+"""Builds the "试模成型参数表" (trial-mold parameter form) as an .xlsx
+file, filling in whichever cells have a matching value already stored in
+the MES. Two code paths share the same cell mapping
+(PARAMETER_CELL_MAP / EXTENDED_CELL_MAP / HEADER_CELL_MAP):
+
+- build_trial_parameter_workbook(): generates a brand-new workbook from
+  the company's original paper/.xls template (grid text + merged cells
+  captured verbatim below as static data, extracted once from
+  参数.xls via xlrd, so this module has no runtime dependency on that
+  file). Used when no workbook has ever been uploaded for a given Mold +
+  Machine Type -- see backend/template_storage.py.
+
+- overlay_values_onto_template(): writes the same mapped values onto a
+  COPY of a workbook a user previously uploaded (see
+  backend/routers/export.py's POST .../import), instead of regenerating
+  a sheet. Every cell not in the mapping -- and all formatting, merges,
+  images, formulas, column widths, page setup, etc. -- is left exactly
+  as uploaded. This is the path used once a Mold + Machine Type has an
+  uploaded template on file, so "upload -> edit in app -> export" writes
+  back into the user's own file rather than a freshly generated one.
+
+Only cells with a confident, unambiguous field mapping are filled in --
+see PARAMETER_CELL_MAP / EXTENDED_CELL_MAP / HEADER_CELL_MAP below. Fields
+that only exist on the paper form (试模员/试模日期/审核/试模结果 defect
+checklist, 螺杆直径, 锁模力, etc.) are intentionally left blank since the
+MES has no data behind them -- the exported sheet is meant to be finished
+by hand during the actual trial run.
+"""
 import json
-from pathlib import Path
-from urllib.parse import quote
+from io import BytesIO
 
-import pyodbc
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, Side
+from openpyxl.utils import get_column_letter
 
-from ..database import get_connection
-from ..export_xlsx import build_trial_parameter_workbook, overlay_values_onto_template
-from ..import_xlsx import parse_trial_parameter_workbook
-from ..parameter_labels import EXCLUDED_FROM_TARGETS, PARAMETER_LABELS
-from ..security import require_editor, require_user
-from ..template_storage import delete_trial_template, get_trial_template, save_trial_template
-from ..xls_convert import convert_xls_to_xlsx_bytes
+# ---------------------------------------------------------------------
+# Static template data: {"rows": [[str,...], ...], "merges": [[r0,r1,c0,c1], ...]}
+# rows/merges use the same 0-indexed, half-open convention xlrd returns
+# (a merge covers rows r0..r1-1 and cols c0..c1-1).
+# ---------------------------------------------------------------------
+_TEMPLATE = json.loads(r'''{"rows": [["试模成型参数表", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["乔丰科技实业（深圳）有限公司", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["QiaoFeng  technology industrial (shenzhen) co., LTD", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["模具编号", "", "", "产品名称", " ", "", "模穴数", "", "试模次数", "", "", "试模日期", "", "", "", "生产啤数", ""], ["胶料名称", "", "", "   客供   本厂料", "", "颜色", "", "色粉编号", "", "", "烘料温度", "", "烘料方式：□普通  □抽湿", "℃", "", "烘料时间：     H", "   H"], ["试模员", "", "", "要求上机时间", "", "", "", "", "实际完成时间", "", "", "", "", "", "试模用料重量  kg", "", "   Kg"], ["机位/机型", "", "", "品牌", "", "螺杆直径：  MM", "", "安数：      Oz", "", "", " 锁模力 ：         KN       ", "", "", "", "最大注塑压力      ", "        kgf/cm2", ""], ["包装要求", " 普通   出口", "样板要求", "     卡尺寸    客看   项目    自确认", "", "", "", "", "", "", "净重     g", " ", "", "毛重", " ", "1啤总重量", ""], ["料温设定温度\\n（℃）", "射嘴", "1段", "2 段", "3段", "4段", "5段", "热流道设定温度（℃）", "热流板", "", "1段", "2 段", "3段", "3段", "4段", "5段", "6段"], ["", "", "", "", "", "", "", "", " ", "", "", "", "", "", "", "", ""], ["模温设定\\n（℃）", "前模", "后模", "行位", "实测模温", "前模", "后模", "行位", "啤试模式", "", "  全自动   半自动    手动    机械手", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["射胶设定", "", "1级", "2级", "3级", "4级", "5级", "射胶时间（秒）", "冷却时间（S)", "", "保压切换位置（MM)", "保压", "", "", "1级", "2级", "3级"], ["", "速度", "", "", "", "", "", "", "", "", "", "", "", "速度", "", "", ""], ["", "压力", "", "", "", "", "", "", "", "", "", "", "", "压力", "", "", ""], ["", "位置", "", "", "", "", "", "", "", "", "", "", "", "时间（S)", "", "", ""], ["锁模设定±10℅", "", "1段", "2段", "3段", "高压", "开模设定±10℅", "", "1段", "2段", "2段", "3段", "", "4段", "顶出方式", "顶出次数", "顶出行程（MM)"], ["", "速度", "", "", "", "", "", "速度", "", "", "", "", "", "", "   拉杆", "", ""], ["", "压力", "", "", "", "", "", "压力", "", "", "", "", "", "", " 普通", "", ""], ["", "位置", "", "", "", "", "", "位置", "", "", "", "", "", "", " 油缸", "", ""], ["熔胶设定", "", "1段", "2段", "3段", "4段", "螺杆转速（RPM）", "", "熔胶时间（S）", "", "", "松退（MM）", "", "", "残余料量（MM）", "", "周期（S）"], ["", "速度", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "压力", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "位置", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "背压", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["试模结果", "", "", "", "", "", "", "", "其他", "", "", "", "", "", "", "", ""], ["  分型面披峰/抹模", "", "", "", "□模花", "", "", "", "", "", "", "", "", "", "", "", ""], ["□行位披峰", "", "", "", "□顶白/拉白", "", "", "", "", "", "", "", "", "", "", "", ""], ["□孔位披峰", "", "", "", "  走胶不齐", "", "", "", "", "", "", "", "", "", "", "", ""], ["□柱位披峰", "", "", "", "□顶烂", "", "", "", "", "", "", "", "", "", "", "", ""], ["  斜顶位披峰", "", "", "", "□断顶针/司筒/螺丝", "", "", "", "", "", "", "", "", "", "", "", ""], ["□分型面夹口不平", "", "", "", "□模点", "", "", "", "", "", "", "", "", "", "", "", ""], ["□行位夹口不平", "", "", "", "  困气/烧胶", "", "", "", "", "", "", "", "", "", "", "", ""], ["□斜顶夹口不平", "", "", "", "□气泡", "", "", "", "", "", "", "", "", "", "", "", ""], ["□枕位夹口不平", "", "", "", "  气纹/夹水纹", "", "", "", "", "", "", "", "", "", "", "", ""], ["□顶针位披峰", "", "", "", "□变形/曲翘", "", "", "", "", "", "", "", "", "", "", "", ""], ["□顶针位下陷不平", "", "", "", "□油污清洗不干净", "", "", "", "", "", "", "", "", "", "", "", ""], ["□顶针位高出平面", "", "", "", "□A板漏水", "", "", "", "", "", "", "", "", "", "", "", ""], ["  粘水口", "", "", "", "  B板漏水", "", "", "", "", "", "", "", "", "", "", "", ""], ["  粘A板", "", "", "", "□行位漏水", "", "", "", "", "", "", "", "", "", "", "", ""], ["□粘B板", "", "", "", "□A板运水不通", "", "", "", "", "", "", "", "", "", "", "", ""], ["□粘行位", "", "", "", "□B板运水不通", "", "", "", "", "", "", "", "", "", "", "", ""], ["   拖花/拉伤", "", "", "", "□行位运水不通", "", "", "", "", "", "", "", "", "", "", "", ""], ["□塌边/边凹凸不平", "", "", "", "□行位不顺/行不到位", "", "", "", "", "", "", "", "", "", "", "", ""], ["  骨位火花纹/线割纹未省光", "", "", "", "□顶针不顺/顶不动/退不回", "", "", "", "", "", "", "", "", "", "", "", ""], ["□刀纹/火花纹未省模", "", "", "", "□五金装不到位", "", "", "", "", "", "", "", "", "", "", "", ""], ["表格编号：QF-QR-009B-057-E2", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["审核：", "", "", "日期： ", "", "", "", "", "", "", "", "", "", "", "", "", ""]], "merges": [[2, 3, 0, 17], [3, 4, 0, 17], [4, 5, 1, 3], [4, 5, 4, 6], [4, 5, 13, 15], [5, 6, 1, 3], [5, 6, 3, 5], [5, 6, 10, 12], [5, 6, 13, 15], [6, 7, 1, 3], [6, 7, 3, 5], [6, 7, 5, 8], [6, 7, 8, 11], [6, 7, 11, 14], [7, 8, 1, 3], [7, 8, 15, 17], [8, 9, 3, 9], [10, 11, 12, 14], [26, 27, 0, 8], [26, 27, 8, 17], [27, 28, 0, 4], [27, 28, 4, 8], [28, 29, 0, 4], [28, 29, 4, 8], [29, 30, 0, 4], [29, 30, 4, 8], [30, 31, 0, 4], [30, 31, 4, 8], [31, 32, 0, 4], [31, 32, 4, 8], [32, 33, 0, 4], [32, 33, 4, 8], [33, 34, 0, 4], [33, 34, 4, 8], [34, 35, 0, 4], [34, 35, 4, 8], [35, 36, 0, 4], [35, 36, 4, 8], [36, 37, 0, 4], [36, 37, 4, 8], [37, 38, 0, 4], [37, 38, 4, 8], [38, 39, 0, 4], [38, 39, 4, 8], [39, 40, 0, 4], [39, 40, 4, 8], [40, 41, 0, 4], [40, 41, 4, 8], [41, 42, 0, 4], [41, 42, 4, 8], [42, 43, 0, 4], [42, 43, 4, 8], [43, 44, 0, 4], [43, 44, 4, 8], [44, 45, 0, 4], [44, 45, 4, 8], [45, 46, 0, 4], [45, 46, 4, 8], [46, 47, 0, 4], [46, 47, 4, 8], [9, 11, 0, 1], [11, 13, 0, 1], [13, 17, 0, 1], [17, 21, 0, 1], [21, 26, 0, 1], [11, 13, 4, 5], [17, 21, 6, 7], [9, 11, 7, 8], [13, 15, 7, 8], [15, 17, 7, 8], [11, 13, 8, 9], [13, 15, 8, 9], [15, 17, 8, 9], [13, 15, 10, 11], [15, 17, 10, 11], [13, 17, 11, 12], [17, 19, 15, 16], [19, 21, 15, 16], [17, 19, 16, 17], [19, 21, 16, 17], [21, 24, 16, 17], [24, 26, 16, 17], [24, 26, 8, 11], [24, 26, 11, 14], [21, 24, 6, 8], [21, 24, 14, 16], [24, 26, 6, 8], [24, 26, 14, 16], [21, 24, 8, 11], [21, 24, 11, 14], [11, 13, 10, 17], [27, 47, 8, 17], [0, 2, 0, 16]]}''')
+
+_ROWS = _TEMPLATE["rows"]
+_MERGES = _TEMPLATE["merges"]
+
+_THIN = Side(style="thin", color="444B57")
+_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+_LABEL_FONT = Font(name="Arial", size=9)
+_TITLE_FONT = Font(name="Arial", size=16, bold=True)
+_SUBTITLE_FONT = Font(name="Arial", size=11, bold=True)
+_VALUE_FONT = Font(name="Arial", size=10, bold=True, color="1F4A35")
+_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+# ---------------------------------------------------------------------
+# Field mappings: (0-indexed row, 0-indexed col) -> lookup key.
+# "param:<TAG>" pulls from the 高级工艺参数 target_value for that tag.
+# "ext:<key>" pulls from the mold's extended-info fields JSON.
+# "mold:<key>" pulls directly from the mold record.
+# Only unambiguous, high-confidence matches are listed -- see module
+# docstring for what was deliberately left out.
+# ---------------------------------------------------------------------
+
+HEADER_CELL_MAP = {
+    (4, 1): "mold:mold_code",
+    (4, 4): "mold:mold_name",
+    (4, 7): "mold:cavities",
+}
+
+EXTENDED_CELL_MAP = {
+    (5, 5): "ext:color",
+    (5, 8): "ext:color_code",
+    (5, 11): "ext:oven_temperature",
+    (7, 4): "ext:machine_maker",
+    (8, 11): "ext:net_weight",
+    (8, 14): "ext:gross_weight",
+}
+
+# Hot-runner temperature stages -- template has 7 slots (row9 cols10-16,
+# data row10 cols10-16) matching hot_runner_t1..t7.
+_HOT_RUNNER_ROW = 10
+_HOT_RUNNER_COLS = [10, 11, 12, 13, 14, 15, 16]
+
+PARAMETER_CELL_MAP = {
+    # 料温设定温度 -- 1段..5段 (row10, cols2-6). 射嘴/nozzle (col1) has no
+    # backing 工艺参数 tag (frontend keeps it as a local-only value), so
+    # it's left blank.
+    (10, 2): "param:TS1",
+    (10, 3): "param:TS2",
+    (10, 4): "param:TS3",
+    (10, 5): "param:TS4",
+    (10, 6): "param:TS5",
+
+    # 射胶设定 速度/压力/位置, 1级..5级 (rows 14/15/16, cols2-6)
+    (14, 2): "param:IV1", (14, 3): "param:IV2", (14, 4): "param:IV3", (14, 5): "param:IV4", (14, 6): "param:IV5",
+    (15, 2): "param:IP1", (15, 3): "param:IP2", (15, 4): "param:IP3", (15, 5): "param:IP4", (15, 6): "param:IP5",
+    (16, 2): "param:IS1", (16, 3): "param:IS2", (16, 4): "param:IS3", (16, 5): "param:IS4", (16, 6): "param:IS5",
+
+    # 保压 速度/压力/时间, 1级..3级 (rows 14/15/16, cols14-16)
+    (14, 14): "param:PV1", (14, 15): "param:PV2", (14, 16): "param:PV3",
+    (15, 14): "param:PP1", (15, 15): "param:PP2", (15, 16): "param:PP3",
+    (16, 14): "param:PT1", (16, 15): "param:PT2", (16, 16): "param:PT3",
+
+    # 锁模设定 速度/压力/位置, 1段/2段/3段/高压 (rows18/19/20, cols2-5) --
+    # the sheet only has 4 lock-clamp columns while the MES tracks 5
+    # stages (MCV1-5); "高压" (high-pressure/final stage) maps to
+    # stage 5, matching how the machine's own panel labels its last
+    # lock-clamp stage.
+    (18, 2): "param:MCV1", (18, 3): "param:MCV2", (18, 4): "param:MCV3", (18, 5): "param:MCV5",
+    (19, 2): "param:MCP1", (19, 3): "param:MCP2", (19, 4): "param:MCP3", (19, 5): "param:MCP5",
+    (20, 2): "param:MCS1", (20, 3): "param:MCS2", (20, 4): "param:MCS3", (20, 5): "param:MCS5",
+
+    # 开模设定 速度/压力/位置, 1段..4段 (rows18/19/20, cols8,9,11,13 --
+    # col10 is a duplicate "2段" header in the original sheet and is
+    # skipped)
+    (18, 8): "param:MOV1", (18, 9): "param:MOV2", (18, 11): "param:MOV3", (18, 13): "param:MOV4",
+    (19, 8): "param:MOP1", (19, 9): "param:MOP2", (19, 11): "param:MOP3", (19, 13): "param:MOP4",
+    (20, 8): "param:MOS1", (20, 9): "param:MOS2", (20, 11): "param:MOS3", (20, 13): "param:MOS4",
+
+    # 顶出次数 (row18, col15)
+    (18, 15): "param:EJET",
+
+    # 熔胶设定 速度/压力/位置/背压, 1段..4段 (rows22-25, cols2-5)
+    (22, 2): "param:PLV1", (22, 3): "param:PLV2", (22, 4): "param:PLV3", (22, 5): "param:PLV4",
+    (23, 2): "param:PLP1", (23, 3): "param:PLP2", (23, 4): "param:PLP3", (23, 5): "param:PLP4",
+    (24, 2): "param:PLS1", (24, 3): "param:PLS2", (24, 4): "param:PLS3", (24, 5): "param:PLS4",
+    (25, 2): "param:PLBP1", (25, 3): "param:PLBP2", (25, 4): "param:PLBP3", (25, 5): "param:PLBP4",
+
+    # 熔胶时间(S) / 周期(S) -- single-value fields with a confident name
+    # match (rows22, cols8 and 16)
+    (22, 8): "param:EPLST",
+    (22, 16): "param:ECYCT",
+
+    # 冷却时间(S) (row10... actually its own header row13 col8, data
+    # lives in the merged block starting row14 col8)
+    (14, 8): "param:CT",
+}
 
 
-router = APIRouter(prefix="/api", tags=["export"])
-
-XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-XLSM_MEDIA_TYPE = "application/vnd.ms-excel.sheet.macroEnabled.12"
-
-
-def _get_machine_type_or_404(cursor, mold_id: int, machine_type_id: int):
-    row = cursor.execute(
-        "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
-        machine_type_id, mold_id,
-    ).fetchone()
+def _tag_value(parameters_by_tag: dict, tag: str):
+    row = parameters_by_tag.get(tag)
     if row is None:
-        raise HTTPException(status_code=404, detail="机型不存在")
-    return row
+        return None
+    value = row.get("target_value") if isinstance(row, dict) else None
+    if value in (None, ""):
+        return None
+    return value
 
 
-@router.get("/molds/{mold_id}/machine-types/{machine_type_id}/export")
-def export_trial_parameter_sheet(
-    mold_id: int,
-    machine_type_id: int,
-    user: dict = Depends(require_user),
-):
-    """Generates the 试模成型参数表 (.xlsx/.xlsm) for one Mold + Machine
-    Type.
+def _extended_value(extended_fields: dict, key: str):
+    value = extended_fields.get(key)
+    if value in (None, ""):
+        return None
+    return value
 
-    If a workbook was previously uploaded for this machine type (see
-    POST .../import below), THAT exact file is used as the base -- a copy
-    of it is opened, only the mapped cells are overwritten with current
-    MES values (blank if a mapped field currently has no value), and
-    everything else (formatting, merges, images, formulas, layout) is
-    preserved untouched. This is the "upload -> edit in app -> export
-    back into the same file" workflow. A .xls upload is converted to
-    .xlsx at import time (see convert_xls_to_xlsx_bytes) so it goes
-    through this exact same path -- see import_trial_parameter_sheet.
 
-    If nothing has ever been uploaded for this machine type, this falls
-    back to the original behavior: a fresh sheet generated from the
-    built-in static template (backend/export_xlsx.py's embedded
-    _TEMPLATE), with only confidently-mapped cells filled in.
+def build_trial_parameter_workbook(mold: dict, parameters_by_tag: dict, extended_fields: dict) -> BytesIO:
+    """mold: {"mold_code","mold_name","cavities"}.
+    parameters_by_tag: {parameter_id: {"target_value": ...}} for one
+    Mold + Machine Type (same rows dbo.mold_parameter_targets holds).
+    extended_fields: the machine type's 高级参数 extended-info fields dict
+    (dbo.mold_extended_info.info_json, already parsed).
+    Returns an in-memory .xlsx file (BytesIO, position 0)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "试模成型参数表"
+    ws.sheet_view.showGridLines = False
+
+    for col_idx in range(1, 18):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 10.5
+
+    # ---- reproduce the original grid text + borders ----
+    for r0, row_values in enumerate(_ROWS):
+        for c0, text in enumerate(row_values):
+            cell = ws.cell(row=r0 + 1, column=c0 + 1)
+            if text not in (None, ""):
+                cell.value = text
+            cell.border = _BORDER
+            cell.alignment = _CENTER
+            cell.font = _LABEL_FONT
+
+    ws.cell(row=1, column=1).font = _TITLE_FONT
+    ws.cell(row=3, column=1).font = _SUBTITLE_FONT
+
+    # ---- reproduce merges ----
+    for r0, r1, c0, c1 in _MERGES:
+        ws.merge_cells(start_row=r0 + 1, start_column=c0 + 1, end_row=r1, end_column=c1)
+
+    # Any target cell that falls inside a merged range must be written via
+    # its top-left anchor -- openpyxl's other cells in a merge are
+    # read-only MergedCell placeholders. Build a (row0,col0) -> anchor
+    # lookup once so callers below can just name the cell they mean.
+    _anchor_for = {}
+    for r0, r1, c0, c1 in _MERGES:
+        for rr in range(r0, r1):
+            for cc in range(c0, c1):
+                _anchor_for[(rr, cc)] = (r0, c0)
+
+    # ---- overlay values (only where the MES actually has data) ----
+    def _set(row0, col0, value):
+        if value is None:
+            return
+        anchor_row0, anchor_col0 = _anchor_for.get((row0, col0), (row0, col0))
+        cell = ws.cell(row=anchor_row0 + 1, column=anchor_col0 + 1)
+        cell.value = value
+        cell.font = _VALUE_FONT
+
+    for (r0, c0), key in HEADER_CELL_MAP.items():
+        _, field = key.split(":", 1)
+        _set(r0, c0, mold.get(field))
+
+    for (r0, c0), key in EXTENDED_CELL_MAP.items():
+        _, field = key.split(":", 1)
+        _set(r0, c0, _extended_value(extended_fields, field))
+
+    for (r0, c0), key in PARAMETER_CELL_MAP.items():
+        _, tag = key.split(":", 1)
+        _set(r0, c0, _tag_value(parameters_by_tag, tag))
+
+    for offset, col0 in enumerate(_HOT_RUNNER_COLS):
+        tag_key = f"ext:hot_runner_t{offset + 1}"
+        _, field = tag_key.split(":", 1)
+        _set(_HOT_RUNNER_ROW, col0, _extended_value(extended_fields, field))
+
+    ws.row_dimensions[1].height = 26
+    ws.freeze_panes = None
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def overlay_values_onto_template(
+    file_bytes: bytes,
+    is_macro_enabled: bool,
+    mold: dict,
+    parameters_by_tag: dict,
+    extended_fields: dict,
+) -> BytesIO:
+    """Writes the same mapped values as build_trial_parameter_workbook,
+    but onto a COPY of a user-uploaded workbook (file_bytes) instead of
+    regenerating a sheet from the embedded _TEMPLATE. Only the cells
+    listed in HEADER_CELL_MAP / EXTENDED_CELL_MAP / PARAMETER_CELL_MAP /
+    the hot-runner columns are touched -- every other cell, its
+    formatting, merges, images, formulas, column widths, page setup,
+    etc. are left exactly as uploaded.
+
+    Unlike build_trial_parameter_workbook (which skips None values,
+    since it starts from an already-blank template), a mapped field with
+    no value here explicitly clears its cell to blank -- the uploaded
+    workbook may already hold a stale value from a previous edit/export
+    cycle, and per spec a field with no value must blank its cell rather
+    than silently keep whatever was there before.
+
+    Merge ranges are read from the ACTUAL uploaded worksheet (not the
+    static _MERGES table used by build_trial_parameter_workbook), so this
+    works correctly even if the uploaded file's structure isn't byte-for-
+    byte identical to the embedded template, as long as the same cell
+    positions carry the same fields.
+
+    Known limitation: openpyxl does not reliably preserve embedded charts
+    through a load/save round trip -- a workbook containing charts may
+    lose them on export. Styles, merges, images, formulas, and layout are
+    unaffected.
     """
-    del user
-    try:
-        with closing(get_connection()) as connection:
-            cursor = connection.cursor()
+    workbook = load_workbook(BytesIO(file_bytes), data_only=False, keep_vba=is_macro_enabled)
+    ws = workbook.active
 
-            mold_row = cursor.execute(
-                "SELECT mold_code, mold_name, cavities FROM dbo.molds WHERE id = ?",
-                mold_id,
-            ).fetchone()
-            if mold_row is None:
-                raise HTTPException(status_code=404, detail="模具不存在")
+    anchor_for: dict[tuple[int, int], tuple[int, int]] = {}
+    for merged_range in ws.merged_cells.ranges:
+        anchor = (merged_range.min_row - 1, merged_range.min_col - 1)
+        for r in range(merged_range.min_row - 1, merged_range.max_row):
+            for c in range(merged_range.min_col - 1, merged_range.max_col):
+                anchor_for[(r, c)] = anchor
 
-            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
+    def _set(row0, col0, value):
+        anchor_row0, anchor_col0 = anchor_for.get((row0, col0), (row0, col0))
+        ws.cell(row=anchor_row0 + 1, column=anchor_col0 + 1).value = value
 
-            cursor.execute(
-                "SELECT parameter_id, target_value FROM dbo.mold_parameter_targets "
-                "WHERE machine_type_id = ?",
-                machine_type_id,
-            )
-            parameters_by_tag = {
-                row.parameter_id: {"target_value": row.target_value}
-                for row in cursor.fetchall()
-            }
+    for (r0, c0), key in HEADER_CELL_MAP.items():
+        _, field = key.split(":", 1)
+        _set(r0, c0, mold.get(field))
 
-            extended_row = cursor.execute(
-                "SELECT info_json FROM dbo.mold_extended_info WHERE machine_type_id = ?",
-                machine_type_id,
-            ).fetchone()
-    except HTTPException:
-        raise
-    except pyodbc.Error as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
+    for (r0, c0), key in EXTENDED_CELL_MAP.items():
+        _, field = key.split(":", 1)
+        _set(r0, c0, _extended_value(extended_fields, field))
 
-    extended_fields = json.loads(extended_row.info_json) if extended_row and extended_row.info_json else {}
-    mold = {
-        "mold_code": mold_row.mold_code,
-        "mold_name": mold_row.mold_name,
-        "cavities": mold_row.cavities,
-    }
+    # ---- parameter cells: label-driven position first, fixed coordinate
+    # as a last resort -- this is the write-side counterpart of the
+    # label-driven reader in label_scan_xlsx.py. An uploaded workbook's
+    # actual layout can differ from the built-in template's fixed
+    # PARAMETER_CELL_MAP coordinates (extra/missing rows, shifted
+    # columns), so locating each tag's real cell by its block title +
+    # row label + stage header keeps a value from being written into the
+    # wrong cell (or worse, into an unrelated merged banner cell).
+    from .label_scan_xlsx import build_resolved_grid, covered_tags, locate_all_blocks
 
-    template = get_trial_template(machine_type_id)
-    original_bytes = None
-    if template is not None:
-        try:
-            original_bytes = Path(template.file_path).read_bytes()
-        except OSError:
-            template = None  # file missing on disk -- fall back to the generated sheet
+    grid = build_resolved_grid(ws)
+    located = locate_all_blocks(grid)
+    label_covered = covered_tags()
 
-    if template is not None and original_bytes is not None:
-        is_macro = template.original_filename.lower().endswith(".xlsm")
-        buffer = overlay_values_onto_template(original_bytes, is_macro, mold, parameters_by_tag, extended_fields)
-        filename = template.original_filename
-        media_type = XLSM_MEDIA_TYPE if is_macro else XLSX_MEDIA_TYPE
-    else:
-        buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
-        filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
-        media_type = XLSX_MEDIA_TYPE
-
-    encoded_filename = quote(filename)  # percent-encode: headers must be latin-1
-    return StreamingResponse(
-        buffer,
-        media_type=media_type,
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
-    )
-
-
-@router.get("/molds/{mold_id}/machine-types/{machine_type_id}/template")
-def get_template_status(
-    mold_id: int,
-    machine_type_id: int,
-    user: dict = Depends(require_user),
-):
-    """Tells the frontend whether exports for this machine type currently
-    write back into a previously uploaded workbook, or fall back to the
-    generated static template."""
-    del user
-    try:
-        with closing(get_connection()) as connection:
-            cursor = connection.cursor()
-            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
-    except HTTPException:
-        raise
-    except pyodbc.Error as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
-    template = get_trial_template(machine_type_id)
-    if template is None:
-        return {"has_template": False}
-    return {
-        "has_template": True,
-        "original_filename": template.original_filename,
-        "uploaded_at": template.uploaded_at,
-    }
-
-
-@router.delete("/molds/{mold_id}/machine-types/{machine_type_id}/template")
-def remove_template(
-    mold_id: int,
-    machine_type_id: int,
-    user: dict = Depends(require_user),
-):
-    """Forgets the uploaded workbook for this machine type. After this,
-    GET .../export reverts to generating a fresh sheet from the built-in
-    static template. Does not touch any already-imported MES values
-    (mold_parameter_targets / mold_extended_info) -- those stay as-is."""
-    require_editor(user)
-    try:
-        with closing(get_connection()) as connection:
-            cursor = connection.cursor()
-            _get_machine_type_or_404(cursor, mold_id, machine_type_id)
-    except HTTPException:
-        raise
-    except pyodbc.Error as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
-    if not delete_trial_template(machine_type_id):
-        raise HTTPException(status_code=404, detail="尚未上传过原始文件")
-    return {"status": "ok"}
-
-
-@router.post("/molds/{mold_id}/machine-types/{machine_type_id}/import")
-async def import_trial_parameter_sheet(
-    mold_id: int,
-    machine_type_id: int,
-    user: dict = Depends(require_user),
-    file: UploadFile = File(...),
-):
-    """Reads an uploaded 试模成型参数表 (.xlsx/.xlsm/.xls/.csv) and:
-
-      1. Writes whatever mapped values it finds onto this Mold + Machine
-         Type's 高级工艺参数 (dbo.mold_parameter_targets) and extended info
-         (dbo.mold_extended_info) -- same as before.
-      2. Stores the uploaded workbook as this machine type's export
-         template (see backend/template_storage.py). From now on, GET
-         .../export writes updated values back into a copy of THIS
-         exact file -- preserving its formatting, merges, images, and
-         layout -- instead of generating a fresh sheet.
-
-         .xlsx/.xlsm uploads are stored as-is. A .xls upload (legacy
-         Excel 97-2003 / BIFF format) is first converted to an
-         equivalent .xlsx (see xls_convert.convert_xls_to_xlsx_bytes),
-         since the overlay step on export is openpyxl-based and cannot
-         open .xls directly. Without this conversion, a .xls upload was
-         silently never saved as a template at all -- values were still
-         parsed and saved to the database correctly, but every export
-         fell back to the generic built-in template instead of the
-         uploaded sheet's own layout/branding. .csv uploads still can't
-         be used as an export template (no layout/formatting to
-         preserve) and continue to only feed the value import in step 1.
-
-         If .xls conversion fails (e.g. a corrupted workbook, or one in
-         an even older format xlrd can't read), the import still
-         succeeds -- the values are saved -- but no template is stored,
-         matching the pre-existing .csv behavior, and
-         `template_saved: false` is returned so the frontend can tell
-         the user their layout wasn't preserved.
-
-      3. 模具编号/产品名称/模穴数 read from the sheet header are returned to
-         the caller as `header_read_only` for review, but are NOT applied
-         automatically -- see PUT /api/molds/{mold_id} for that instead.
-
-    Import is additive/overlay, never destructive to the DB values:
-      - A blank cell means "leave the existing saved value alone", not
-        "clear it" -- only tags/fields the sheet actually has a value for
-        are touched.
-      - An existing tag's tolerance_mode/tolerance_percent/tolerance_flat
-        are left completely untouched; only target_value is overwritten.
-    """
-    require_editor(user)
-
-    filename_lower = (file.filename or "").lower()
-    if not filename_lower.endswith((".xlsx", ".xlsm", ".xls", ".csv")):
-        raise HTTPException(status_code=400, detail="请上传 .xlsx / .xls / .csv 文件")
-
-    content = await file.read()
-    try:
-        parsed = parse_trial_parameter_workbook(content, file.filename)
-    except Exception as error:  # noqa: BLE001 -- surface any parse failure as a clean 400
-        raise HTTPException(status_code=400, detail=f"文件解析失败：{error}") from error
-
-    valid_tags = set(PARAMETER_LABELS.keys()) - EXCLUDED_FROM_TARGETS
-    incoming_parameters = {
-        tag: value for tag, value in parsed["parameters"].items() if tag in valid_tags
-    }
-
-    try:
-        with closing(get_connection()) as connection:
-            cursor = connection.cursor()
-
-            machine_type_row = cursor.execute(
-                "SELECT id FROM dbo.mold_machine_types WHERE id = ? AND mold_id = ?",
-                machine_type_id, mold_id,
-            ).fetchone()
-            if machine_type_row is None:
-                raise HTTPException(status_code=404, detail="机型不存在")
-
-            existing_tags = {
-                row.parameter_id
-                for row in cursor.execute(
-                    "SELECT parameter_id FROM dbo.mold_parameter_targets WHERE machine_type_id = ?",
-                    machine_type_id,
-                ).fetchall()
-            }
-
-            for tag, value in incoming_parameters.items():
-                if tag in existing_tags:
-                    cursor.execute(
-                        """
-                        UPDATE dbo.mold_parameter_targets
-                        SET target_value = ?
-                        WHERE machine_type_id = ? AND parameter_id = ?
-                        """,
-                        value, machine_type_id, tag,
-                    )
-                else:
-                    cursor.execute(
-                        """
-                        INSERT INTO dbo.mold_parameter_targets
-                            (mold_id, machine_type_id, parameter_id, target_value, tolerance_mode)
-                        VALUES (NULL, ?, ?, ?, N'percent')
-                        """,
-                        machine_type_id, tag, value,
-                    )
-
-            extended_row = cursor.execute(
-                "SELECT info_json FROM dbo.mold_extended_info WHERE machine_type_id = ?",
-                machine_type_id,
-            ).fetchone()
-            current_extended = (
-                json.loads(extended_row.info_json) if extended_row and extended_row.info_json else {}
-            )
-            current_extended.update(parsed["extended"])
-            extended_payload = json.dumps(current_extended, ensure_ascii=False)
-
-            cursor.execute(
-                """
-                MERGE dbo.mold_extended_info AS target
-                USING (SELECT ? AS machine_type_id) AS src
-                ON target.machine_type_id = src.machine_type_id
-                WHEN MATCHED THEN
-                    UPDATE SET info_json = ?, updated_at = SYSUTCDATETIME(), updated_by = ?
-                WHEN NOT MATCHED THEN
-                    INSERT (mold_id, machine_type_id, info_json, updated_by)
-                    VALUES (NULL, src.machine_type_id, ?, ?);
-                """,
-                machine_type_id, extended_payload, user["id"], extended_payload, user["id"],
-            )
-
-            connection.commit()
-    except HTTPException:
-        raise
-    except pyodbc.Error as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
-    # ---- persist the uploaded file as this machine type's export template ----
-    # .xlsx/.xlsm are stored verbatim. .xls is converted to .xlsx first,
-    # since overlay_values_onto_template (used by GET .../export) is
-    # openpyxl-based and cannot open .xls -- without this conversion a
-    # .xls upload was silently never saved as a template at all, and
-    # every subsequent export fell back to the generic built-in sheet
-    # instead of the uploaded file's own layout. .csv has no
-    # layout/formatting worth preserving and is never saved as a template.
-    template_saved = False
-    conversion_failed = False
-    if filename_lower.endswith((".xlsx", ".xlsm")):
-        save_trial_template(machine_type_id, file.filename, content, user["id"])
-        template_saved = True
-    elif filename_lower.endswith(".xls"):
-        try:
-            converted_bytes = convert_xls_to_xlsx_bytes(content)
-        except Exception:  # noqa: BLE001 -- any conversion failure just means "no template"
-            conversion_failed = True
+    for (r0, c0), key in PARAMETER_CELL_MAP.items():
+        _, tag = key.split(":", 1)
+        if tag in located:
+            row0, col0 = located[tag]
+        elif tag in label_covered:
+            # BLOCK_DEFS knows this tag but couldn't find it on this
+            # sheet -- that block/stage genuinely isn't present here.
+            # Falling back to the fixed coordinate is what previously
+            # let an unrelated tag's stale coordinate land inside a
+            # neighboring block's merged banner cell (or clobber a
+            # correctly-located sibling), so skip it entirely rather
+            # than guess.
+            continue
         else:
-            stem = file.filename.rsplit(".", 1)[0] if file.filename and "." in file.filename else (file.filename or "template")
-            save_trial_template(machine_type_id, f"{stem}.xlsx", converted_bytes, user["id"])
-            template_saved = True
+            row0, col0 = r0, c0
+        _set(row0, col0, _tag_value(parameters_by_tag, tag))
 
-    return {
-        "status": "ok",
-        "parameters_imported": len(incoming_parameters),
-        "extended_fields_imported": len(parsed["extended"]),
-        "header_read_only": parsed["header"],
-        "template_saved": template_saved,
-        "template_conversion_failed": conversion_failed,
-    }
+    for offset, col0 in enumerate(_HOT_RUNNER_COLS):
+        _, field = f"ext:hot_runner_t{offset + 1}".split(":", 1)
+        _set(_HOT_RUNNER_ROW, col0, _extended_value(extended_fields, field))
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
