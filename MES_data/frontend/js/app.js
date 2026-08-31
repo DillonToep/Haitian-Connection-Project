@@ -1578,9 +1578,47 @@ let currentPage = "dashboard";
         document.getElementById("mold-advanced-machine-type-title").textContent = machineTypeName;
         document.getElementById("mold-advanced-groups").innerHTML = "";
         document.getElementById("mold-advanced-summary").textContent = "";
+        document.getElementById("mold-advanced-template-status").innerHTML = "";
         document.getElementById("mold-machine-types-dialog").close();
         document.getElementById("mold-advanced-dialog").showModal();
         loadMoldAdvancedForMachineType();
+        refreshTemplateStatus();
+    }
+
+    // ---- Excel template status (导入 Excel 模板 / 导出试模参数表) --------
+    // Shows whether GET .../export currently writes into a previously
+    // uploaded workbook (see backend/routers/export.py + template_storage.py)
+    // or falls back to the generated static template, and offers a way to
+    // revert to the generated template.
+    async function refreshTemplateStatus() {
+        const el = document.getElementById("mold-advanced-template-status");
+        if (!el || !editMoldId || !currentMachineTypeId) return;
+        el.textContent = "";
+        try {
+            const status = await requestJson(
+                `/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/template`
+            );
+            if (status.has_template) {
+                const readOnly = currentUser.role === "viewer";
+                el.innerHTML = `当前导出将写回你上传的文件：<strong>${escapeHtml(status.original_filename)}</strong>` +
+                    `（上传于 ${formatTime(status.uploaded_at)}）` +
+                    (readOnly ? "" : ` · <button type="button" id="mold-advanced-template-revert" class="secondary-button" style="height:24px;padding:0 8px;font-size:11.5px;">恢复默认模板</button>`);
+                document.getElementById("mold-advanced-template-revert")?.addEventListener("click", async () => {
+                    if (!confirm("确认恢复为系统默认导出模板？之前上传的文件将不再用于导出（已导入的参数数值不受影响）。")) return;
+                    try {
+                        await requestJson(
+                            `/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/template`,
+                            { method: "DELETE" }
+                        );
+                        await refreshTemplateStatus();
+                    } catch (error) { alert(error.message); }
+                });
+            } else {
+                el.textContent = "当前使用系统默认模板导出（尚未上传过 Excel 原始文件）";
+            }
+        } catch (error) {
+            el.textContent = `模板状态读取失败：${error.message}`;
+        }
     }
 
     async function loadMoldAdvancedForMachineType() {
@@ -1604,6 +1642,50 @@ let currentPage = "dashboard";
         document.getElementById("mold-advanced-dialog").close();
         document.getElementById("mold-machine-types-dialog").showModal();
         loadMachineTypesList();
+    });
+
+    document.getElementById("mold-advanced-import-button").addEventListener("click", () => {
+        if (currentUser.role === "viewer") return;
+        if (!currentMachineTypeId) { alert("请先选择机型"); return; }
+        document.getElementById("mold-advanced-import-input").click();
+    });
+
+    document.getElementById("mold-advanced-import-input").addEventListener("change", async event => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = ""; // allow re-selecting the same file later
+        if (!file || !currentMachineTypeId) return;
+
+        const button = document.getElementById("mold-advanced-import-button");
+        const originalLabel = button.textContent;
+        button.disabled = true;
+        button.textContent = "正在导入……";
+
+        const body = new FormData();
+        body.append("file", file);
+
+        try {
+            const result = await requestJson(
+                `/api/molds/${encodeURIComponent(editMoldId)}/machine-types/${encodeURIComponent(currentMachineTypeId)}/import`,
+                { method: "POST", body }
+            );
+            moldAdvancedLoaded = false; // force re-fetch of parameters/extended fields below
+            await loadMoldAdvancedForMachineType();
+            await refreshTemplateStatus();
+
+            const headerNotes = result.header_read_only && Object.keys(result.header_read_only).length
+                ? `\n读取到表头信息（未自动应用，请核对）：${JSON.stringify(result.header_read_only)}`
+                : "";
+            alert(
+                `导入成功：写入 ${result.parameters_imported} 项工艺参数、` +
+                `${result.extended_fields_imported} 项扩展字段。\n` +
+                `该文件已保存为此机型的导出模板，之后导出将写回这份文件。${headerNotes}`
+            );
+        } catch (error) {
+            alert(`导入失败：${error.message}`);
+        } finally {
+            button.disabled = false;
+            button.textContent = originalLabel;
+        }
     });
 
     // Downloads the company's 成型参数表 (.xlsx) for the currently
@@ -2244,6 +2326,7 @@ let currentPage = "dashboard";
         document.getElementById("device-mold-unmount-button").disabled = readOnly;
         document.getElementById("mold-defaults-save").disabled = readOnly;
         document.getElementById("device-delete-button").disabled = readOnly;
+        document.getElementById("mold-advanced-import-button").disabled = readOnly;
     }
     async function loadDevices() {
         devices=await requestJson("/api/devices");
