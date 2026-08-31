@@ -38,6 +38,7 @@ from .label_scan_xlsx import (
     build_resolved_grid_xlrd,
     scan_all_blocks,
 )
+from .extended_field_scan import scan_extended_fields, scan_header_overrides
 
 # Anchor-cell lookup for the *built-in* xlsx template's merges -- only
 # used by the xlsx reader (openpyxl only stores a value on the top-left
@@ -216,25 +217,72 @@ def parse_trial_parameter_workbook(file_bytes: bytes, filename: str = "") -> dic
     anything else (.xlsx/.xlsm, or unspecified) -> openpyxl.
     """
     read_cell = _reader_for(file_bytes, filename)
+    ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
+
+    # ---- build a resolved (merge-expanded) grid up front, when possible.
+    # This is what both the parameter label-scan and the extended-field
+    # label-scan below run against. Not attempted for .csv -- no merge
+    # information exists to resolve a label-driven grid against there.
+    grid = None
+    try:
+        if ext == "xls":
+            import xlrd
+            try:
+                workbook = xlrd.open_workbook(file_contents=file_bytes, formatting_info=True)
+            except Exception:
+                workbook = xlrd.open_workbook(file_contents=file_bytes)
+            sheet = workbook.sheet_by_index(0)
+            grid = build_resolved_grid_xlrd(sheet)
+        elif ext != "csv":
+            workbook = load_workbook(BytesIO(file_bytes), data_only=True)
+            grid = build_resolved_grid(workbook.active)
+    except Exception:
+        grid = None
+
+    # Detect the newer 注塑成型条件参数表 layout: its header row always
+    # carries a "客户名称" label, which never appears on the older
+    # 试模成型参数表 layout HEADER_CELL_MAP/EXTENDED_CELL_MAP were built
+    # for. On THAT older layout's fixed coordinates, a 注塑成型条件参数表
+    # file reads back garbage (a value from the WRONG field entirely --
+    # e.g. 机台厂商 pulling from 烘料时间's cell) rather than nothing, so
+    # those fixed-coordinate maps must be skipped outright for this
+    # layout rather than merely supplemented -- the label-driven scan in
+    # extended_field_scan.py is trusted instead, since it locates each
+    # value by its own label text rather than assuming a coordinate.
+    is_new_layout = False
+    if grid is not None:
+        for row in grid:
+            for value in row:
+                if isinstance(value, str) and "客户名称" in value:
+                    is_new_layout = True
+                    break
+            if is_new_layout:
+                break
 
     header: dict = {}
-    for (row0, col0), key in HEADER_CELL_MAP.items():
-        _, field = key.split(":", 1)
-        value = read_cell(row0, col0)
-        if value is not None:
-            header[field] = value
-
     extended: dict = {}
-    for (row0, col0), key in EXTENDED_CELL_MAP.items():
-        _, field = key.split(":", 1)
-        value = read_cell(row0, col0)
-        if value is not None:
-            extended[field] = value
 
-    for offset, col0 in enumerate(_HOT_RUNNER_COLS):
-        value = read_cell(_HOT_RUNNER_ROW, col0)
-        if value is not None:
-            extended[f"hot_runner_t{offset + 1}"] = value
+    if not is_new_layout:
+        for (row0, col0), key in HEADER_CELL_MAP.items():
+            _, field = key.split(":", 1)
+            value = read_cell(row0, col0)
+            if value is not None:
+                header[field] = value
+
+        for (row0, col0), key in EXTENDED_CELL_MAP.items():
+            _, field = key.split(":", 1)
+            value = read_cell(row0, col0)
+            if value is not None:
+                extended[field] = value
+
+        for offset, col0 in enumerate(_HOT_RUNNER_COLS):
+            value = read_cell(_HOT_RUNNER_ROW, col0)
+            if value is not None:
+                extended[f"hot_runner_t{offset + 1}"] = value
+
+    if grid is not None:
+        extended.update(scan_extended_fields(grid))
+        header.update(scan_header_overrides(grid))
 
     # ---- parameters: label-driven scan for .xlsx/.xlsm/.xls, since this
     # is the path that broke against a real-world layout drift (extra
@@ -242,7 +290,6 @@ def parse_trial_parameter_workbook(file_bytes: bytes, filename: str = "") -> dic
     # merged-cell/label-search story worth building (a CSV export of a
     # merged sheet only carries a value in each former merge's top-left
     # cell anyway), so it stays on the fixed-coordinate reader.
-    ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
     if ext == "xls":
         raw_parameters = _scan_parameters_xls(file_bytes)
     elif ext == "csv":
