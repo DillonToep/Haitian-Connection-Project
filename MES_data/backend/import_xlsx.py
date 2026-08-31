@@ -151,7 +151,7 @@ def _make_xls_reader(file_bytes: bytes):
     # that isn't itself a merge's top-left corner (several of the
     # PARAMETER_CELL_MAP / EXTENDED_CELL_MAP entries aren't). A handful of
     # malformed/legacy .xls files raise while xlrd parses the formatting
-    # records this needs, so fall back to the old (merge-blind) behavior
+    # records this needs, so fall back to the old (merge-blind) behavior 
     # for those rather than failing the import outright.
     try:
         workbook = xlrd.open_workbook(file_contents=file_bytes, formatting_info=True)
