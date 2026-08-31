@@ -288,11 +288,6 @@ async def import_trial_parameter_sheet(
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
-    # Persist the uploaded workbook itself as this machine type's export
-    # template -- done after the DB transaction above commits successfully,
-    # so a bad file never gets "adopted" as the template without its
-    # values actually having been imported.
-    save_trial_template(machine_type_id, file.filename, content, user["id"])
 
     template_saved = filename_lower.endswith((".xlsx", ".xlsm"))
     if template_saved:
