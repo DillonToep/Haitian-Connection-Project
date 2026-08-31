@@ -13,6 +13,7 @@ from ..import_xlsx import parse_trial_parameter_workbook
 from ..parameter_labels import EXCLUDED_FROM_TARGETS, PARAMETER_LABELS
 from ..security import require_editor, require_user
 from ..template_storage import delete_trial_template, get_trial_template, save_trial_template
+from ..xls_convert import convert_xls_to_xlsx_bytes
 
 
 router = APIRouter(prefix="/api", tags=["export"])
@@ -46,7 +47,9 @@ def export_trial_parameter_sheet(
     MES values (blank if a mapped field currently has no value), and
     everything else (formatting, merges, images, formulas, layout) is
     preserved untouched. This is the "upload -> edit in app -> export
-    back into the same file" workflow.
+    back into the same file" workflow. A .xls upload is converted to
+    .xlsx at import time (see convert_xls_to_xlsx_bytes) so it goes
+    through this exact same path -- see import_trial_parameter_sheet.
 
     If nothing has ever been uploaded for this machine type, this falls
     back to the original behavior: a fresh sheet generated from the
@@ -180,17 +183,39 @@ async def import_trial_parameter_sheet(
     user: dict = Depends(require_user),
     file: UploadFile = File(...),
 ):
-    """Reads an uploaded 试模成型参数表 (.xlsx/.xlsm) and:
+    """Reads an uploaded 试模成型参数表 (.xlsx/.xlsm/.xls/.csv) and:
 
       1. Writes whatever mapped values it finds onto this Mold + Machine
          Type's 高级工艺参数 (dbo.mold_parameter_targets) and extended info
          (dbo.mold_extended_info) -- same as before.
-      2. Stores the uploaded workbook itself as this machine type's
-         export template (see backend/template_storage.py). From now on,
-         GET .../export writes updated values back into a copy of THIS
+      2. Stores the uploaded workbook as this machine type's export
+         template (see backend/template_storage.py). From now on, GET
+         .../export writes updated values back into a copy of THIS
          exact file -- preserving its formatting, merges, images, and
-         layout -- instead of generating a fresh sheet. Uploading again
-         later replaces the stored template.
+         layout -- instead of generating a fresh sheet.
+
+         .xlsx/.xlsm uploads are stored as-is. A .xls upload (legacy
+         Excel 97-2003 / BIFF format) is first converted to an
+         equivalent .xlsx (see xls_convert.convert_xls_to_xlsx_bytes),
+         since the overlay step on export is openpyxl-based and cannot
+         open .xls directly. Without this conversion, a .xls upload was
+         silently never saved as a template at all -- values were still
+         parsed and saved to the database correctly, but every export
+         fell back to the generic built-in template instead of the
+         uploaded sheet's own layout/branding. .csv uploads still can't
+         be used as an export template (no layout/formatting to
+         preserve) and continue to only feed the value import in step 1.
+
+         If .xls conversion fails (e.g. a corrupted workbook, or one in
+         an even older format xlrd can't read), the import still
+         succeeds -- the values are saved -- but no template is stored,
+         matching the pre-existing .csv behavior, and
+         `template_saved: false` is returned so the frontend can tell
+         the user their layout wasn't preserved.
+
+      3. 模具编号/产品名称/模穴数 read from the sheet header are returned to
+         the caller as `header_read_only` for review, but are NOT applied
+         automatically -- see PUT /api/molds/{mold_id} for that instead.
 
     Import is additive/overlay, never destructive to the DB values:
       - A blank cell means "leave the existing saved value alone", not
@@ -198,9 +223,6 @@ async def import_trial_parameter_sheet(
         are touched.
       - An existing tag's tolerance_mode/tolerance_percent/tolerance_flat
         are left completely untouched; only target_value is overwritten.
-      - 模具编号/产品名称/模穴数 read from the sheet header are returned to
-        the caller as `header_read_only` for review, but are NOT applied
-        automatically -- see PUT /api/molds/{mold_id} for that instead.
     """
     require_editor(user)
 
@@ -288,10 +310,28 @@ async def import_trial_parameter_sheet(
     except pyodbc.Error as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
 
-
-    template_saved = filename_lower.endswith((".xlsx", ".xlsm"))
-    if template_saved:
+    # ---- persist the uploaded file as this machine type's export template ----
+    # .xlsx/.xlsm are stored verbatim. .xls is converted to .xlsx first,
+    # since overlay_values_onto_template (used by GET .../export) is
+    # openpyxl-based and cannot open .xls -- without this conversion a
+    # .xls upload was silently never saved as a template at all, and
+    # every subsequent export fell back to the generic built-in sheet
+    # instead of the uploaded file's own layout. .csv has no
+    # layout/formatting worth preserving and is never saved as a template.
+    template_saved = False
+    conversion_failed = False
+    if filename_lower.endswith((".xlsx", ".xlsm")):
         save_trial_template(machine_type_id, file.filename, content, user["id"])
+        template_saved = True
+    elif filename_lower.endswith(".xls"):
+        try:
+            converted_bytes = convert_xls_to_xlsx_bytes(content)
+        except Exception:  # noqa: BLE001 -- any conversion failure just means "no template"
+            conversion_failed = True
+        else:
+            stem = file.filename.rsplit(".", 1)[0] if file.filename and "." in file.filename else (file.filename or "template")
+            save_trial_template(machine_type_id, f"{stem}.xlsx", converted_bytes, user["id"])
+            template_saved = True
 
     return {
         "status": "ok",
@@ -299,4 +339,5 @@ async def import_trial_parameter_sheet(
         "extended_fields_imported": len(parsed["extended"]),
         "header_read_only": parsed["header"],
         "template_saved": template_saved,
+        "template_conversion_failed": conversion_failed,
     }
