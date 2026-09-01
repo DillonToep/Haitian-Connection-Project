@@ -14,7 +14,7 @@ let currentPage = "dashboard";
     let activeUtilTab = "overview";
     let techOpenCategories = new Set();
     let highlightParameter = null;
-    let changelogFilters = { date: "", field: "", sub: "", mold: "" };
+    let changelogFilters = { date: "", field: "", sub: "", mold: "", device: "" };
     let deviceChangelogFilters = { date: "", field: "", sub: "", mold: "" };
     let changelogFieldTree = null;
     let activeDetailUtilTab = "overview";
@@ -2267,6 +2267,7 @@ let currentPage = "dashboard";
         if (filters.field) params.set("field", filters.field);
         if (filters.sub) params.set("sub", filters.sub);
         if (filters.mold) params.set("mold", filters.mold);
+        if (filters.device) params.set("device_id", filters.device);
         const qs = params.toString();
         return qs ? `?${qs}` : "";
     }
@@ -2803,6 +2804,13 @@ let currentPage = "dashboard";
                 Object.keys(tree).map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join("");
             fieldSelect.dataset.populated = "1";
         }
+        const deviceSelect = document.getElementById("changelog-filter-device");
+        if (deviceSelect && !deviceSelect.dataset.populated) {
+            deviceSelect.innerHTML = '<option value="">全部设备</option>' +
+                devices.map(d => `<option value="${escapeHtml(d.device_id)}">${escapeHtml(d.device_id)}</option>`).join("");
+            deviceSelect.value = changelogFilters.device || "";
+            deviceSelect.dataset.populated = "1";
+        }
 
         const rows = await requestJson(`/api/changelog${changelogQuery(changelogFilters)}`);
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
@@ -2853,9 +2861,9 @@ let currentPage = "dashboard";
             <div class="detail-header"><div class="detail-title">变更记录</div><div class="muted" id="device-changelog-count"></div></div>
             <div class="filter-body" style="padding:0 0 14px;">
                 <div class="field"><label>日期</label><input type="date" id="device-changelog-filter-date" value="${escapeHtml(deviceChangelogFilters.date)}"></div>
+                <div class="field"><label>模具编号</label><input type="search" id="device-changelog-filter-mold" value="${escapeHtml(deviceChangelogFilters.mold)}" placeholder="搜索模具编号或名称"></div>
                 <div class="field"><label>参数分类</label><select id="device-changelog-filter-field"><option value="">全部分类</option>${fieldOptions}</select></div>
                 <div class="field"><label>具体参数</label><select id="device-changelog-filter-sub" ${deviceChangelogFilters.field?"":"disabled"}><option value="">全部参数</option>${subOptions}</select></div>
-                <div class="field"><label>模具编号</label><input type="search" id="device-changelog-filter-mold" value="${escapeHtml(deviceChangelogFilters.mold)}" placeholder="搜索模具编号或名称"></div>
                 <div class="field"><label>&nbsp;</label><button id="device-changelog-filter-clear" class="secondary-button" type="button">清除筛选</button></div>
             </div>
             <div id="device-changelog-results"></div>
@@ -3542,11 +3550,16 @@ let currentPage = "dashboard";
             await loadChangelog();
         }, 300);
     });
+    document.getElementById("changelog-filter-device").addEventListener("change", async e => {
+        changelogFilters.device = e.target.value;
+        await loadChangelog();
+    });
     document.getElementById("changelog-filter-clear").addEventListener("click", async () => {
-        changelogFilters = { date: "", field: "", sub: "", mold: "" };
+        changelogFilters = { date: "", field: "", sub: "", mold: "", device: "" };
         document.getElementById("changelog-filter-date").value = "";
         document.getElementById("changelog-filter-field").value = "";
         document.getElementById("changelog-filter-mold").value = "";
+        document.getElementById("changelog-filter-device").value = "";
         const subSelect = document.getElementById("changelog-filter-sub");
         subSelect.innerHTML = '<option value="">全部参数</option>';
         subSelect.disabled = true;

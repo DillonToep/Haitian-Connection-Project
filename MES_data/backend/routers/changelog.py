@@ -140,12 +140,17 @@ def get_changelog(
     field: str | None = Query(None),
     sub: str | None = Query(None),
     mold: str | None = Query(None),
+    device_id: str | None = Query(None, description="Filter to a single device_id, same as the per-device changelog tab."),
     user: dict = Depends(require_user),
 ):
     del user
     date_value = _parse_date(date)
     tags = _tags_for(field, sub)
     where_clause, params = _build_where(date_value, tags, mold)
+    if device_id:
+        device_condition = "c.device_id = ?"
+        where_clause = f"{where_clause} AND {device_condition}" if where_clause else f"WHERE {device_condition}"
+        params = params + [device_id]
     sql = f"""
         SELECT TOP 500
             {CHANGELOG_SELECT}
