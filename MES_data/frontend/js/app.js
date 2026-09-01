@@ -2804,12 +2804,6 @@ let currentPage = "dashboard";
                 Object.keys(tree).map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join("");
             fieldSelect.dataset.populated = "1";
         }
-        const deviceDatalist = document.getElementById("changelog-device-options");
-        if (deviceDatalist && !deviceDatalist.dataset.populated) {
-            deviceDatalist.innerHTML = devices.map(d => `<option value="${escapeHtml(d.device_id)}">`).join("");
-            deviceDatalist.dataset.populated = "1";
-        }
-
         const rows = await requestJson(`/api/changelog${changelogQuery(changelogFilters)}`);
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
         const table = document.getElementById("changelog-table");
