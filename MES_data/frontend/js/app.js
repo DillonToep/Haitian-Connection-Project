@@ -2926,6 +2926,8 @@ let currentPage = "dashboard";
         favoriteSaveChangelogId = changelogId;
         document.getElementById("favorite-save-name").value = "";
         document.getElementById("favorite-save-status").textContent = "";
+        document.getElementById("favorite-save-new-machine-type-name").value = "";
+        document.getElementById("favorite-save-new-machine-type-field").classList.add("hidden");
 
         const moldSelect = document.getElementById("favorite-save-mold-select");
         const list = await requestJson("/api/molds");
@@ -2939,22 +2941,55 @@ let currentPage = "dashboard";
     async function populateFavoriteMachineTypeSelect(moldId) {
         const select = document.getElementById("favorite-save-machine-type-select");
         select.innerHTML = '<option value="">正在读取机型……</option>';
+        document.getElementById("favorite-save-new-machine-type-field").classList.add("hidden");
         try {
             const types = await loadMachineTypesFor(moldId);
-            select.innerHTML = types.length
-                ? types.map(mt => `<option value="${mt.id}">${escapeHtml(mt.machine_type)}${mt.is_main ? "（主要）" : ""}</option>`).join("")
-                : '<option value="">该模具尚未配置机型</option>';
+            const optionsHtml = types.map(mt => `<option value="${mt.id}">${escapeHtml(mt.machine_type)}${mt.is_main ? "（主要）" : ""}</option>`).join("");
+            select.innerHTML = optionsHtml + `<option value="__new__">+ 新建机型…</option>`;
         } catch (error) {
-            select.innerHTML = `<option value="">读取失败：${escapeHtml(error.message)}</option>`;
+            select.innerHTML = `<option value="">读取失败：${escapeHtml(error.message)}</option><option value="__new__">+ 新建机型…</option>`;
         }
     }
 
-    async function submitFavoriteSave(overwrite) {
-        const machineTypeId = document.getElementById("favorite-save-machine-type-select").value;
+    // Creates a brand-new 机型 (machine spec sheet) for the given mold on
+    // the fly -- same endpoint the 机型 management dialog uses -- so a
+    // favorite can be saved against a fresh spec sheet without leaving
+    // this dialog to go set one up in 模具管理 first.
+    async function createMachineTypeForFavorite(moldId, name) {
+        return requestJson(`/api/molds/${encodeURIComponent(moldId)}/machine-types`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ machine_type: name || null }),
+        });
+    }
+
+    // resolvedMachineTypeId: internal-use only, set when this function
+    // recurses after an overwrite confirmation -- lets the retry reuse a
+    // machine type that was just created via the "__new__" branch below
+    // without re-reading the <select> (which never gets a new <option>
+    // for it, since the dialog isn't refreshed mid-save) and without
+    // risking a second, duplicate machine type being created on retry.
+    async function submitFavoriteSave(overwrite, resolvedMachineTypeId = null) {
+        const moldId = document.getElementById("favorite-save-mold-select").value;
+        let machineTypeId = resolvedMachineTypeId ?? document.getElementById("favorite-save-machine-type-select").value;
         const name = document.getElementById("favorite-save-name").value.trim();
         const statusEl = document.getElementById("favorite-save-status");
         if (!machineTypeId) { statusEl.textContent = "请选择机型"; return; }
         if (!name) { statusEl.textContent = "请输入收藏名称"; return; }
+
+        if (machineTypeId === "__new__") {
+            const newTypeName = document.getElementById("favorite-save-new-machine-type-name").value.trim();
+            statusEl.textContent = "正在新建机型……";
+            try {
+                const created = await createMachineTypeForFavorite(moldId, newTypeName);
+                machineTypeId = created.id;
+                statusEl.textContent = "";
+            } catch (error) {
+                statusEl.textContent = `新建机型失败：${error.message}`;
+                return;
+            }
+        }
+
         try {
             const response = await fetch(`/api/changelog/${encodeURIComponent(favoriteSaveChangelogId)}/favorite`, {
                 method: "POST",
@@ -2964,7 +2999,7 @@ let currentPage = "dashboard";
             if (response.status === 409) {
                 const body = await response.json().catch(() => ({}));
                 const message = (body.detail && body.detail.message) || "该名称已存在，是否覆盖？";
-                if (confirm(message)) { await submitFavoriteSave(true); return; }
+                if (confirm(message)) { await submitFavoriteSave(true, machineTypeId); return; }
                 return;
             }
             const body = await response.json().catch(() => ({}));
@@ -2979,6 +3014,9 @@ let currentPage = "dashboard";
     document.getElementById("favorite-save-mold-select").addEventListener("change", e => {
         const moldId = Number(e.target.value);
         if (moldId) populateFavoriteMachineTypeSelect(moldId);
+    });
+    document.getElementById("favorite-save-machine-type-select").addEventListener("change", e => {
+        document.getElementById("favorite-save-new-machine-type-field").classList.toggle("hidden", e.target.value !== "__new__");
     });
     document.getElementById("favorite-save-cancel").addEventListener("click", () => {
         document.getElementById("favorite-save-dialog").close();
