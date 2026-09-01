@@ -2798,7 +2798,7 @@ let currentPage = "dashboard";
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
         const table = document.getElementById("changelog-table");
         table.innerHTML = rows.length
-            ? `<table><thead><tr><th></th><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th><th>收藏至</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td><td>${favoritedToCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>模具编号</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${favoritedToCell(r)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",event=>{
             if(event.target.closest(".favorite-star-button")) return;
