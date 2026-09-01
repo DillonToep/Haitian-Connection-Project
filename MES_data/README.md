@@ -1,5 +1,5 @@
 # MES MQTT 数据采集系统
-
+STABLE ON 9/1/2026 BY DILLON TOEPKER
 注塑机 MES（生产数据采集与管理）系统。通过 MQTT 采集机台数据写入 SQL
 Server，并提供一个 FastAPI + 原生 JS 的网页看板（设备状态、工艺参数、SPC
 数据、模具管理、变更记录、预警通知、利用率报表），以及一个可选的
