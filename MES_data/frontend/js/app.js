@@ -14,8 +14,8 @@ let currentPage = "dashboard";
     let activeUtilTab = "overview";
     let techOpenCategories = new Set();
     let highlightParameter = null;
-    let changelogFilters = { date: "", field: "", sub: "" };
-    let deviceChangelogFilters = { date: "", field: "", sub: "" };
+    let changelogFilters = { date: "", field: "", sub: "", mold: "" };
+    let deviceChangelogFilters = { date: "", field: "", sub: "", mold: "" };
     let changelogFieldTree = null;
     let activeDetailUtilTab = "overview";
     const detailUtilRenderedOnce = { overview: false, daily: false, monthly: false };
@@ -2266,6 +2266,7 @@ let currentPage = "dashboard";
         if (filters.date) params.set("date", filters.date);
         if (filters.field) params.set("field", filters.field);
         if (filters.sub) params.set("sub", filters.sub);
+        if (filters.mold) params.set("mold", filters.mold);
         const qs = params.toString();
         return qs ? `?${qs}` : "";
     }
@@ -2774,6 +2775,16 @@ let currentPage = "dashboard";
         loadDetailUptime(detailDeviceId, tab);
     }
 
+    // "收藏至" column cell -- r.favorited_to is a comma-joined list of
+    // mold codes this changelog row has been saved as a (non-backup)
+    // favorite against (see fav.favorited_to in backend/routers/
+    // changelog.py). Null/empty when this row was never favorited.
+    function favoritedToCell(r) {
+        return r.favorited_to
+            ? `<span title="已收藏至该模具的高级工艺参数">${escapeHtml(r.favorited_to)}</span>`
+            : '<span class="muted">--</span>';
+    }
+
     async function loadChangelog() {
         const tree = await loadChangelogFieldTree();
         const fieldSelect = document.getElementById("changelog-filter-field");
@@ -2787,7 +2798,7 @@ let currentPage = "dashboard";
         document.getElementById("changelog-summary").textContent = `共 ${rows.length} 条记录`;
         const table = document.getElementById("changelog-table");
         table.innerHTML = rows.length
-            ? `<table><thead><tr><th></th><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>设备编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th><th>收藏至</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.device_id)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td><td>${favoritedToCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         table.querySelectorAll(".changelog-row").forEach(row=>row.addEventListener("click",event=>{
             if(event.target.closest(".favorite-star-button")) return;
@@ -2834,6 +2845,7 @@ let currentPage = "dashboard";
                 <div class="field"><label>日期</label><input type="date" id="device-changelog-filter-date" value="${escapeHtml(deviceChangelogFilters.date)}"></div>
                 <div class="field"><label>参数分类</label><select id="device-changelog-filter-field"><option value="">全部分类</option>${fieldOptions}</select></div>
                 <div class="field"><label>具体参数</label><select id="device-changelog-filter-sub" ${deviceChangelogFilters.field?"":"disabled"}><option value="">全部参数</option>${subOptions}</select></div>
+                <div class="field"><label>模具编号</label><input type="search" id="device-changelog-filter-mold" value="${escapeHtml(deviceChangelogFilters.mold)}" placeholder="搜索模具编号或名称"></div>
                 <div class="field"><label>&nbsp;</label><button id="device-changelog-filter-clear" class="secondary-button" type="button">清除筛选</button></div>
             </div>
             <div id="device-changelog-results"></div>
@@ -2861,10 +2873,19 @@ let currentPage = "dashboard";
             deviceChangelogFilters.sub = e.target.value;
             await refreshDeviceChangelogRows(id);
         });
+        let deviceChangelogMoldDebounce = null;
+        document.getElementById("device-changelog-filter-mold").addEventListener("input", e => {
+            clearTimeout(deviceChangelogMoldDebounce);
+            deviceChangelogMoldDebounce = setTimeout(async () => {
+                deviceChangelogFilters.mold = e.target.value.trim();
+                await refreshDeviceChangelogRows(id);
+            }, 300);
+        });
         document.getElementById("device-changelog-filter-clear").addEventListener("click", async () => {
-            deviceChangelogFilters = { date: "", field: "", sub: "" };
+            deviceChangelogFilters = { date: "", field: "", sub: "", mold: "" };
             document.getElementById("device-changelog-filter-date").value = "";
             document.getElementById("device-changelog-filter-field").value = "";
+            document.getElementById("device-changelog-filter-mold").value = "";
             const subSelect = document.getElementById("device-changelog-filter-sub");
             subSelect.innerHTML = '<option value="">全部参数</option>';
             subSelect.disabled = true;
@@ -2881,7 +2902,7 @@ let currentPage = "dashboard";
         const resultsEl = document.getElementById("device-changelog-results");
         if (!resultsEl) return;
         resultsEl.innerHTML = rows.length
-            ? `<table><thead><tr><th></th><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th><th>收藏至</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td><td>${favoritedToCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         resultsEl.querySelectorAll(".changelog-row").forEach(row => {
             row.addEventListener("click", event => {
@@ -3368,7 +3389,7 @@ let currentPage = "dashboard";
         // Fresh page open -- reset so loadTech() will force-open the
         // highlighted category and scroll to it exactly once.
         highlightApplied=false;
-        deviceChangelogFilters = { date: "", field: "", sub: "" };
+        deviceChangelogFilters = { date: "", field: "", sub: "", mold: "" };
         // Reset the nested 利用率 sub-tab back to 总览 for every device
         // open, so a different machine never inherits the last one's
         // 日统计/月统计 selection, and force a fresh entrance animation.
@@ -3502,10 +3523,19 @@ let currentPage = "dashboard";
         changelogFilters.sub = e.target.value;
         await loadChangelog();
     });
+    let changelogMoldDebounce = null;
+    document.getElementById("changelog-filter-mold").addEventListener("input", e => {
+        clearTimeout(changelogMoldDebounce);
+        changelogMoldDebounce = setTimeout(async () => {
+            changelogFilters.mold = e.target.value.trim();
+            await loadChangelog();
+        }, 300);
+    });
     document.getElementById("changelog-filter-clear").addEventListener("click", async () => {
-        changelogFilters = { date: "", field: "", sub: "" };
+        changelogFilters = { date: "", field: "", sub: "", mold: "" };
         document.getElementById("changelog-filter-date").value = "";
         document.getElementById("changelog-filter-field").value = "";
+        document.getElementById("changelog-filter-mold").value = "";
         const subSelect = document.getElementById("changelog-filter-sub");
         subSelect.innerHTML = '<option value="">全部参数</option>';
         subSelect.disabled = true;
