@@ -21,7 +21,7 @@ ignored, same scope limitation the export side documents.
 """
 from io import BytesIO, StringIO
 import csv
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation
 
 from openpyxl import load_workbook
 
@@ -52,10 +52,12 @@ for _r0, _r1, _c0, _c1 in _MERGES:
 
 
 def _normalize_numeric_string(value):
-    """Whole/rounded numbers become a plain integer string ("25", never
-    "25.0"), matching how target_value is stored everywhere else in the
-    app (see the equivalent helper in backend/routers/favorites.py).
-    Non-numeric values (enum codes, free text) pass through unchanged."""
+    """Canonical form of a numeric value: a plain integer string ("25")
+    when the value has no fractional part, otherwise a plain decimal
+    string ("25.8") with no trailing zeros and no scientific notation.
+    Never rounds/truncates a genuine decimal down to a whole number --
+    a sheet value like 25.8 must stay 25.8, not become 26. Non-numeric
+    values (enum codes, free text) pass through unchanged."""
     if value is None:
         return value
     candidate = value.strip() if isinstance(value, str) else value
@@ -65,7 +67,12 @@ def _normalize_numeric_string(value):
         number = Decimal(str(candidate))
     except (InvalidOperation, ValueError, TypeError):
         return str(value).strip() if isinstance(value, str) else value
-    return str(int(number.to_integral_value(rounding=ROUND_HALF_UP)))
+
+    if number == number.to_integral_value():
+        return str(int(number))
+
+    text = format(number.normalize(), "f")
+    return text
 
 
 def _clean(value):

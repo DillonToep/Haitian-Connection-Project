@@ -2976,6 +2976,16 @@ let currentPage = "dashboard";
         }
     }
     document.getElementById("favorite-save-confirm").addEventListener("click", () => submitFavoriteSave(false));
+    document.getElementById("favorite-save-mold-select").addEventListener("change", e => {
+        const moldId = Number(e.target.value);
+        if (moldId) populateFavoriteMachineTypeSelect(moldId);
+    });
+    document.getElementById("favorite-save-cancel").addEventListener("click", () => {
+        document.getElementById("favorite-save-dialog").close();
+    });
+    document.getElementById("favorite-save-close-x").addEventListener("click", () => {
+        document.getElementById("favorite-save-dialog").close();
+    });
 
     // ---- Favorites list + viewer (opened from the 机型 dialog) --------
 
