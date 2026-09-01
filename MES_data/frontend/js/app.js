@@ -2775,10 +2775,10 @@ let currentPage = "dashboard";
         loadDetailUptime(detailDeviceId, tab);
     }
 
-    // "收藏至" column cell -- r.favorited_to is a comma-joined list of
+    // 模具编号 column cell -- r.favorited_to is a comma-joined list of
     // mold codes this changelog row has been saved as a (non-backup)
     // favorite against (see fav.favorited_to in backend/routers/
-    // changelog.py). Null/empty when this row was never favorited.
+    // changelog.py). Empty/"--" when this row was never favorited.
     function favoritedToCell(r) {
         return r.favorited_to
             ? `<span title="已收藏至该模具的高级工艺参数">${escapeHtml(r.favorited_to)}</span>`
@@ -2902,7 +2902,7 @@ let currentPage = "dashboard";
         const resultsEl = document.getElementById("device-changelog-results");
         if (!resultsEl) return;
         resultsEl.innerHTML = rows.length
-            ? `<table><thead><tr><th></th><th>时间</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th><th>收藏至</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td><td>${favoritedToCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>模具编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${favoritedToCell(r)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         resultsEl.querySelectorAll(".changelog-row").forEach(row => {
             row.addEventListener("click", event => {
