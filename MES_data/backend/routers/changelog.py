@@ -148,9 +148,9 @@ def get_changelog(
     tags = _tags_for(field, sub)
     where_clause, params = _build_where(date_value, tags, mold)
     if device_id:
-        device_condition = "c.device_id = ?"
+        device_condition = "c.device_id LIKE ?"
         where_clause = f"{where_clause} AND {device_condition}" if where_clause else f"WHERE {device_condition}"
-        params = params + [device_id]
+        params = params + [f"%{device_id}%"]
     sql = f"""
         SELECT TOP 500
             {CHANGELOG_SELECT}

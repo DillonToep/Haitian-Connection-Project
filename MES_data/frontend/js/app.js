@@ -2804,12 +2804,10 @@ let currentPage = "dashboard";
                 Object.keys(tree).map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join("");
             fieldSelect.dataset.populated = "1";
         }
-        const deviceSelect = document.getElementById("changelog-filter-device");
-        if (deviceSelect && !deviceSelect.dataset.populated) {
-            deviceSelect.innerHTML = '<option value="">全部设备</option>' +
-                devices.map(d => `<option value="${escapeHtml(d.device_id)}">${escapeHtml(d.device_id)}</option>`).join("");
-            deviceSelect.value = changelogFilters.device || "";
-            deviceSelect.dataset.populated = "1";
+        const deviceDatalist = document.getElementById("changelog-device-options");
+        if (deviceDatalist && !deviceDatalist.dataset.populated) {
+            deviceDatalist.innerHTML = devices.map(d => `<option value="${escapeHtml(d.device_id)}">`).join("");
+            deviceDatalist.dataset.populated = "1";
         }
 
         const rows = await requestJson(`/api/changelog${changelogQuery(changelogFilters)}`);
@@ -3543,6 +3541,7 @@ let currentPage = "dashboard";
         await loadChangelog();
     });
     let changelogMoldDebounce = null;
+    let changelogDeviceDebounce = null;
     document.getElementById("changelog-filter-mold").addEventListener("input", e => {
         clearTimeout(changelogMoldDebounce);
         changelogMoldDebounce = setTimeout(async () => {
@@ -3550,9 +3549,12 @@ let currentPage = "dashboard";
             await loadChangelog();
         }, 300);
     });
-    document.getElementById("changelog-filter-device").addEventListener("change", async e => {
-        changelogFilters.device = e.target.value;
-        await loadChangelog();
+    document.getElementById("changelog-filter-device").addEventListener("input", e => {
+        clearTimeout(changelogDeviceDebounce);
+        changelogDeviceDebounce = setTimeout(async () => {
+            changelogFilters.device = e.target.value.trim();
+            await loadChangelog();
+        }, 300);
     });
     document.getElementById("changelog-filter-clear").addEventListener("click", async () => {
         changelogFilters = { date: "", field: "", sub: "", mold: "", device: "" };
