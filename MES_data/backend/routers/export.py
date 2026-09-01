@@ -1,7 +1,6 @@
 from contextlib import closing
 import json
 import logging
-from pathlib import Path
 from urllib.parse import quote
 
 import pyodbc
@@ -23,7 +22,6 @@ from ..xls_convert import convert_xls_to_xlsx_bytes
 router = APIRouter(prefix="/api", tags=["export"])
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-XLSM_MEDIA_TYPE = "application/vnd.ms-excel.sheet.macroEnabled.12"
 
 
 def _get_machine_type_or_404(cursor, mold_id: int, machine_type_id: int):
@@ -42,29 +40,24 @@ def export_trial_parameter_sheet(
     machine_type_id: int,
     user: dict = Depends(require_user),
 ):
-    """Generates the 试模成型参数表 (.xlsx/.xlsm) for one Mold + Machine
-    Type.
+    """Generates the 试模成型参数表 (.xlsx) for one Mold + Machine Type.
 
-    If a workbook was previously uploaded for this machine type (see
-    POST .../import below), THAT exact file is used as the base -- a copy
-    of it is opened, only the mapped cells are overwritten with current
-    MES values (blank if a mapped field currently has no value), and
-    everything else (formatting, merges, images, formulas, layout) is
-    preserved untouched. This is the "upload -> edit in app -> export
-    back into the same file" workflow. A .xls upload is converted to
-    .xlsx at import time (see convert_xls_to_xlsx_bytes) so it goes
-    through this exact same path -- see import_trial_parameter_sheet.
+    Export ALWAYS writes current MES values into a fresh copy of the
+    global default template (backend/assets/default_trial_template.xlsx,
+    see config.DEFAULT_TRIAL_TEMPLATE_PATH) via
+    overlay_values_onto_template() -- it never writes back into whatever
+    file was previously uploaded for this machine type via
+    POST .../import. Import and export are intentionally decoupled:
+    uploading a workbook still parses and saves its values into the
+    database (see import_trial_parameter_sheet), and the uploaded file is
+    still kept on disk/DB (see backend/template_storage.py) so
+    GET .../template can report what was last uploaded, but that stored
+    file is no longer used as the export base.
 
-    If nothing has ever been uploaded for this machine type, this falls
-    back to a global default template (backend/assets/
-    default_trial_template.xlsx, see config.DEFAULT_TRIAL_TEMPLATE_PATH)
-    -- a real, correctly-formatted blank copy of the company's sheet --
-    written into via the SAME overlay_values_onto_template() path a real
-    upload uses, so export looks identical whether or not anyone has
-    ever uploaded a per-machine-type file. Only if that default file is
-    somehow missing from disk does this drop back to the old behavior:
-    a fresh sheet generated from the built-in static template embedded
-    in backend/export_xlsx.py.
+    Only if the default template file is somehow missing from disk (or
+    the overlay step itself fails) does this drop back to the old
+    fallback behavior: a fresh sheet generated from the built-in static
+    template embedded in backend/export_xlsx.py.
     """
     del user
     try:
@@ -106,46 +99,29 @@ def export_trial_parameter_sheet(
         "cavities": mold_row.cavities,
     }
 
-    template = get_trial_template(machine_type_id)
-    original_bytes = None
-    if template is not None:
-        try:
-            original_bytes = Path(template.file_path).read_bytes()
-        except OSError:
-            template = None  # file missing on disk -- fall back below
-
-    if template is not None and original_bytes is not None:
-        is_macro = template.original_filename.lower().endswith(".xlsm")
-        buffer = overlay_values_onto_template(original_bytes, is_macro, mold, parameters_by_tag, extended_fields)
-        filename = template.original_filename
-        media_type = XLSM_MEDIA_TYPE if is_macro else XLSX_MEDIA_TYPE
-    else:
-        # No per-machine-type upload on file -- use the global default
-        # blank template (a real file, correct formatting) instead of
-        # regenerating a sheet from the embedded static _TEMPLATE, so
-        # export behaves the same as the "upload -> export" path even
-        # when nobody has ever uploaded anything for this machine type.
-        try:
-            if not DEFAULT_TRIAL_TEMPLATE_PATH.is_file():
-                raise OSError(f"default template not found at {DEFAULT_TRIAL_TEMPLATE_PATH}")
-            default_bytes = DEFAULT_TRIAL_TEMPLATE_PATH.read_bytes()
-            buffer = overlay_values_onto_template(default_bytes, False, mold, parameters_by_tag, extended_fields)
-            filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
-            media_type = XLSX_MEDIA_TYPE
-        except Exception:
-            # Default template missing/unreadable/corrupt, or the overlay
-            # step itself failed (e.g. not a valid xlsx) -- log the real
-            # reason so this doesn't silently degrade to the old
-            # generated-from-scratch sheet without any visibility, then
-            # fall back to it as a last resort so export never hard-fails.
-            logger.exception(
-                "Falling back to generated template for mold_id=%s machine_type_id=%s "
-                "(default template path=%s)",
-                mold_id, machine_type_id, DEFAULT_TRIAL_TEMPLATE_PATH,
-            )
-            buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
-            filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
-            media_type = XLSX_MEDIA_TYPE
+    # Always overlay onto the global default template -- never onto a
+    # previously-uploaded per-machine-type file (see docstring above).
+    try:
+        if not DEFAULT_TRIAL_TEMPLATE_PATH.is_file():
+            raise OSError(f"default template not found at {DEFAULT_TRIAL_TEMPLATE_PATH}")
+        default_bytes = DEFAULT_TRIAL_TEMPLATE_PATH.read_bytes()
+        buffer = overlay_values_onto_template(default_bytes, False, mold, parameters_by_tag, extended_fields)
+        filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
+        media_type = XLSX_MEDIA_TYPE
+    except Exception:
+        # Default template missing/unreadable/corrupt, or the overlay
+        # step itself failed (e.g. not a valid xlsx) -- log the real
+        # reason so this doesn't silently degrade to the old
+        # generated-from-scratch sheet without any visibility, then
+        # fall back to it as a last resort so export never hard-fails.
+        logger.exception(
+            "Falling back to generated template for mold_id=%s machine_type_id=%s "
+            "(default template path=%s)",
+            mold_id, machine_type_id, DEFAULT_TRIAL_TEMPLATE_PATH,
+        )
+        buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
+        filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
+        media_type = XLSX_MEDIA_TYPE
 
     encoded_filename = quote(filename)  # percent-encode: headers must be latin-1
     return StreamingResponse(
@@ -161,9 +137,10 @@ def get_template_status(
     machine_type_id: int,
     user: dict = Depends(require_user),
 ):
-    """Tells the frontend whether exports for this machine type currently
-    write back into a previously uploaded workbook, or fall back to the
-    generated static template."""
+    """Tells the frontend whether a workbook has been uploaded for this
+    machine type (see POST .../import). Informational only -- GET
+    .../export no longer writes into this file; export always uses the
+    global default template (see DEFAULT_TRIAL_TEMPLATE_PATH)."""
     del user
     try:
         with closing(get_connection()) as connection:
@@ -190,11 +167,11 @@ def remove_template(
     machine_type_id: int,
     user: dict = Depends(require_user),
 ):
-    """Forgets the uploaded workbook for this machine type. After this,
-    GET .../export reverts to the global default template (see
-    DEFAULT_TRIAL_TEMPLATE_PATH). Does not touch any already-imported MES
-    values (mold_parameter_targets / mold_extended_info) -- those stay
-    as-is."""
+    """Forgets the uploaded workbook on file for this machine type. Has
+    no effect on GET .../export, which already always uses the global
+    default template (see DEFAULT_TRIAL_TEMPLATE_PATH). Does not touch
+    any already-imported MES values (mold_parameter_targets /
+    mold_extended_info) -- those stay as-is."""
     require_editor(user)
     try:
         with closing(get_connection()) as connection:
@@ -222,30 +199,26 @@ async def import_trial_parameter_sheet(
       1. Writes whatever mapped values it finds onto this Mold + Machine
          Type's 高级工艺参数 (dbo.mold_parameter_targets) and extended info
          (dbo.mold_extended_info) -- same as before.
-      2. Stores the uploaded workbook as this machine type's export
-         template (see backend/template_storage.py). From now on, GET
-         .../export writes updated values back into a copy of THIS
-         exact file -- preserving its formatting, merges, images, and
-         layout -- instead of the global default template.
+      2. Stores the uploaded workbook on file for this machine type (see
+         backend/template_storage.py), purely for record-keeping /
+         display via GET .../template. GET .../export does NOT read this
+         stored file -- export always writes into a fresh copy of the
+         global default template (DEFAULT_TRIAL_TEMPLATE_PATH), never
+         back into whatever was uploaded here.
 
          .xlsx/.xlsm uploads are stored as-is. A .xls upload (legacy
          Excel 97-2003 / BIFF format) is first converted to an
-         equivalent .xlsx (see xls_convert.convert_xls_to_xlsx_bytes),
-         since the overlay step on export is openpyxl-based and cannot
-         open .xls directly. Without this conversion, a .xls upload was
-         silently never saved as a template at all -- values were still
-         parsed and saved to the database correctly, but every export
-         fell back to the generic default template instead of the
-         uploaded sheet's own layout/branding. .csv uploads still can't
-         be used as an export template (no layout/formatting to
-         preserve) and continue to only feed the value import in step 1.
+         equivalent .xlsx (see xls_convert.convert_xls_to_xlsx_bytes) so
+         it can still be stored/displayed consistently. .csv uploads
+         have no layout/formatting worth preserving and are never stored
+         as a template.
 
          If .xls conversion fails (e.g. a corrupted workbook, or one in
          an even older format xlrd can't read), the import still
-         succeeds -- the values are saved -- but no template is stored,
+         succeeds -- the values are saved -- but no file is stored,
          matching the pre-existing .csv behavior, and
          `template_saved: false` is returned so the frontend can tell
-         the user their layout wasn't preserved.
+         the user the file wasn't kept on record.
 
       3. 模具编号/产品名称/模穴数 read from the sheet header are returned to
          the caller as `header_read_only` for review, but are NOT applied

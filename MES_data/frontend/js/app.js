@@ -2499,7 +2499,16 @@ let currentPage = "dashboard";
     }
 
     async function loadTech(id) {
-        const result=await requestJson(`/api/tech/${encodeURIComponent(id)}`);
+        // When arriving from a 变更记录 row, pin the whole tab to that
+        // row's own raw_message_id instead of the device's latest
+        // reading -- otherwise the highlighted cell shows whatever the
+        // machine is reporting *right now*, which can legitimately be
+        // neither the old nor the new value from that specific change
+        // event if anything else happened to that tag since (see
+        // get_device_tech's raw_message_id parameter in devices.py).
+        const pinnedId = highlightParameter && highlightParameter.raw_message_id;
+        const query = pinnedId ? `?raw_message_id=${encodeURIComponent(pinnedId)}` : "";
+        const result=await requestJson(`/api/tech/${encodeURIComponent(id)}${query}`);
         const paramById=new Map(result.parameters.map(p=>[p.parameter_id,p]));
 
         let highlightMatch=null;
@@ -2513,7 +2522,8 @@ let currentPage = "dashboard";
         const hasAnyData=result.parameters.some(p=>p.value!=null && p.value!=="");
 
         const highlightBanner=(highlightParameter && highlightParameter.parameter_id)?`<div class="changelog-banner">变更提示：<strong>${escapeHtml(highlightMatch?highlightMatch.label:highlightParameter.parameter_id)}</strong> ${showValue(highlightParameter.previous_value)} → <strong class="changelog-banner-new">${showValue(highlightParameter.new_value)}</strong></div>`:"";
-        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card">${highlightBanner}<div class="detail-header"><div class="detail-title">工艺参数</div><span class="muted">参数时间：${formatTime(result.data_time)}</span></div><div class="excel-sections-wrap">${hasAnyData?`${blocksHtml}${leftoverHtml}`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
+        const snapshotNote=result.is_snapshot?`<div class="muted" style="margin-top:4px;">正在显示该变更发生时的历史快照，并非设备当前实时读数</div>`:"";
+        document.getElementById("detail-tab-tech").innerHTML=`<article class="detail-card">${highlightBanner}<div class="detail-header"><div class="detail-title">工艺参数</div><span class="muted">${result.is_snapshot?"快照时间":"参数时间"}：${formatTime(result.data_time)}</span></div>${snapshotNote}<div class="excel-sections-wrap">${hasAnyData?`${blocksHtml}${leftoverHtml}`:'<div class="empty">暂无工艺参数</div>'}</div></article>`;
 
         if(highlightParameter && highlightParameter.parameter_id && !highlightApplied){
             const target=document.querySelector(`#detail-tab-tech [data-parameter="${CSS.escape(highlightParameter.parameter_id)}"]`);
@@ -2902,7 +2912,7 @@ let currentPage = "dashboard";
         const resultsEl = document.getElementById("device-changelog-results");
         if (!resultsEl) return;
         resultsEl.innerHTML = rows.length
-            ? `<table><thead><tr><th></th><th>时间</th><th>模具编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${favoritedToCell(r)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
+            ? `<table><thead><tr><th></th><th>时间</th><th>模具编号</th><th>变量</th><th>原值</th><th>新值</th><th>模数</th></tr></thead><tbody>${rows.map(r=>`<tr class="changelog-row" data-id="${r.id}" data-parameter="${escapeHtml(r.parameter_id)}" data-previous="${escapeHtml(r.previous_value??"")}" data-new="${escapeHtml(r.new_value??"")}" data-raw-message-id="${r.raw_message_id??""}"><td>${favoriteStarButtonHtml(r.id)}</td><td>${formatTime(r.data_time||r.detected_at)}</td><td>${favoritedToCell(r)}</td><td>${escapeHtml(r.label)}</td><td>${showValue(r.previous_value)}</td><td class="changelog-new-value">${showValue(r.new_value)}</td><td>${cycleCell(r)}</td></tr>`).join("")}</tbody></table>`
             : '<div class="empty">没有符合筛选条件的变更记录</div>';
         resultsEl.querySelectorAll(".changelog-row").forEach(row => {
             row.addEventListener("click", event => {
@@ -2911,6 +2921,7 @@ let currentPage = "dashboard";
                     parameter_id: row.dataset.parameter,
                     previous_value: row.dataset.previous,
                     new_value: row.dataset.new,
+                    raw_message_id: row.dataset.rawMessageId ? Number(row.dataset.rawMessageId) : null,
                 };
                 highlightApplied = false;
                 switchDetailTab("tech");
@@ -2927,7 +2938,7 @@ let currentPage = "dashboard";
             const entry=await requestJson(`/api/changelog/${encodeURIComponent(id)}`);
             await openDeviceDetail(entry.device_id,{
                 tab:"tech",
-                highlight:{parameter_id:entry.parameter_id,previous_value:entry.previous_value,new_value:entry.new_value}
+                highlight:{parameter_id:entry.parameter_id,previous_value:entry.previous_value,new_value:entry.new_value,raw_message_id:entry.raw_message_id}
             });
         } catch(error){ alert(error.message); }
     }

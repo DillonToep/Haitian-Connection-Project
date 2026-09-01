@@ -1,7 +1,7 @@
 from contextlib import closing
 
 import pyodbc
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from ..schemas import DeviceMachineTypeRequest
 from ..database import get_connection, row_to_dict
 from ..parameter_labels import (
@@ -327,29 +327,60 @@ def reset_cycle_count(device_id: str, user: dict = Depends(require_user)):
 
 
 @router.get("/tech/{device_id}")
-def get_device_tech(device_id: str, user: dict = Depends(require_user)):
+def get_device_tech(
+    device_id: str,
+    raw_message_id: int | None = Query(
+        None,
+        description="Pin the response to this specific raw_message_id instead of "
+                    "the device's latest reading -- used by the 变更记录 -> 工艺参数 "
+                    "drill-down so the highlighted parameter's value matches the "
+                    "moment the change was actually recorded, rather than whatever "
+                    "the device is reporting right now.",
+    ),
+    user: dict = Depends(require_user),
+):
     del user
-    sql = """
-        WITH latest AS
-        (
-            SELECT MAX(raw_message_id) AS raw_message_id
-            FROM dbo.vw_machine_tech
-            WHERE device_id = ?
-        )
-        SELECT
-            t.raw_message_id, t.device_id, t.data_time,
-            t.parameter_id, t.parameter_value_text, t.parameter_value
-        FROM dbo.vw_machine_tech AS t
-        INNER JOIN latest AS l ON t.raw_message_id = l.raw_message_id
-        ORDER BY t.parameter_id
-    """
+    if raw_message_id is not None:
+        # Historical snapshot: every tag as it stood at this exact
+        # raw_message_id. No "latest" resolution at all -- if this
+        # message never reported a given tag, that tag is simply absent
+        # from the result (same as it would have been live at the time).
+        sql = """
+            SELECT
+                t.raw_message_id, t.device_id, t.data_time,
+                t.parameter_id, t.parameter_value_text, t.parameter_value
+            FROM dbo.vw_machine_tech AS t
+            WHERE t.device_id = ? AND t.raw_message_id = ?
+            ORDER BY t.parameter_id
+        """
+        params = (device_id, raw_message_id)
+    else:
+        sql = """
+            WITH latest AS
+            (
+                SELECT MAX(raw_message_id) AS raw_message_id
+                FROM dbo.vw_machine_tech
+                WHERE device_id = ?
+            )
+            SELECT
+                t.raw_message_id, t.device_id, t.data_time,
+                t.parameter_id, t.parameter_value_text, t.parameter_value
+            FROM dbo.vw_machine_tech AS t
+            INNER JOIN latest AS l ON t.raw_message_id = l.raw_message_id
+            ORDER BY t.parameter_id
+        """
+        params = (device_id,)
     try:
         with closing(get_connection()) as connection:
             cursor = connection.cursor()
-            cursor.execute(sql, device_id)
+            cursor.execute(sql, *params)
             rows = cursor.fetchall()
             if not rows:
-                raise HTTPException(status_code=404, detail="没有找到该设备的工艺参数")
+                detail = (
+                    "该时间点没有找到工艺参数数据" if raw_message_id is not None
+                    else "没有找到该设备的工艺参数"
+                )
+                raise HTTPException(status_code=404, detail=detail)
             records = [row_to_dict(cursor, row) for row in rows]
 
             parameters = []
@@ -393,6 +424,7 @@ def get_device_tech(device_id: str, user: dict = Depends(require_user)):
                 "raw_message_id": records[0]["raw_message_id"],
                 "data_time": records[0]["data_time"],
                 "parameters": parameters,
+                "is_snapshot": raw_message_id is not None,
             }
     except HTTPException:
         raise
