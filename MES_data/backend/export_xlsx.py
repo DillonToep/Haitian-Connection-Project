@@ -229,7 +229,6 @@ def build_trial_parameter_workbook(mold: dict, parameters_by_tag: dict, extended
     buffer.seek(0)
     return buffer
 
-
 def overlay_values_onto_template(
     file_bytes: bytes,
     is_macro_enabled: bool,
@@ -240,23 +239,28 @@ def overlay_values_onto_template(
     """Writes the same mapped values as build_trial_parameter_workbook,
     but onto a COPY of a user-uploaded workbook (file_bytes) instead of
     regenerating a sheet from the embedded _TEMPLATE. Only the cells
-    listed in HEADER_CELL_MAP / EXTENDED_CELL_MAP / PARAMETER_CELL_MAP /
-    the hot-runner columns are touched -- every other cell, its
-    formatting, merges, images, formulas, column widths, page setup,
-    etc. are left exactly as uploaded.
+    listed below are touched -- every other cell, its formatting, merges,
+    images, formulas, column widths, page setup, etc. are left exactly
+    as uploaded.
 
-    Unlike build_trial_parameter_workbook (which skips None values,
-    since it starts from an already-blank template), a mapped field with
-    no value here explicitly clears its cell to blank -- the uploaded
-    workbook may already hold a stale value from a previous edit/export
-    cycle, and per spec a field with no value must blank its cell rather
-    than silently keep whatever was there before.
+    Two source layouts are supported for the header/extended fields:
 
-    Merge ranges are read from the ACTUAL uploaded worksheet (not the
-    static _MERGES table used by build_trial_parameter_workbook), so this
-    works correctly even if the uploaded file's structure isn't byte-for-
-    byte identical to the embedded template, as long as the same cell
-    positions carry the same fields.
+    - The newer "注塑成型条件参数表" layout (detected the same way
+      import_xlsx.py already detects it -- presence of a "客户名称" label
+      anywhere on the sheet). Every header/extended field's write
+      position is located by searching for its own label text
+      (extended_field_scan.locate_new_layout_fields), exactly mirroring
+      how import already reads these fields correctly. A field whose
+      label can't be found on this particular sheet is left untouched
+      rather than written to a guessed, possibly-wrong cell.
+    - The older "试模成型参数表" layout falls back to the original fixed
+      HEADER_CELL_MAP / EXTENDED_CELL_MAP coordinates -- unchanged.
+
+    Parameter tags (PARAMETER_CELL_MAP) already used label-driven
+    positioning via label_scan_xlsx/locate_all_blocks before this fix;
+    that logic is unchanged, just reusing one resolved grid instead of
+    building it twice (previously built once here and, redundantly, a
+    second time down in the parameter-cell section).
 
     Known limitation: openpyxl does not reliably preserve embedded charts
     through a load/save round trip -- a workbook containing charts may
@@ -277,48 +281,63 @@ def overlay_values_onto_template(
         anchor_row0, anchor_col0 = anchor_for.get((row0, col0), (row0, col0))
         ws.cell(row=anchor_row0 + 1, column=anchor_col0 + 1).value = value
 
-    for (r0, c0), key in HEADER_CELL_MAP.items():
-        _, field = key.split(":", 1)
-        _set(r0, c0, mold.get(field))
-
-    for (r0, c0), key in EXTENDED_CELL_MAP.items():
-        _, field = key.split(":", 1)
-        _set(r0, c0, _extended_value(extended_fields, field))
-
-    # ---- parameter cells: label-driven position first, fixed coordinate
-    # as a last resort -- this is the write-side counterpart of the
-    # label-driven reader in label_scan_xlsx.py. An uploaded workbook's
-    # actual layout can differ from the built-in template's fixed
-    # PARAMETER_CELL_MAP coordinates (extra/missing rows, shifted
-    # columns), so locating each tag's real cell by its block title +
-    # row label + stage header keeps a value from being written into the
-    # wrong cell (or worse, into an unrelated merged banner cell).
+    # ---- build the resolved (merge-expanded) grid ONCE, shared by both
+    # the header/extended-field placement below and the parameter-tag
+    # placement further down. ----
     from .label_scan_xlsx import build_resolved_grid, covered_tags, locate_all_blocks
+    from .extended_field_scan import locate_new_layout_fields, CHECKBOX_KEYS
 
     grid = build_resolved_grid(ws)
-    located = locate_all_blocks(grid)
+
+    # Same "客户名称" sniff import_xlsx.py uses to tell the two known
+    # layouts apart -- on the OLD layout's fixed coordinates, a value
+    # meant for the NEW layout (or vice versa) lands on an entirely
+    # unrelated cell, so this has to be a hard either/or, not a
+    # supplement to the fixed map.
+    is_new_layout = any(
+        isinstance(value, str) and "客户名称" in value
+        for row in grid for value in row
+    )
+
+    if is_new_layout:
+        located = locate_new_layout_fields(grid)
+        for field, (row0, col0) in located["header"].items():
+            _set(row0, col0, mold.get(field))
+        for key, (row0, col0) in located["extended"].items():
+            if key in CHECKBOX_KEYS:
+                # Boolean fields render as a checkmark, not a raw
+                # True/False, and a False/absent value clears the cell
+                # instead of leaving a stale "√" from a previous export.
+                _set(row0, col0, "√" if extended_fields.get(key) else None)
+            else:
+                _set(row0, col0, _extended_value(extended_fields, key))
+    else:
+        for (r0, c0), key in HEADER_CELL_MAP.items():
+            _, field = key.split(":", 1)
+            _set(r0, c0, mold.get(field))
+
+        for (r0, c0), key in EXTENDED_CELL_MAP.items():
+            _, field = key.split(":", 1)
+            _set(r0, c0, _extended_value(extended_fields, field))
+
+        for offset, col0 in enumerate(_HOT_RUNNER_COLS):
+            _, field = f"ext:hot_runner_t{offset + 1}".split(":", 1)
+            _set(_HOT_RUNNER_ROW, col0, _extended_value(extended_fields, field))
+
+    # ---- parameter cells: label-driven position first, fixed coordinate
+    # as a last resort (unchanged from before this fix). ----
+    located_params = locate_all_blocks(grid)
     label_covered = covered_tags()
 
     for (r0, c0), key in PARAMETER_CELL_MAP.items():
         _, tag = key.split(":", 1)
-        if tag in located:
-            row0, col0 = located[tag]
+        if tag in located_params:
+            row0, col0 = located_params[tag]
         elif tag in label_covered:
-            # BLOCK_DEFS knows this tag but couldn't find it on this
-            # sheet -- that block/stage genuinely isn't present here.
-            # Falling back to the fixed coordinate is what previously
-            # let an unrelated tag's stale coordinate land inside a
-            # neighboring block's merged banner cell (or clobber a
-            # correctly-located sibling), so skip it entirely rather
-            # than guess.
             continue
         else:
             row0, col0 = r0, c0
         _set(row0, col0, _tag_value(parameters_by_tag, tag))
-
-    for offset, col0 in enumerate(_HOT_RUNNER_COLS):
-        _, field = f"ext:hot_runner_t{offset + 1}".split(":", 1)
-        _set(_HOT_RUNNER_ROW, col0, _extended_value(extended_fields, field))
 
     buffer = BytesIO()
     workbook.save(buffer)
