@@ -1,11 +1,14 @@
 from contextlib import closing
 import json
+import logging
 from pathlib import Path
 from urllib.parse import quote
 
 import pyodbc
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger(__name__)
 
 from ..config import DEFAULT_TRIAL_TEMPLATE_PATH
 from ..database import get_connection
@@ -123,14 +126,23 @@ def export_trial_parameter_sheet(
         # export behaves the same as the "upload -> export" path even
         # when nobody has ever uploaded anything for this machine type.
         try:
+            if not DEFAULT_TRIAL_TEMPLATE_PATH.is_file():
+                raise OSError(f"default template not found at {DEFAULT_TRIAL_TEMPLATE_PATH}")
             default_bytes = DEFAULT_TRIAL_TEMPLATE_PATH.read_bytes()
             buffer = overlay_values_onto_template(default_bytes, False, mold, parameters_by_tag, extended_fields)
             filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
             media_type = XLSX_MEDIA_TYPE
-        except OSError:
-            # Default template missing from disk entirely -- last-resort
-            # fallback to the old generated-from-scratch sheet, so export
-            # never hard-fails outright.
+        except Exception:
+            # Default template missing/unreadable/corrupt, or the overlay
+            # step itself failed (e.g. not a valid xlsx) -- log the real
+            # reason so this doesn't silently degrade to the old
+            # generated-from-scratch sheet without any visibility, then
+            # fall back to it as a last resort so export never hard-fails.
+            logger.exception(
+                "Falling back to generated template for mold_id=%s machine_type_id=%s "
+                "(default template path=%s)",
+                mold_id, machine_type_id, DEFAULT_TRIAL_TEMPLATE_PATH,
+            )
             buffer = build_trial_parameter_workbook(mold, parameters_by_tag, extended_fields)
             filename = f"{mold['mold_code']}_试模成型参数表.xlsx"
             media_type = XLSX_MEDIA_TYPE
