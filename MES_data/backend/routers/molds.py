@@ -1139,17 +1139,15 @@ def delete_mold(mold_id: int, user: dict = Depends(require_user)):
             row = cursor.execute("SELECT id FROM dbo.molds WHERE id = ?", mold_id).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail="模具不存在")
-
             mounted = cursor.execute(
                 "SELECT 1 FROM dbo.device_mold_assignments WHERE mold_id = ? AND unmounted_at IS NULL",
                 mold_id,
             ).fetchone()
             if mounted:
                 raise HTTPException(status_code=400, detail="该模具当前已装机，请先卸载后再删除")
+            cursor.execute("UPDATE dbo.mold_match_attempts SET matched_mold_id = NULL WHERE matched_mold_id = ?", mold_id)
+            cursor.execute("UPDATE dbo.mold_detection_alerts SET matched_mold_id = NULL WHERE matched_mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.device_mold_assignments WHERE mold_id = ?", mold_id)
-            # Cascades to mold_parameter_targets / mold_extended_info rows
-            # for every machine type this mold has (see
-            # setup_mold_machine_types.sql ON DELETE CASCADE).
             cursor.execute("DELETE FROM dbo.mold_machine_types WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.mold_output_alerts WHERE mold_id = ?", mold_id)
             cursor.execute("DELETE FROM dbo.mold_production_log WHERE mold_id = ?", mold_id)
