@@ -10,6 +10,17 @@ MOLD_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 TRIAL_TEMPLATE_DIR = FRONTEND_DIR / "uploads" / "trial_templates"
 TRIAL_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Global fallback workbook used by GET .../export whenever a Mold +
+# Machine Type has no user-uploaded template on file (see
+# backend/template_storage.py for the per-machine-type override). This
+# is a real, correctly-formatted blank copy of the company's 试模成型
+#参数表, checked into the repo -- export always writes into a copy of
+# THIS file via overlay_values_onto_template() rather than regenerating
+# a sheet from the embedded static _TEMPLATE in export_xlsx.py, so
+# formatting is correct even before anyone has ever uploaded anything
+# for a given machine type.
+DEFAULT_TRIAL_TEMPLATE_PATH = PROJECT_DIR / "backend" / "assets" / "default_trial_template.xlsx"
+
 SESSION_COOKIE = "mes_session"
 SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 310_000
